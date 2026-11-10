@@ -40,6 +40,7 @@ mod import;
 pub mod journal;
 pub mod localtime;
 mod located_service;
+pub mod lost_projects;
 pub mod machine;
 pub mod messages;
 pub mod model_keep;
@@ -784,6 +785,14 @@ impl SwitchService for Switcher {
 
     async fn self_update_acknowledge(&self) -> Result<superba_core::SelfUpdateView> {
         self.self_update_acknowledge_impl().await
+    }
+
+    async fn answer_lost_projects(
+        &self,
+        fingerprint: String,
+        answer: superba_core::LostProjectsAnswer,
+    ) -> Result<()> {
+        self.answer_lost_projects_impl(fingerprint, answer).await
     }
 
     async fn self_update_install(

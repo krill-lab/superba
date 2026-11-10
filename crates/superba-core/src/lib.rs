@@ -63,6 +63,7 @@ pub mod harness;
 pub mod i18n;
 pub mod ids;
 pub mod import;
+pub mod lost_projects;
 pub mod models;
 pub mod notify;
 pub mod origin;
@@ -119,6 +120,7 @@ pub use feeds::*;
 pub use i18n::{Catalog, Locale, LocalizedText, Notice, Severity};
 pub use ids::*;
 pub use import::*;
+pub use lost_projects::*;
 pub use models::*;
 pub use notify::{
     ChannelField, ChannelKind, ChannelOutcome, ChannelResult, EventKind, HookRequest, HookState,

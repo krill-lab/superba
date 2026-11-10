@@ -1411,6 +1411,10 @@ pub struct Overview {
     /// from the observed upstream URL.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub router_base_url: Option<url::Url>,
+    /// Project folders the desktop app dropped that Superba can bring back
+    /// (user bugs 135/136 follow-up); `None` when there is nothing to offer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lost_projects: Option<crate::LostProjects>,
 }
 
 /// One diagnostics item (plan 4 #21, 11.1 diagnostics page).

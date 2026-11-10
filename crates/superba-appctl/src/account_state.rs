@@ -178,19 +178,56 @@ pub enum Outcome {
 /// Before a launch into `home` (the app is not running): with a token login,
 /// [`flatten`] its global state, keeping a copy of the original in
 /// `backup_dir` (owner-only on Unix; written before the state file is
-/// replaced, so a failed replacement still leaves the copy). A file the app cannot parse is left for its `.bak` fallback
-/// (an error); the app's `.bak` file is never touched.
+/// replaced, so a failed replacement still leaves the copy). A file the app
+/// cannot parse is left for its `.bak` fallback (an error); the app's `.bak`
+/// file is never touched.
 pub fn prepare(home: &CodexHome, backup_dir: &Path, now: Timestamp) -> Result<Outcome> {
-    match fs::read(home.auth_json()) {
-        Ok(bytes) if login_kind(&bytes) == LoginKind::Token => {}
-        Ok(_) => return Ok(Outcome::Unchanged),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Outcome::Unchanged),
+    let done = prepare_launch(home, backup_dir, None, now)?;
+    Ok(match (done.stashes, done.backup) {
+        (Some(stashes), Some(backup)) => Outcome::Flattened { stashes, backup },
+        _ => Outcome::Unchanged,
+    })
+}
+
+/// What [`prepare_launch`] did.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Prepared {
+    /// Stashed owners folded in (a token login with account-scoped state).
+    pub stashes: Option<usize>,
+    /// Projects brought back from the folders the user queued
+    /// ([`crate::project_restore`]).
+    pub restored: usize,
+    /// Copy of the original file, when it was replaced.
+    pub backup: Option<PathBuf>,
+}
+
+/// [`prepare`] plus the folders queued in `app_state_dir` for `home`
+/// ([`crate::project_restore`]), whatever the login: one read, one backup,
+/// one atomic replacement. The queue is cleared once its folders are in the
+/// file (or were there already); it stays when the file is missing or cannot
+/// be changed.
+pub fn prepare_launch(
+    home: &CodexHome,
+    backup_dir: &Path,
+    app_state_dir: Option<&Path>,
+    now: Timestamp,
+) -> Result<Prepared> {
+    let token = match fs::read(home.auth_json()) {
+        Ok(bytes) => login_kind(&bytes) == LoginKind::Token,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
         Err(e) => return Err(Error::io(home.auth_json(), &e)),
+    };
+    let pending = match app_state_dir {
+        Some(dir) => crate::project_restore::pending(dir, home.root())?,
+        None => None,
+    };
+    if !token && pending.is_none() {
+        return Ok(Prepared::default());
     }
     let path = state_file(&home.global_state_json())?;
     let bytes = match fs::read(&path) {
         Ok(bytes) => bytes,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Outcome::Unchanged),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Prepared::default()),
         Err(e) => return Err(Error::io(&path, &e)),
     };
     // The app parses the file with JSON.parse (no BOM stripping) and falls
@@ -199,20 +236,34 @@ pub fn prepare(home: &CodexHome, backup_dir: &Path, now: Timestamp) -> Result<Ou
         what: "desktop global state".into(),
         message: e.to_string(),
     })?;
-    if state.get(ACCOUNT_STATE_KEY).is_none() {
-        return Ok(Outcome::Unchanged);
+    let mut done = Prepared::default();
+    if token && state.get(ACCOUNT_STATE_KEY).is_some() {
+        done.stashes =
+            Some(flatten(&mut state).ok_or_else(|| {
+                Error::invalid("desktop account-scoped state has an unknown shape")
+            })?);
     }
-    let Some(stashes) = flatten(&mut state) else {
-        return Err(Error::invalid(
-            "desktop account-scoped state has an unknown shape",
-        ));
-    };
-    let backup = write_backup(backup_dir, &bytes, now)?;
-    let permissions = fs::metadata(&path)
-        .map_err(|e| Error::io(&path, &e))?
+    if let Some(p) = &pending {
+        done.restored = crate::project_restore::apply(&mut state, &p.items, now)
+            .ok_or_else(|| Error::invalid("desktop project list has an unknown shape"))?;
+    }
+    if done.stashes.is_some() || done.restored > 0 {
+        done.backup = Some(write_backup(backup_dir, &bytes, now)?);
+        replace(home, &path, &state)?;
+    }
+    if let (Some(dir), Some(_)) = (app_state_dir, &pending) {
+        crate::project_restore::clear_pending(dir, home.root())?;
+    }
+    Ok(done)
+}
+
+/// Same-directory atomic replacement keeping the file's permissions.
+fn replace(home: &CodexHome, path: &Path, state: &Value) -> Result<()> {
+    let permissions = fs::metadata(path)
+        .map_err(|e| Error::io(path, &e))?
         .permissions();
     // preserve_order keeps every other key, unknown ones included, in place.
-    let out = serde_json::to_vec(&state)
+    let out = serde_json::to_vec(state)
         .map_err(|e| Error::other(format!("serialize desktop global state: {e}")))?;
     let dir = path.parent().unwrap_or(home.root());
     let mut temp = tempfile::NamedTempFile::new_in(dir).map_err(|e| Error::io(dir, &e))?;
@@ -224,26 +275,30 @@ pub fn prepare(home: &CodexHome, backup_dir: &Path, now: Timestamp) -> Result<Ou
     temp.as_file()
         .sync_all()
         .map_err(|e| Error::io(temp.path(), &e))?;
-    temp.persist(&path)
-        .map_err(|e| Error::io(&path, &e.error))?;
-    Ok(Outcome::Flattened { stashes, backup })
+    temp.persist(path).map_err(|e| Error::io(path, &e.error))?;
+    Ok(())
 }
 
-/// [`prepare`], logging instead of failing: a state-file problem must never
-/// keep the app from starting.
-pub(crate) fn seed(home: &CodexHome, backup_dir: &Path) {
-    match prepare(home, backup_dir, Timestamp::now()) {
-        Ok(Outcome::Unchanged) => {}
-        Ok(Outcome::Flattened { stashes, backup }) => tracing::info!(
-            path = %home.global_state_json().display(),
+/// [`prepare_launch`], logging instead of failing: a state-file problem must
+/// never keep the app from starting.
+pub(crate) fn seed(home: &CodexHome, backup_dir: &Path, app_state_dir: &Path) {
+    match prepare_launch(home, backup_dir, Some(app_state_dir), Timestamp::now()) {
+        Ok(Prepared { backup: None, .. }) => {}
+        Ok(Prepared {
             stashes,
+            restored,
+            backup: Some(backup),
+        }) => tracing::info!(
+            path = %home.global_state_json().display(),
+            stashes = stashes.unwrap_or(0),
+            restored,
             backup = %backup.display(),
-            "kept the desktop's account-scoped state for a launch without a ChatGPT sign-in"
+            "updated the desktop's project state before the launch"
         ),
         Err(error) => tracing::warn!(
             path = %home.global_state_json().display(),
             %error,
-            "left the desktop's account-scoped state alone"
+            "left the desktop's project state alone"
         ),
     }
 }

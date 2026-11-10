@@ -200,6 +200,15 @@ impl SwitchService for LocatedService {
         service.self_update_acknowledge().await
     }
 
+    async fn answer_lost_projects(
+        &self,
+        fingerprint: String,
+        answer: superba_core::LostProjectsAnswer,
+    ) -> Result<()> {
+        let (service, _lock) = self.read().await?;
+        service.answer_lost_projects(fingerprint, answer).await
+    }
+
     async fn self_update_restart_router(&self) -> Result<bool> {
         let (service, _lock) = self.read().await?;
         service.self_update_restart_router().await

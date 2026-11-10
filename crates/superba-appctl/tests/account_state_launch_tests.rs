@@ -185,3 +185,30 @@ async fn a_chatgpt_launch_keeps_the_app_s_account_state() {
     assert_eq!(f.launch_and_capture().await, stashed_projects());
     assert!(!f.data.app_state_backups_dir().exists());
 }
+
+#[tokio::test]
+async fn a_launch_brings_back_the_queued_folders_before_the_desktop_starts() {
+    let mut f = Fixture::new();
+    f.write(CHATGPT, &json!({"local-projects": {}}));
+    superba_appctl::project_restore::queue(
+        &f.data.app_state_dir(),
+        f.home().root(),
+        vec![superba_appctl::project_restore::RestoreItem {
+            path: "/w/proj-c".into(),
+            extra_roots: Vec::new(),
+            name: "proj-c".into(),
+            app_id: Some("877476ef-uuid".into()),
+        }],
+        superba_core::Timestamp::EPOCH,
+    )
+    .unwrap();
+    let seen = f.launch_and_capture().await;
+    assert_eq!(
+        seen["local-projects"]["877476ef-uuid"]["rootPaths"],
+        json!(["/w/proj-c"])
+    );
+    assert_eq!(
+        superba_appctl::project_restore::pending(&f.data.app_state_dir(), f.home().root()).unwrap(),
+        None
+    );
+}

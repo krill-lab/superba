@@ -296,6 +296,7 @@ pub struct SuperbaApp {
     movers: crate::movers::dialog::MoversDialog,
     /// GH#5: the dialog about changes another tool made.
     external: crate::external::ExternalDialog,
+    lost_projects: crate::lost_projects::LostProjectsDialog,
     /// "Codex in effect" (GH#4).
     in_effect: crate::in_effect::InEffect,
     risk_memory: Option<PathBuf>,
@@ -399,6 +400,7 @@ impl SuperbaApp {
             banner: BannerState::default(),
             movers: Default::default(),
             external: Default::default(),
+            lost_projects: Default::default(),
             in_effect: Default::default(),
             risk_memory,
             wizard: None,
@@ -976,6 +978,15 @@ impl SuperbaApp {
                     }
                     self.backend.send(Command::Refresh);
                 }
+                Reply::LostProjectsAnswered(r) => match r {
+                    Ok(true) => {
+                        let text = self.tr.t("toast.lost_projects_queued");
+                        self.log(Status::Ok, text.clone());
+                        self.toasts.push(Toast::new(Status::Ok, text));
+                    }
+                    Ok(false) => {}
+                    Err(e) => self.error_toast(self.tr.t("toast.lost_projects_failed"), &e),
+                },
                 Reply::SettingsSaved(r) => {
                     if let Err(e) = r {
                         self.error_toast(self.tr.t("toast.settings_failed"), &e);
@@ -1711,6 +1722,26 @@ impl SuperbaApp {
                     self.external.open(x);
                 }
             }
+            Action::ShowLostProjects => {
+                if let Some(l) = self
+                    .data
+                    .overview
+                    .value
+                    .as_ref()
+                    .and_then(|o| o.lost_projects.as_ref())
+                {
+                    self.lost_projects.open(l);
+                }
+            }
+            Action::AnswerLostProjects {
+                fingerprint,
+                answer,
+            } => {
+                self.backend.send(Command::AnswerLostProjects {
+                    fingerprint,
+                    answer,
+                });
+            }
             Action::ShowRuntime => self.in_effect.open(&self.service),
             Action::StartWizard => {
                 if self.wizard.is_none() {
@@ -2178,6 +2209,7 @@ impl eframe::App for SuperbaApp {
                 quiet,
             );
             crate::external::show(&ctx, &cx, &mut self.external, &mut actions);
+            crate::lost_projects::show(&ctx, &cx, &mut self.lost_projects, &mut actions);
             if let Some(w) = self.wizard.as_mut() {
                 match pages::wizard::show(&ctx, &cx, w, &mut actions) {
                     WizardOutcome::Continue => {}

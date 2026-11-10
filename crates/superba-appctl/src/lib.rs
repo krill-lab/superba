@@ -9,7 +9,8 @@
 //! - launch with loopback CDP and injected environment ([`launch`]), launch records
 //!   in `DataDir::app_sessions_json` ([`store`]); before a launch without a
 //!   ChatGPT sign-in, the app's account-scoped state is folded back so its
-//!   projects survive ([`account_state`]);
+//!   projects survive ([`account_state`]), and folders the user picked to
+//!   bring back are written into its project list ([`project_restore`]);
 //! - a minimal CDP client ([`cdp`]) with listener ownership checks ([`owner`]);
 //! - hot restart through `superba_core::codex::hot_restart_js`, verified by a new
 //!   app-server child of the app main process; graceful quit ([`quit`]);
@@ -37,6 +38,7 @@ pub mod osproc;
 pub mod owner;
 pub mod package;
 pub mod procs;
+pub mod project_restore;
 pub mod quit;
 pub mod renderer;
 pub mod stop;
@@ -708,11 +710,13 @@ impl AppController for DesktopAppController {
         let log = self.launch_log_path();
         let state_home = app_codex_home.clone();
         let state_backups = self.ctx.data_dir.app_state_backups_dir();
+        let app_state = self.ctx.data_dir.app_state_dir();
         // LaunchServices may take several seconds to expose the new main pid.
         let spawned = tokio::task::spawn_blocking(move || {
             // After the running-instance check, before any platform starts the
-            // app (user bugs 135/136). Never fails the launch.
-            account_state::seed(&state_home, &state_backups);
+            // app (user bugs 135/136 and the folders queued to come back).
+            // Never fails the launch.
+            account_state::seed(&state_home, &state_backups, &app_state);
             launch::spawn(&spawn_spec, &spawn_install, Some(&log))
         })
         .await

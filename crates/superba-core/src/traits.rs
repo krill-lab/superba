@@ -1278,6 +1278,18 @@ pub trait SwitchService: Send + Sync {
         Err(crate::Error::not_implemented("self update acknowledge"))
     }
 
+    /// Answer the overview's [`crate::LostProjects`] (its `fingerprint`):
+    /// queue the ticked folders for the next launch through Superba, or stop
+    /// offering them.
+    async fn answer_lost_projects(
+        &self,
+        fingerprint: String,
+        answer: crate::LostProjectsAnswer,
+    ) -> Result<()> {
+        let _ = (fingerprint, answer);
+        Err(crate::Error::not_implemented("lost projects"))
+    }
+
     /// Restart the local router service when it is installed and running, so it
     /// runs the binary on disk (the last step of an update; `spb self-update
     /// restart-router` runs it for the Windows hand-off). `false` = nothing to

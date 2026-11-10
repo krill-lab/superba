@@ -45,6 +45,7 @@ mod guard;
 mod inventory;
 mod jsonscan;
 mod ledger;
+pub mod lost_projects;
 mod progress;
 mod rollout;
 mod sqlite;
