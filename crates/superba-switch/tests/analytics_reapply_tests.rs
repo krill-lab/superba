@@ -1,9 +1,12 @@
 //! User bug 137 after an upgrade: the profile store's one-time migration takes
 //! the old Krill preset `analytics.enabled = false` out of profiles, and the
-//! start-up recovery writes the applied profile once more, write-only, when
-//! Superba's `false` is still in `config.toml`. Nothing is restarted; when
-//! nothing needs it nothing is written; a failure is reported and retried once
-//! at the next start, then given up; the user's own value stays. Real config
+//! window's start writes the applied profile once more, write-only, when
+//! Superba's `false` is still in `config.toml` and nothing else would change.
+//! Nothing is restarted; when nothing needs it nothing is written; saved but
+//! unapplied edits are never written (a notice asks for one switch); a failure
+//! is reported with its own reason and retried once at the next start of the
+//! window, then given up; `spb`'s recovery never consumes it; the user's own
+//! value stays. Real config
 //! engine, profile store and env writer; app control is faked (the app runs).
 //! Remove after alpha.14+N with the migration.
 
@@ -116,6 +119,10 @@ impl Rig {
         ));
     }
 
+    fn auth(&self) -> Vec<u8> {
+        std::fs::read(self.codex.join("auth.json")).unwrap()
+    }
+
     fn config(&self) -> String {
         std::fs::read_to_string(self.codex.join("config.toml")).unwrap()
     }
@@ -138,15 +145,27 @@ impl Rig {
         None
     }
 
-    /// Superba starts: the GUI's (and `spb`'s) start-up recovery.
+    /// Superba's window starts: the start-up recovery, then the re-apply.
     async fn start(&self) -> Vec<(Severity, String)> {
-        let report = self.sw.recover().await.unwrap();
-        report
-            .notices
+        self.start_notes()
+            .await
             .iter()
-            .filter(|n| n.text.key.starts_with("switch.analytics."))
             .map(|n| (n.severity, n.text.key.clone()))
             .collect()
+    }
+
+    async fn start_notes(&self) -> Vec<superba_core::Notice> {
+        let report = self.sw.recover().await.unwrap();
+        assert!(
+            report
+                .notices
+                .iter()
+                .all(|n| !n.text.key.starts_with("switch.analytics.")),
+            "the recovery (also run by spb) does not re-apply"
+        );
+        let notes = self.sw.analytics_reapply().await.unwrap();
+        assert!(notes.len() <= 1, "{notes:?}");
+        notes
     }
 
     async fn owed(&self) -> Option<superba_core::AnalyticsReapply> {
@@ -165,20 +184,39 @@ impl Rig {
     }
 }
 
+/// `config.toml` without its `[analytics]` table and blank lines.
+fn without_analytics(config: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut in_analytics = false;
+    for line in config.lines() {
+        let t = line.trim();
+        if t.starts_with('[') {
+            in_analytics = t == "[analytics]";
+        }
+        if !in_analytics && !t.is_empty() {
+            out.push(line.to_owned());
+        }
+    }
+    out
+}
+
 #[tokio::test]
 async fn the_applied_profile_is_written_again_once_without_restarting_the_app() {
     let rig = Rig::old_superba(ORIGINAL, true).await;
     assert_eq!(rig.analytics(), Some(false), "{}", rig.config());
+    let before = rig.config();
+    let auth = rig.auth();
     let notes = rig.start().await;
     assert_eq!(
         notes,
         [(Severity::Info, "switch.analytics.reapplied".to_owned())]
     );
     assert_eq!(rig.analytics(), None, "{}", rig.config());
+    // Only the key went (its table with it): every other line, the line in
+    // use (base URLs) and auth.json are as they were.
+    assert_eq!(without_analytics(&before), without_analytics(&rig.config()));
     assert!(!rig.config().contains("analytics"), "{}", rig.config());
-    for kept in ["chatgpt_base_url", "[features]", "web_search"] {
-        assert!(rig.config().contains(kept), "{kept}: {}", rig.config());
-    }
+    assert_eq!(rig.auth(), auth, "auth.json byte for byte");
     // The running app was left alone: no restart, quit, launch or stop.
     let disruptive: Vec<_> = rig
         .app_calls()
@@ -222,10 +260,13 @@ async fn nothing_is_written_when_the_applied_profile_did_not_carry_the_preset() 
 async fn the_user_s_own_false_stays() {
     let rig = Rig::old_superba(USER_OFF, true).await;
     assert_eq!(rig.analytics(), Some(false));
-    let notes = rig.start().await;
-    assert!(notes.iter().all(|(s, _)| *s == Severity::Info), "{notes:?}");
-    assert_eq!(rig.analytics(), Some(false), "{}", rig.config());
+    let before = rig.config();
+    // Released to the user's own `false`: nothing visible changes, so no notice.
+    assert!(rig.start().await.is_empty());
+    assert_eq!(rig.config(), before);
     assert_eq!(rig.owed().await, None);
+    rig.apply_old("original").await;
+    assert_eq!(rig.config(), USER_OFF);
 }
 
 #[tokio::test]
@@ -271,5 +312,131 @@ async fn a_retry_that_works_clears_the_debt() {
         [(Severity::Info, "switch.analytics.reapplied".to_owned())]
     );
     assert_eq!(rig.analytics(), None, "{}", rig.config());
+    assert_eq!(rig.owed().await, None);
+}
+
+#[tokio::test]
+async fn saved_but_unapplied_edits_are_not_written_and_a_switch_is_asked_for() {
+    let rig = Rig::old_superba(ORIGINAL, true).await;
+    // The user saved an edit of the applied profile without applying it.
+    let mut set = rig.store.load().await.unwrap();
+    let work = set.profiles.iter_mut().find(|p| p.id == "work").unwrap();
+    work.codex_settings.set("web_search", "cached").unwrap();
+    rig.store.save(&set).await.unwrap();
+    let before = rig.config();
+    assert!(before.contains("web_search = \"live\""), "{before}");
+    let notes = rig.start().await;
+    assert_eq!(
+        notes,
+        [(Severity::Warning, "switch.analytics.switch_once".to_owned())]
+    );
+    assert_eq!(rig.config(), before, "nothing written");
+    assert_eq!(rig.owed().await, None, "asked once, not again");
+    assert!(rig.start().await.is_empty());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_failed_write_says_why() {
+    use std::os::unix::fs::PermissionsExt;
+    let rig = Rig::old_superba(ORIGINAL, true).await;
+    let before = rig.config();
+    let mode = |m| std::fs::set_permissions(&rig.codex, std::fs::Permissions::from_mode(m));
+    mode(0o555).unwrap();
+    if std::fs::write(rig.codex.join("probe"), b"").is_ok() {
+        mode(0o755).unwrap();
+        eprintln!("skipped: permissions are not enforced for this user");
+        return;
+    }
+    let notes = rig.start_notes().await;
+    mode(0o755).unwrap();
+    assert_eq!(notes.len(), 1, "{notes:?}");
+    assert_eq!(notes[0].severity, Severity::Danger);
+    assert_eq!(notes[0].text.key, "switch.analytics.reapply_retry");
+    let shown = notes[0].text.render_fallback();
+    assert!(!shown.contains("needs an answer"), "{shown}");
+    let reason = notes[0]
+        .text
+        .nested
+        .iter()
+        .find(|(name, _)| name == "reason")
+        .map(|(_, v)| v.render_fallback())
+        .unwrap_or_default();
+    eprintln!("reason: {reason}");
+    // The write's own error, not a generic one.
+    assert!(reason.contains("Permission denied"), "{reason}");
+    assert_eq!(rig.config(), before, "unchanged");
+    assert!(rig.owed().await.is_some_and(|o| o.failed_once));
+}
+
+#[tokio::test]
+async fn an_unreadable_state_keeps_the_debt_and_says_so() {
+    let rig = Rig::old_superba(ORIGINAL, true).await;
+    rig.sw.recover().await.unwrap();
+    // Superba's own state cannot be read: which profile is applied is unknown.
+    let state = rig.w.ctx.data_dir.state_json();
+    let saved = std::fs::read(&state).unwrap();
+    std::fs::write(&state, b"{ not json").unwrap();
+    let notes = rig.sw.analytics_reapply().await.unwrap();
+    let keys: Vec<_> = notes
+        .iter()
+        .map(|n| (n.severity, n.text.key.clone()))
+        .collect();
+    assert_eq!(
+        keys,
+        [(
+            Severity::Danger,
+            "switch.analytics.reapply_retry".to_owned()
+        )]
+    );
+    assert!(rig.owed().await.is_some_and(|o| o.failed_once), "kept");
+    assert_eq!(rig.analytics(), Some(false), "nothing written");
+    // Readable again: the retry at the next start works.
+    std::fs::write(&state, saved).unwrap();
+    assert_eq!(
+        rig.start().await,
+        [(Severity::Info, "switch.analytics.reapplied".to_owned())]
+    );
+    assert_eq!(rig.analytics(), None);
+}
+
+#[tokio::test]
+async fn a_value_the_user_changed_since_is_left_alone() {
+    let rig = Rig::old_superba(ORIGINAL, true).await;
+    let config = rig.config().replace("enabled = false", "enabled = true");
+    std::fs::write(rig.codex.join("config.toml"), &config).unwrap();
+    assert!(rig.start().await.is_empty());
+    assert_eq!(rig.config(), config);
+    assert_eq!(rig.owed().await, None);
+}
+
+#[tokio::test]
+async fn spb_s_recovery_does_not_consume_it() {
+    let rig = Rig::old_superba(ORIGINAL, true).await;
+    for _ in 0..3 {
+        let report = rig.sw.recover().await.unwrap();
+        assert!(
+            report
+                .notices
+                .iter()
+                .all(|n| !n.text.key.starts_with("switch.analytics."))
+        );
+    }
+    assert_eq!(rig.analytics(), Some(false));
+    assert!(rig.owed().await.is_some_and(|o| !o.failed_once));
+}
+
+#[tokio::test]
+async fn router_mode_asks_for_a_switch_instead() {
+    let rig = Rig::old_superba(ORIGINAL, true).await;
+    let mut set = rig.store.load().await.unwrap();
+    set.settings.router.enabled = true;
+    rig.store.save(&set).await.unwrap();
+    let before = rig.config();
+    assert_eq!(
+        rig.start().await,
+        [(Severity::Warning, "switch.analytics.switch_once".to_owned())]
+    );
+    assert_eq!(rig.config(), before, "nothing written");
     assert_eq!(rig.owed().await, None);
 }

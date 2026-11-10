@@ -325,7 +325,7 @@ not_ssh = "{host} ({kind}): the ChatGPT app does not reach it over SSH, so Super
 reapplied = "Superba applied {profile} again so it no longer switches OpenAI telemetry off (configuration only, nothing was restarted). After ChatGPT starts once with a connection to OpenAI, its interface keeps your language without a proxy."
 reapply_retry = "Superba could not apply {profile} again to stop switching OpenAI telemetry off: {reason} It tries once more at the next start; switching to the provider also fixes it."
 reapply_given_up = "Superba could not apply {profile} again to stop switching OpenAI telemetry off: {reason} It will not try again: switch to the provider once to fix it."
-question = "The switch needs an answer."
+switch_once = "Superba did not apply {profile} again on its own to stop switching OpenAI telemetry off: that would also change other things (saved changes not applied yet, or router mode). Switch to the provider once to apply it."
 
 [switch.models]
 service_tier_old_codex = "{consumer} runs Codex {version}, which reads only service_tier = \"fast\" or \"flex\"; Superba leaves out service_tier = \"{tier}\" so that this Codex can still load config.toml."

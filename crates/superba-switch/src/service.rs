@@ -1049,8 +1049,6 @@ impl Switcher {
         // After the lock is released: a model catalog file made for another
         // Codex version is checked (and the configuration repaired) here.
         report.notices.extend(self.catalog_startup_check().await);
-        // User bug 137: write the applied profile once more after the migration.
-        report.notices.extend(self.analytics_reapply().await);
         Ok(report)
     }
 

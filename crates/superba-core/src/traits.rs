@@ -1818,6 +1818,15 @@ pub trait SwitchService: Send + Sync {
     /// Recover interrupted switches (call once at start-up).
     async fn recover(&self) -> Result<RecoveryReport>;
 
+    /// Superba's window, once per start, after [`Self::recover`] (user bug 137;
+    /// remove after alpha.14+N): release the `analytics.enabled = false` an
+    /// earlier Superba wrote for the applied profile, write-only, when that is
+    /// the only change; otherwise say what to do. Notices for the user; `spb`
+    /// does not call it.
+    async fn analytics_reapply(&self) -> Result<Vec<crate::Notice>> {
+        Ok(Vec::new())
+    }
+
     /// Compute a plan; never writes.
     async fn plan(&self, request: SwitchRequest) -> Result<SwitchPlan>;
 

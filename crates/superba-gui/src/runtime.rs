@@ -814,7 +814,20 @@ async fn handle(
             let o = after_switches(switches, || service.overview()).await;
             out.send(Reply::Overview(o));
         }
-        Command::Recover => out.send(Reply::Recovered(service.recover().await)),
+        Command::Recover => {
+            let mut result = service.recover().await;
+            // Once per start of the window (user bug 137; remove after
+            // alpha.14+N): its notices show with the recovery's.
+            match service.analytics_reapply().await {
+                Ok(notes) => {
+                    if let Ok(report) = &mut result {
+                        report.notices.extend(notes);
+                    }
+                }
+                Err(e) => tracing::warn!(error = %e, "user bug 137 re-apply"),
+            }
+            out.send(Reply::Recovered(result))
+        }
         Command::RouterWatch => {
             let result = service.router_watch().await;
             let switched = matches!(
