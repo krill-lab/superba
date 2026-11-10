@@ -22,5 +22,5 @@ pub use lines::{
     LineToggle, applied_line, disable_and_switch, last_enabled, moved, ordered_lines,
     priority_text, reorder_action, route_text, toggle_action,
 };
-pub use profile::new_profile;
+pub use profile::{new_profile, telemetry_actions};
 pub use providers::{Provider, ProviderId, ProviderKind};

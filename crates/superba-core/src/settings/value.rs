@@ -395,6 +395,32 @@ impl CodexSettings {
         }
         s
     }
+
+    /// True when the profile switches OpenAI telemetry off: it writes
+    /// `analytics.enabled = false` ([`config_keys::ANALYTICS_ENABLED`]).
+    pub fn openai_telemetry_off(&self) -> bool {
+        matches!(
+            self.get(config_keys::ANALYTICS_ENABLED),
+            Some(SettingEntry::Set(SettingValue::Bool(false)))
+        )
+    }
+
+    /// "Disable OpenAI telemetry" (user bug 137): `true` writes
+    /// `analytics.enabled = false`; `false` stops managing the key, so the next
+    /// switch puts back the value it had before Superba wrote it (removed, or
+    /// the user's own). Off by default: with telemetry off the desktop app
+    /// does not cache its remote flags, and without a connection to OpenAI it
+    /// starts with the English UI.
+    pub fn set_openai_telemetry_off(&mut self, off: bool) {
+        if off {
+            self.insert_unchecked(
+                config_keys::ANALYTICS_ENABLED,
+                SettingEntry::Set(SettingValue::Bool(false)),
+            );
+        } else if self.openai_telemetry_off() {
+            self.forget(config_keys::ANALYTICS_ENABLED);
+        }
+    }
 }
 
 impl FromIterator<(String, SettingEntry)> for CodexSettings {

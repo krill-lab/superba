@@ -248,6 +248,12 @@ tip = "Codex compacts long conversations by asking the provider (a compaction_tr
 tip_check = "Last check {when} with {model}: {result}"
 unsupported_note = "This provider cannot compact Codex conversations. Codex has no setting that makes the provider Superba configures compact locally, so when a conversation fills its context window its compaction fails here: start a new conversation then, or use router mode together with a provider that compacts (the router sends compaction there and keeps the conversation with it)."
 
+# Connection tab: "Disable OpenAI telemetry" (user bug 137).
+[providers.telemetry]
+toggle = "Disable OpenAI telemetry"
+cost = "With telemetry off the app does not cache its remote settings, so without a connection to OpenAI (no proxy) its interface may be in English."
+tip = "Off by default. Switched on, Superba writes analytics.enabled = false to config.toml with this provider: Codex and the app send OpenAI no usage statistics, but the app then does not cache its remote settings, so without a connection to OpenAI (no proxy) its interface may be in English. Switched off again, the next switch puts back what was there before."
+
 [import_dialog]
 button = "Import {n}"
 current = "Current"

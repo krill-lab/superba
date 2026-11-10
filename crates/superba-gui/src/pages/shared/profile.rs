@@ -40,3 +40,32 @@ pub fn new_profile(site: &Site, name: String) -> Profile {
     }
     p
 }
+
+/// What flipping "Disable OpenAI telemetry" of `profile` asks for (user bug
+/// 137): save the profile with `analytics.enabled = false` written (`off`) or
+/// no longer managed, and, when Codex uses the profile now, the usual switch
+/// to it so the change reaches `config.toml` (the switch previews it first).
+/// Empty when nothing changes.
+pub fn telemetry_actions(
+    data: &crate::pages::Data,
+    profile: &Profile,
+    off: bool,
+) -> Vec<crate::pages::Action> {
+    if profile.codex_settings.openai_telemetry_off() == off {
+        return Vec::new();
+    }
+    let mut changed = profile.clone();
+    changed.codex_settings.set_openai_telemetry_off(off);
+    let mut out = vec![crate::pages::Action::SaveProfile {
+        profile: Box::new(changed),
+        key: None,
+    }];
+    if super::providers::applied_profile_id(data) == Some(&profile.id) {
+        out.push(crate::pages::Action::Switch {
+            profile: profile.id.clone(),
+            line: None,
+            auth: None,
+        });
+    }
+    out
+}
