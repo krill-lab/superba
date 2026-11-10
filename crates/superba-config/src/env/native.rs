@@ -135,21 +135,27 @@ impl NativeEnv for SystemNativeEnv {
     }
 }
 
-/// `launchctl getenv <var>` through `run` (exit success, stdout). An unset
-/// variable prints nothing; a non-zero exit also means "not set" (no value to
-/// report), so it never becomes an error that hides the default. Only failing
-/// to run launchctl at all is an error (user bug 129: the desktop's
-/// `CODEX_HOME` is read this way before every `open`).
+/// `launchctl getenv <var>` through `run` (exit success, stdout, stderr).
+/// Exit 0 with empty (or whitespace) output is "not set", which is what
+/// launchctl reports for an unset variable: the plan and inspect flows read
+/// unset launchd variables this way on every run. Any other failure (launchctl
+/// not running, a non-zero exit) is an error, never "not set": baseline
+/// captures and restores must not mistake an unread value for an absent one.
 #[cfg(any(target_os = "macos", test))]
 fn launchctl_getenv(
     var: &str,
-    run: impl FnOnce(&[&str]) -> std::io::Result<(bool, Vec<u8>)>,
+    run: impl FnOnce(&[&str]) -> std::io::Result<(bool, Vec<u8>, Vec<u8>)>,
 ) -> Result<Option<String>> {
-    let (ok, stdout) = run(&["getenv", var]).map_err(|e| Error::Process {
+    let (ok, stdout, stderr) = run(&["getenv", var]).map_err(|e| Error::Process {
         message: format!("launchctl getenv: {e}"),
     })?;
     if !ok {
-        return Ok(None);
+        return Err(Error::Process {
+            message: format!(
+                "launchctl getenv failed: {}",
+                String::from_utf8_lossy(&stderr).trim()
+            ),
+        });
     }
     let v = String::from_utf8_lossy(&stdout).trim().to_owned();
     Ok((!v.is_empty()).then_some(v))
@@ -186,7 +192,7 @@ mod macos {
             superba_core::process::command("/bin/launchctl")
                 .args(args)
                 .output()
-                .map(|out| (out.status.success(), out.stdout))
+                .map(|out| (out.status.success(), out.stdout, out.stderr))
         })
     }
 
@@ -282,34 +288,30 @@ mod tests {
 
     #[test]
     fn launchctl_getenv_reads_set_unset_and_failed_runs() {
-        let run = |ok: bool, out: &'static [u8]| {
+        let run = |ok: bool, out: &'static [u8], err: &'static [u8]| {
             move |args: &[&str]| {
                 assert_eq!(args, ["getenv", "CODEX_HOME"]);
-                Ok((ok, out.to_vec()))
+                Ok((ok, out.to_vec(), err.to_vec()))
             }
         };
         assert_eq!(
-            launchctl_getenv("CODEX_HOME", run(true, b"/Users/u/codex\n")).unwrap(),
+            launchctl_getenv("CODEX_HOME", run(true, b"/Users/u/codex\n", b"")).unwrap(),
             Some("/Users/u/codex".into())
         );
-        // Unset: empty output, whatever the exit status.
-        assert_eq!(
-            launchctl_getenv("CODEX_HOME", run(true, b"")).unwrap(),
-            None
-        );
-        assert_eq!(
-            launchctl_getenv("CODEX_HOME", run(true, b"\n")).unwrap(),
-            None
-        );
-        assert_eq!(
-            launchctl_getenv("CODEX_HOME", run(false, b"")).unwrap(),
-            None
-        );
-        assert_eq!(
-            launchctl_getenv("CODEX_HOME", run(false, b"/stale\n")).unwrap(),
-            None
-        );
-        // Only launchctl not running at all is an error.
+        // Unset: exit 0 with empty or whitespace output.
+        for out in [b"".as_slice(), b"\n", b"  \n"] {
+            assert_eq!(
+                launchctl_getenv("CODEX_HOME", run(true, out, b"")).unwrap(),
+                None
+            );
+        }
+        // A non-zero exit is an error, with or without output: an unread
+        // value must never pass for an unset one.
+        for out in [b"".as_slice(), b"/stale\n"] {
+            let error = launchctl_getenv("CODEX_HOME", run(false, out, b"boom\n")).unwrap_err();
+            assert!(error.to_string().contains("boom"), "{error}");
+        }
+        // So is launchctl not running at all.
         assert!(
             launchctl_getenv("CODEX_HOME", |_: &[&str]| Err(std::io::Error::from(
                 std::io::ErrorKind::NotFound
