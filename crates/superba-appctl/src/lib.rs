@@ -112,6 +112,7 @@ pub struct DesktopAppController {
     ctx: LocalContext,
     tunables: Tunables,
     caches: Arc<codexbin::Caches>,
+    session_env: SessionEnv,
 }
 
 /// An [`EnvSource`] view with overrides (`None` = removed), used to resolve paths
@@ -158,11 +159,12 @@ enum AppEnv {
     /// Linux and a directly started Windows exe: Superba's, with the launch's
     /// changes.
     Inherited,
-    /// macOS LaunchServices: only what `open --env` passes (the launch's
-    /// `env_set`), nothing of Superba's own environment.
+    /// macOS LaunchServices: the login session's (launchd) environment plus
+    /// what `open --env` passes (the launch's `env_set`; removals cannot be
+    /// passed), nothing of Superba's own.
     LaunchOnly,
-    /// Windows MSIX activation: nothing of the launch; the user's environment.
-    #[cfg_attr(not(windows), allow(dead_code))]
+    /// Windows MSIX activation: the user's environment (`HKCU\Environment`),
+    /// nothing of the launch.
     Activation,
 }
 
@@ -170,35 +172,84 @@ impl AppEnv {
     /// How [`launch::spawn`] will start `install`. Blocking on Windows (the
     /// package API).
     fn of(install: &AppInstall) -> Self {
-        if cfg!(target_os = "macos") {
-            return Self::LaunchOnly;
-        }
         #[cfg(windows)]
-        if appx::resolve_aumid(install).is_some() {
-            return Self::Activation;
+        let packaged = appx::resolve_aumid(install).is_some();
+        #[cfg(not(windows))]
+        let packaged = {
+            let _ = install;
+            false
+        };
+        Self::select(std::env::consts::OS, packaged)
+    }
+
+    /// [`AppEnv::of`] for `os` (`std::env::consts::OS`); `packaged` = the
+    /// install has an AUMID to activate.
+    fn select(os: &str, packaged: bool) -> Self {
+        match os {
+            "macos" => Self::LaunchOnly,
+            "windows" if packaged => Self::Activation,
+            _ => Self::Inherited,
         }
-        let _ = install;
-        Self::Inherited
+    }
+
+    /// Where the session environment this app starts with is kept, as
+    /// [`superba_core::EnvPersister::inspect`] reports it.
+    fn session_location(self) -> Option<superba_core::EnvLocation> {
+        match self {
+            Self::Inherited => None,
+            Self::LaunchOnly => Some(superba_core::EnvLocation::Launchctl),
+            Self::Activation => Some(superba_core::EnvLocation::WindowsUserEnv),
+        }
     }
 }
 
-/// The Codex home whose desktop state the started app reads (user bug 129):
-/// resolved from the environment the app actually gets, never from Superba's
-/// own where the app does not inherit it. `None` when the launch will be
-/// refused (an isolated home for an MSIX package).
+/// The Codex home whose desktop state the started app reads (user bug 129),
+/// resolved like the app does (`CODEX_HOME`, else `<home>/.codex`) from the
+/// environment it actually gets: Superba's own only where it is inherited,
+/// else `session_codex_home` (the login session's value) with what the launch
+/// passes. `None` when the launch will be refused (an isolated home for an
+/// MSIX package).
 fn launched_codex_home(
     app_env: AppEnv,
     base: Arc<dyn EnvSource>,
+    session_codex_home: Option<&str>,
     options: &LaunchOptions,
+    env_set: &BTreeMap<String, String>,
     app_home: &Path,
 ) -> Option<CodexHome> {
-    let empty: Arc<dyn EnvSource> = Arc::new(superba_core::MapEnv::new());
+    let mut session = superba_core::MapEnv::new();
+    if let Some(home) = session_codex_home {
+        session = session.with(superba_core::codex::ENV_CODEX_HOME, home);
+    }
     Some(match app_env {
         AppEnv::Inherited => CodexHome::resolve(&launch_overlay(base, options), app_home),
-        AppEnv::LaunchOnly => CodexHome::resolve(&launch_overlay(empty, options), app_home),
+        AppEnv::LaunchOnly => CodexHome::resolve(
+            &OverlayEnv {
+                base: Arc::new(session),
+                overrides: env_set
+                    .iter()
+                    .map(|(k, v)| (k.clone(), Some(v.clone())))
+                    .collect(),
+            },
+            app_home,
+        ),
         AppEnv::Activation if options.home_override.is_some() => return None,
-        AppEnv::Activation => CodexHome::resolve(empty.as_ref(), app_home),
+        AppEnv::Activation => CodexHome::resolve(&session, app_home),
     })
+}
+
+/// Reads the login session's environment (launchd, `HKCU\Environment`).
+#[derive(Clone, Default)]
+struct SessionEnv(Option<Arc<dyn superba_core::EnvPersister>>);
+
+impl std::fmt::Debug for SessionEnv {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(if self.0.is_some() {
+            "SessionEnv(set)"
+        } else {
+            "SessionEnv(none)"
+        })
+    }
 }
 
 fn blocking_err(e: tokio::task::JoinError) -> Error {
@@ -253,7 +304,55 @@ impl DesktopAppController {
             ctx,
             tunables: Tunables::default(),
             caches: Arc::new(codexbin::Caches::default()),
+            session_env: SessionEnv::default(),
         }
+    }
+
+    /// The reader of the login session's environment, which an app started by
+    /// LaunchServices or MSIX activation gets instead of Superba's. Without
+    /// one such launches do not seed the onboarding flag (user bug 129).
+    pub fn with_session_env(mut self, persister: Arc<dyn superba_core::EnvPersister>) -> Self {
+        self.session_env = SessionEnv(Some(persister));
+        self
+    }
+
+    /// The Codex home the app started with `options` and `env_set` will read
+    /// its desktop state from; `None` when unknown or the launch is refused.
+    async fn launched_codex_home(
+        &self,
+        app_env: AppEnv,
+        options: &LaunchOptions,
+        env_set: &BTreeMap<String, String>,
+        app_home: &Path,
+    ) -> Option<CodexHome> {
+        let mut session = None;
+        if let Some(location) = app_env.session_location() {
+            let Some(persister) = &self.session_env.0 else {
+                tracing::debug!("no session environment reader; onboarding state not seeded");
+                return None;
+            };
+            let report = match persister.inspect(superba_core::codex::ENV_CODEX_HOME).await {
+                Ok(report) => report,
+                Err(error) => {
+                    tracing::warn!(%error, "could not read the session's CODEX_HOME; onboarding state not seeded");
+                    return None;
+                }
+            };
+            session = report
+                .persisted
+                .into_iter()
+                .find(|p| p.location == location)
+                .and_then(|p| p.value)
+                .filter(|v| !v.is_empty());
+        }
+        launched_codex_home(
+            app_env,
+            self.ctx.env.clone(),
+            session.as_deref(),
+            options,
+            env_set,
+            app_home,
+        )
     }
 
     /// Replace the tunables.
@@ -752,18 +851,23 @@ impl AppController for DesktopAppController {
             env = ?spec.env_set.keys().collect::<Vec<_>>(),
             "launching the desktop app"
         );
+        // The home whose onboarding flag the app will read (user bug 129).
+        let probe_install = install.clone();
+        let app_env = tokio::task::spawn_blocking(move || AppEnv::of(&probe_install))
+            .await
+            .map_err(blocking_err)?;
+        let seed_home = self
+            .launched_codex_home(app_env, options, &spec.env_set, &app_home)
+            .await;
         let spawn_spec = spec.clone();
         let spawn_install = install.clone();
         let log = self.launch_log_path();
-        let base_env = self.ctx.env.clone();
-        let seed_options = options.clone();
         // LaunchServices may take several seconds to expose the new main pid.
         let spawned = tokio::task::spawn_blocking(move || {
             // After the running-instance check, before any platform starts the
             // app (user bug 129). Never fails the launch; see `onboarding`.
-            let app_env = AppEnv::of(&spawn_install);
-            if let Some(home) = launched_codex_home(app_env, base_env, &seed_options, &app_home) {
-                onboarding::seed(&home);
+            if let Some(home) = &seed_home {
+                onboarding::seed(home);
             }
             launch::spawn(&spawn_spec, &spawn_install, Some(&log))
         })
@@ -1352,49 +1456,212 @@ impl DesktopAppController {
 mod tests {
     use super::*;
 
-    /// User bug 129: the onboarding flag goes to the home the app will read,
-    /// which for LaunchServices and MSIX activation is not Superba's own
-    /// `CODEX_HOME`.
     #[test]
-    fn launched_codex_home_follows_what_the_app_environment_gets() {
-        let base: Arc<dyn EnvSource> = Arc::new(
-            superba_core::MapEnv::new()
-                .with("CODEX_HOME", "/superba-only")
-                .with("HOME", "/home/u"),
-        );
-        let app_home = Path::new("/home/u");
-        let root = |env, options: &LaunchOptions, home: &Path| {
-            launched_codex_home(env, base.clone(), options, home).map(|h| h.root().to_path_buf())
+    fn app_env_follows_how_spawn_starts_each_platform() {
+        assert_eq!(AppEnv::select("linux", false), AppEnv::Inherited);
+        assert_eq!(AppEnv::select("macos", false), AppEnv::LaunchOnly);
+        assert_eq!(AppEnv::select("windows", true), AppEnv::Activation);
+        // A Windows install without an AUMID is started directly.
+        assert_eq!(AppEnv::select("windows", false), AppEnv::Inherited);
+        // Not an MSIX family name, so no AUMID on any platform.
+        let install = AppInstall {
+            id: "path:/opt/chatgpt".into(),
+            variant: superba_core::AppVariant::ChatGpt,
+            path: PathBuf::from("/opt/chatgpt"),
+            executable: PathBuf::from("/opt/chatgpt/ChatGPT"),
+            app_version: None,
+            bundled_codex: None,
+            bundled_codex_version: None,
         };
-        let plain = LaunchOptions::default();
-        let user = Some(PathBuf::from("/home/u/.codex"));
         assert_eq!(
-            root(AppEnv::Inherited, &plain, app_home),
-            Some(PathBuf::from("/superba-only"))
+            AppEnv::of(&install),
+            AppEnv::select(std::env::consts::OS, false)
         );
-        assert_eq!(root(AppEnv::LaunchOnly, &plain, app_home), user);
-        assert_eq!(root(AppEnv::Activation, &plain, app_home), user);
+    }
 
-        // A CODEX_HOME the launch passes reaches `open --env`, not activation.
-        let mut passed = LaunchOptions::default();
-        passed.env.insert("CODEX_HOME".into(), "/passed".into());
-        for env in [AppEnv::Inherited, AppEnv::LaunchOnly] {
-            assert_eq!(root(env, &passed, app_home), Some(PathBuf::from("/passed")));
+    /// The login session's environment, as `EnvPersister::inspect` reports it.
+    struct FakeSession {
+        persisted: Vec<superba_core::PersistedValue>,
+        fail: bool,
+    }
+
+    impl FakeSession {
+        fn with(location: superba_core::EnvLocation, codex_home: Option<&str>) -> Arc<Self> {
+            Arc::new(Self {
+                persisted: vec![superba_core::PersistedValue {
+                    location,
+                    value: codex_home.map(str::to_owned),
+                    managed: false,
+                }],
+                fail: false,
+            })
         }
-        assert_eq!(root(AppEnv::Activation, &passed, app_home), user);
+    }
 
-        // An isolated home removes the inherited CODEX_HOME; MSIX refuses it.
+    #[async_trait]
+    impl superba_core::EnvPersister for FakeSession {
+        async fn inspect(&self, var: &str) -> Result<superba_core::EnvReport> {
+            assert_eq!(var, "CODEX_HOME");
+            if self.fail {
+                return Err(Error::other("unreadable"));
+            }
+            Ok(superba_core::EnvReport {
+                var: var.into(),
+                persisted: self.persisted.clone(),
+                legacy_lines: Vec::new(),
+                foreign_lines: Vec::new(),
+                process_value: superba_core::EnvObservation::Present("/superba-only".into()),
+                superba_value: None,
+            })
+        }
+        async fn plan(&self, _: &str, _: superba_core::EnvOp) -> Result<superba_core::EnvPlan> {
+            unreachable!()
+        }
+        async fn apply(&self, _: &superba_core::EnvPlan) -> Result<superba_core::EnvApplied> {
+            unreachable!()
+        }
+        async fn revert(&self, _: &superba_core::EnvApplied) -> Result<()> {
+            unreachable!()
+        }
+    }
+
+    /// User bug 129: the onboarding flag goes to the home the app will read.
+    /// Superba's own `CODEX_HOME` reaches only an app that inherits it;
+    /// LaunchServices and MSIX activation start the app with the login
+    /// session's (launchd / `HKCU\Environment`) value instead.
+    #[tokio::test]
+    async fn launched_codex_home_reads_the_session_env_the_app_starts_with() {
+        use superba_core::EnvLocation::{Launchctl, WindowsUserEnv};
+        let tmp = tempfile::tempdir().unwrap();
+        let mut ctx = LocalContext::for_tests(tmp.path());
+        ctx.env = Arc::new(superba_core::MapEnv::new().with("CODEX_HOME", "/superba-only"));
+        let plain = DesktopAppController::new(ctx);
+        let user = Path::new("/home/u");
+        let p = |s: &str| Some(PathBuf::from(s));
+        let none = BTreeMap::new();
+        let passed = BTreeMap::from([("CODEX_HOME".to_owned(), "/passed".to_owned())]);
+        let options = LaunchOptions::default();
+        let options_passed = LaunchOptions {
+            env: passed.clone(),
+            ..LaunchOptions::default()
+        };
+        let removed = LaunchOptions {
+            env_remove: vec!["CODEX_HOME".into()],
+            ..LaunchOptions::default()
+        };
         let isolated = LaunchOptions {
             home_override: Some(PathBuf::from("/iso")),
             ..LaunchOptions::default()
         };
-        for env in [AppEnv::Inherited, AppEnv::LaunchOnly] {
-            assert_eq!(
-                root(env, &isolated, Path::new("/iso")),
-                Some(PathBuf::from("/iso/.codex"))
-            );
+        async fn root(
+            c: &DesktopAppController,
+            env: AppEnv,
+            o: &LaunchOptions,
+            set: &BTreeMap<String, String>,
+            home: &Path,
+        ) -> Option<PathBuf> {
+            c.launched_codex_home(env, o, set, home)
+                .await
+                .map(|h| h.root().to_path_buf())
         }
-        assert_eq!(root(AppEnv::Activation, &isolated, Path::new("/iso")), None);
+
+        // Inherited: Superba's environment with the launch's changes; no
+        // session reader needed.
+        let i = AppEnv::Inherited;
+        assert_eq!(
+            root(&plain, i, &options, &none, user).await,
+            p("/superba-only")
+        );
+        assert_eq!(
+            root(&plain, i, &options_passed, &passed, user).await,
+            p("/passed")
+        );
+        assert_eq!(
+            root(&plain, i, &removed, &none, user).await,
+            p("/home/u/.codex")
+        );
+        // Without a session reader, non-inheriting launches seed nothing.
+        for env in [AppEnv::LaunchOnly, AppEnv::Activation] {
+            assert_eq!(root(&plain, env, &options, &none, user).await, None);
+        }
+
+        for (env, location) in [
+            (AppEnv::LaunchOnly, Launchctl),
+            (AppEnv::Activation, WindowsUserEnv),
+        ] {
+            let set = plain
+                .clone()
+                .with_session_env(FakeSession::with(location.clone(), Some("/session")));
+            let unset = plain
+                .clone()
+                .with_session_env(FakeSession::with(location.clone(), None));
+            // The session's value, never Superba's own.
+            assert_eq!(root(&set, env, &options, &none, user).await, p("/session"));
+            assert_eq!(
+                root(&unset, env, &options, &none, user).await,
+                p("/home/u/.codex")
+            );
+            // The other platform's location does not count.
+            let other = if location == Launchctl {
+                WindowsUserEnv
+            } else {
+                Launchctl
+            };
+            let elsewhere = plain
+                .clone()
+                .with_session_env(FakeSession::with(other, Some("/elsewhere")));
+            assert_eq!(
+                root(&elsewhere, env, &options, &none, user).await,
+                p("/home/u/.codex")
+            );
+            // An unreadable session environment: no seed rather than a guess.
+            let failing = plain.clone().with_session_env(Arc::new(FakeSession {
+                persisted: Vec::new(),
+                fail: true,
+            }));
+            assert_eq!(root(&failing, env, &options, &none, user).await, None);
+        }
+
+        let launch_only = |location| {
+            plain
+                .clone()
+                .with_session_env(FakeSession::with(location, Some("/session")))
+        };
+        let mac = launch_only(Launchctl);
+        let l = AppEnv::LaunchOnly;
+        // `open --env` values win over the session's ...
+        assert_eq!(
+            root(&mac, l, &options_passed, &passed, user).await,
+            p("/passed")
+        );
+        // ... but a removal cannot be passed, so the session's value stays.
+        assert_eq!(root(&mac, l, &removed, &none, user).await, p("/session"));
+        // An isolated home: the app's home moves, the session's CODEX_HOME stays.
+        let iso_set = BTreeMap::from([("HOME".to_owned(), "/iso".to_owned())]);
+        assert_eq!(
+            root(&mac, l, &isolated, &iso_set, Path::new("/iso")).await,
+            p("/session")
+        );
+        let mac_unset = plain
+            .clone()
+            .with_session_env(FakeSession::with(Launchctl, None));
+        assert_eq!(
+            root(&mac_unset, l, &isolated, &iso_set, Path::new("/iso")).await,
+            p("/iso/.codex")
+        );
+
+        let win = launch_only(WindowsUserEnv);
+        let a = AppEnv::Activation;
+        // Activation passes nothing of the launch.
+        assert_eq!(
+            root(&win, a, &options_passed, &passed, user).await,
+            p("/session")
+        );
+        // MSIX refuses an isolated home: nothing is seeded.
+        assert_eq!(
+            root(&win, a, &isolated, &iso_set, Path::new("/iso")).await,
+            None
+        );
     }
 
     #[test]
