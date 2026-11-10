@@ -275,6 +275,7 @@ pub struct AppHarness {
     pub service: Arc<FakeService>,
     /// The window is on screen (eframe runs only `logic` while it is not).
     visible: bool,
+    minimized: bool,
     /// The next frame carries a close request (the title bar's close button).
     close_next: bool,
     /// Viewport commands the app sent (CancelClose, Visible, Close, ...).
@@ -311,6 +312,7 @@ impl AppHarness {
             pending: VecDeque::new(),
             service,
             visible: true,
+            minimized: false,
             close_next: false,
             commands: Vec::new(),
             copied: Vec::new(),
@@ -325,6 +327,40 @@ impl AppHarness {
     /// The window is on screen.
     pub fn visible(&self) -> bool {
         self.visible
+    }
+
+    /// Minimize the window; like eframe, subsequent passes run only logic.
+    pub fn minimize(&mut self) {
+        self.minimized = true;
+    }
+
+    /// Run eframe's hidden-window path without an egui UI pass.
+    pub fn logic_only(&mut self) {
+        assert!(!self.visible || self.minimized);
+        let input = egui::RawInput {
+            viewports: std::iter::once((
+                egui::ViewportId::ROOT,
+                egui::ViewportInfo {
+                    minimized: Some(self.minimized),
+                    occluded: Some(!self.visible),
+                    ..Default::default()
+                },
+            ))
+            .collect(),
+            ..Default::default()
+        };
+        let (app, frame) = (&mut self.app, &mut self.frame);
+        let output = self
+            .ctx
+            .run_logic(&input, |ctx| eframe::App::logic(app, ctx, frame));
+        if let Some(commands) = output.viewport_commands.get(&egui::ViewportId::ROOT) {
+            for command in commands {
+                if let egui::ViewportCommand::Visible(v) = command {
+                    self.visible = *v;
+                }
+                self.commands.push(command.clone());
+            }
+        }
     }
 
     /// Viewport commands since the last call.
@@ -351,7 +387,7 @@ impl AppHarness {
         // A hidden window reads as occluded (what eframe sees on X11 and
         // macOS): only `logic` runs then.
         let mut info = egui::ViewportInfo {
-            minimized: Some(false),
+            minimized: Some(self.minimized),
             occluded: Some(!self.visible),
             ..Default::default()
         };
@@ -364,7 +400,11 @@ impl AppHarness {
             viewports: std::iter::once((egui::ViewportId::ROOT, info)).collect(),
             ..Default::default()
         };
-        let (app, frame, visible) = (&mut self.app, &mut self.frame, self.visible);
+        let (app, frame, visible) = (
+            &mut self.app,
+            &mut self.frame,
+            self.visible && !self.minimized,
+        );
         // Like eframe: `logic` every pass, `ui` only while the window shows.
         let output = self.ctx.run_ui(input, |ui| {
             eframe::App::logic(app, ui.ctx(), frame);

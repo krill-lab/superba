@@ -414,6 +414,53 @@ fn a_unix_second_stage_only_waits_and_relaunches_and_keeps_an_earlier_problem() 
 }
 
 #[test]
+fn a_macos_wait_timeout_keeps_the_replaced_bundle_installed_until_restart() {
+    let w = World::new();
+    record::update(&w.state(), Timestamp::now(), |a| a.stage = Stage::Installed);
+    let args = FinishArgs {
+        msi: None,
+        restart_router: false,
+        relaunch: None,
+        open_app: Some("/Applications/Superba.app".into()),
+        ..w.args()
+    };
+    let host = Script {
+        alive_polls: Cell::new(u32::MAX),
+        ..Script::default()
+    };
+    assert!(run_with(&args, &host, Duration::from_secs(60)).is_err());
+    assert!(host.runs.borrow().is_empty());
+    assert!(
+        host.starts.borrow().is_empty(),
+        "do not open the still-running old app"
+    );
+    assert_eq!(w.attempt().stage, Stage::RestartPending);
+    let problem = w
+        .updater("0.1.0")
+        .view()
+        .problem
+        .expect("restart is pending");
+    assert!(
+        problem.installed,
+        "the macOS bundle was replaced before handoff"
+    );
+    assert_eq!(
+        Catalog::new(Locale::En).text(&problem.reason),
+        "Superba 0.2.0 was installed, but the old app did not quit within 60 s. Quit Superba and open it again to use the new version."
+    );
+    assert_eq!(
+        Catalog::new(Locale::ZhCn).text(&problem.reason),
+        "Superba 0.2.0 已安装，但旧进程未能在 60 秒内退出。请退出 Superba 后重新打开，以使用新版本。"
+    );
+    assert!(!w.log_text().contains("nothing was installed"));
+    assert!(
+        w.updater("0.2.0").view().problem.is_none(),
+        "restarting resolves the notice"
+    );
+    assert!(w.updater("0.3.0").view().problem.is_none());
+}
+
+#[test]
 fn the_next_start_tells_when_the_old_version_still_runs_or_the_attempt_never_finished() {
     let w = World::new();
     record::update(&w.state(), Timestamp::now(), |a| a.stage = Stage::Done);
@@ -443,6 +490,36 @@ fn the_next_start_tells_when_the_old_version_still_runs_or_the_attempt_never_fin
     for stage in [Stage::Installed, Stage::Manual] {
         record::update(&w.state(), Timestamp::now(), |a| a.stage = stage);
         assert_eq!(w.updater("0.1.0").with_now(later).view().problem, None);
+    }
+}
+
+#[test]
+fn failed_and_unfinished_attempts_only_describe_the_version_that_started_them() {
+    let now = Timestamp::now();
+    for stage in [Stage::Failed, Stage::Running, Stage::Handoff] {
+        let attempt = Attempt {
+            stage,
+            problem: Some(record::wait_timeout_reason(
+                "0.1.1-alpha.11",
+                Duration::from_secs(60),
+            )),
+            ..Attempt::new(
+                "0.1.1-alpha.10",
+                "0.1.1-alpha.11",
+                Path::new("selfupdate.log"),
+                now,
+            )
+        };
+        let later = now.saturating_add(record::STALE);
+        let current = |v| superba_versions::selfupdate::version::parse_version(v).unwrap();
+        assert!(attempt.problem(&current("0.1.1-alpha.10"), later).is_some());
+        for version in ["0.1.1-alpha.11", "0.1.1-alpha.12", "0.1.1-alpha.9"] {
+            assert_eq!(
+                attempt.problem(&current(version), later),
+                None,
+                "{stage:?}: {version}"
+            );
+        }
     }
 }
 
@@ -498,6 +575,7 @@ fn every_msiexec_code_has_a_meaning_in_both_languages() {
         "selfupdate.problem.unfinished",
         "selfupdate.problem.error",
         "selfupdate.problem.wait_timeout",
+        "selfupdate.problem.app_restart_pending",
         "selfupdate.problem.msiexec_start",
         "selfupdate.problem.msiexec",
         "selfupdate.problem.restart_pending",

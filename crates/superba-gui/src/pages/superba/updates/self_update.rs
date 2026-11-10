@@ -188,7 +188,7 @@ pub fn problem_text(tr: &Tr, problem: &SelfUpdateProblem, reason: &str) -> Probl
     }
 }
 
-/// The last attempt's problem on the page (it stays until the next attempt).
+/// The last attempt's problem on the page, while it is relevant to this version.
 fn problem_callout(ui: &mut Ui, cx: &Cx<'_>, problem: &SelfUpdateProblem, out: &mut Vec<Action>) {
     let text = problem_text(cx.tr, problem, &cx.localize(&problem.reason));
     callout(
@@ -269,13 +269,13 @@ impl SelfState {
     }
 
     /// Collect a finished install; returns the toast to show.
-    pub fn poll(&mut self, cx: &Cx<'_>, out: &mut Vec<Action>) -> Option<(Status, String)> {
+    pub fn poll(&mut self, tr: &Tr, out: &mut Vec<Action>) -> Option<(Status, String)> {
         let done = self.install.as_ref()?.poll()?;
         self.install = None;
         self.control = None;
         if matches!(done, Err(superba_core::Error::Cancelled)) {
             self.result = None;
-            return Some((Status::Idle, cx.tr.t("updates.win.cancelled")));
+            return Some((Status::Idle, tr.t("updates.win.cancelled")));
         }
         let toast = match &done {
             Ok(report) => {
@@ -284,15 +284,15 @@ impl SelfState {
                 }
                 Some((
                     Status::Ok,
-                    cx.tr.f(
+                    tr.f(
                         "updates.superba.installed_toast",
                         &[("version", &report.version)],
                     ),
                 ))
             }
-            Err(e) => Some((Status::Error, error_text(cx.tr, e))),
+            Err(e) => Some((Status::Error, error_text(tr, e))),
         };
-        self.result = Some(done.map_err(|e| error_text(cx.tr, &e)));
+        self.result = Some(done.map_err(|e| error_text(tr, &e)));
         toast
     }
 }

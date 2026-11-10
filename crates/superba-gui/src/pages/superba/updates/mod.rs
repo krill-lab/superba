@@ -364,7 +364,7 @@ impl State {
         self.poll(cx);
         self.windows.poll(cx);
         self.load(cx);
-        if let Some(toast) = self.superba.poll(cx, out) {
+        if let Some(toast) = self.superba.poll(cx.tr, out) {
             self.toasts.push(toast);
         }
         for (status, text) in self.toasts.drain(..) {

@@ -53,7 +53,8 @@ pub struct List {
 pub struct Cleanup {
     /// Backup of the replaced macOS bundle.
     pub path: std::path::PathBuf,
-    /// Version that must be running before it is removed.
+    /// Version installed by the update. Its backup can go once this version
+    /// runs or a manual install supersedes the attempt.
     pub version: String,
 }
 

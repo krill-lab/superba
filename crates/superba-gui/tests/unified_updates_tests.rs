@@ -355,6 +355,106 @@ fn skipped_self_update_and_failure_are_distinct() {
     });
 }
 #[test]
+fn an_old_self_update_failure_cannot_override_current_or_unavailable_rows() {
+    let (service, mut data, mut state, tools) = prepared();
+    for (status, skipped, no_package, expected) in [
+        (
+            SelfUpdateStatus::UpToDate,
+            false,
+            false,
+            UpdateStatus::Current,
+        ),
+        (
+            SelfUpdateStatus::Available,
+            true,
+            false,
+            UpdateStatus::Skipped,
+        ),
+        (
+            SelfUpdateStatus::Available,
+            false,
+            true,
+            UpdateStatus::Blocked,
+        ),
+        (
+            SelfUpdateStatus::OnlineChecksOff,
+            false,
+            false,
+            UpdateStatus::Unknown,
+        ),
+        (
+            SelfUpdateStatus::CheckFailed,
+            false,
+            false,
+            UpdateStatus::Unknown,
+        ),
+        (
+            SelfUpdateStatus::Available,
+            false,
+            false,
+            UpdateStatus::Failed,
+        ),
+    ] {
+        data.selfupdate.finish(Ok(SelfUpdateView {
+            current: "0.1.1-alpha.12".into(),
+            status,
+            skipped: skipped.then(|| "0.1.1-alpha.12".into()),
+            no_package,
+            latest: Some(superba_core::SelfRelease {
+                tag: "v0.1.1-alpha.12".into(),
+                version: "0.1.1-alpha.12".into(),
+                prerelease: true,
+                notes: String::new(),
+                published_at: None,
+                url: "https://example.com/release".into(),
+                asset: Some("package.tar.gz".into()),
+                asset_size: None,
+            }),
+            problem: Some(superba_core::SelfUpdateProblem {
+                version: "0.1.1-alpha.11".into(),
+                at: superba_core::Timestamp::now(),
+                installed: false,
+                reason: superba_core::LocalizedText::new(
+                    "selfupdate.problem.failed",
+                    "The update to {version} failed.",
+                )
+                .arg("version", "0.1.1-alpha.11"),
+                log: "selfupdate.log".into(),
+                seen: true,
+            }),
+            ..Default::default()
+        }));
+        for result in [None, Some(Err("an earlier install failed".into()))] {
+            state.superba.result = result;
+            with_cx(&data, &service, Locale::En, |cx| {
+                let row = items::inventory(cx, &state, &tools.view(cx)).remove(0);
+                assert_eq!(
+                    row.status, expected,
+                    "{status:?}, skipped={skipped}, no_package={no_package}"
+                );
+                let count = u32::from(row.status.actionable());
+                assert_eq!(count, u32::from(expected == UpdateStatus::Failed));
+                let badge_data = Data {
+                    update_inventory_count: Some(count),
+                    ..Default::default()
+                };
+                let badges = superba_gui::app::shell_badges(cx.tr, &badge_data);
+                assert_eq!(
+                    badges
+                        .iter()
+                        .any(|(page, _, _)| *page == Page::Superba(SuperbaSection::Home)),
+                    count > 0
+                );
+                if expected == UpdateStatus::Current {
+                    assert!(row.operation.is_none());
+                    assert!(!row.description.contains("failed"));
+                }
+            });
+        }
+    }
+}
+
+#[test]
 fn a_running_preview_newer_than_the_latest_release_shows_no_arrow() {
     let (service, mut data, state, tools) = prepared();
     data.selfupdate.finish(Ok(SelfUpdateView {

@@ -295,7 +295,7 @@ pub fn inventory(cx: &Cx<'_>, state: &State, tools: &ToolsView) -> Vec<Entry> {
         }
         if let Some(problem) = &v.problem
             && !problem.installed
-            && !v.no_package
+            && own_row.status == UpdateStatus::Available
             && state.superba.result.is_none()
         {
             own_row.status = UpdateStatus::Failed;
@@ -303,11 +303,8 @@ pub fn inventory(cx: &Cx<'_>, state: &State, tools: &ToolsView) -> Vec<Entry> {
             own_row.operation = v.latest.as_ref().map(|_| Operation::SelfUpdate);
         }
     }
-    own_row.failure(state.superba.result.as_ref().and_then(|r| r.as_ref().err()));
-    if own_row.status == UpdateStatus::Failed
-        && own.is_some_and(|v| v.latest.is_some() && !v.no_package)
-    {
-        own_row.operation = Some(Operation::SelfUpdate);
+    if own_row.status == UpdateStatus::Available {
+        own_row.failure(state.superba.result.as_ref().and_then(|r| r.as_ref().err()));
     }
     if state.superba.busy() {
         own_row.description = control_description(cx, state.superba.control.as_deref());

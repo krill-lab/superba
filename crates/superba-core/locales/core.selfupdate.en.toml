@@ -15,6 +15,7 @@ not_applied = "The installer reported success, but this is still Superba {curren
 unfinished = "The update to {version} did not finish."
 error = "{detail}"
 wait_timeout = "Superba did not quit within {secs} s, so the update to {version} was not installed."
+app_restart_pending = "Superba {version} was installed, but the old app did not quit within {secs} s. Quit Superba and open it again to use the new version."
 msiexec_start = "The installer (msiexec) could not be started: {error}"
 msiexec = "The installer (msiexec) ended with code {code}: {meaning}"
 restart_pending = "The update was installed; Windows must restart to finish it."
