@@ -734,7 +734,7 @@ impl Switcher {
             None
         };
         let (endpoints, line_id) = match base {
-            Some(b) => (ResolvedEndpoints::for_base_url(&b)?, None),
+            Some(b) => (ResolvedEndpoints::for_site_base_url(&site, &b)?, None),
             None => {
                 let line = profile
                     .enabled_line_ids(&site)

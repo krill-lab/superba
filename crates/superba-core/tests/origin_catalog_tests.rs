@@ -47,9 +47,6 @@ fn origins_reject_paths_queries_fragments_credentials_and_remote_http() {
         "https://user:password@api.example.com",
         "https://:password@api.example.com",
         "ftp://api.example.com",
-        "http://api.example.com",
-        "http://203.0.113.10:8080",
-        "http://localhost.example.com",
         "api.example.com",
         "",
     ] {
@@ -77,7 +74,9 @@ fn http_is_allowed_for_loopback_hosts() {
 
 #[test]
 fn http_rejects_dns_names_that_merely_begin_with_127() {
-    assert!(Origin::parse("http://127.attacker.example:8080").is_err());
+    let origin = Origin::parse("http://127.attacker.example:8080").unwrap();
+    assert!(!origin.is_loopback());
+    assert!(superba_core::ResolvedEndpoints::for_base_url(origin.url()).is_err());
     assert!(
         !Origin::parse("https://127.attacker.example")
             .unwrap()
@@ -353,4 +352,26 @@ fn each_legacy_krill_origin_maps_to_its_own_line() {
             &superba_core::Origin::parse("https://api-slb.krill-code.net").unwrap()
         )
     );
+}
+
+#[test]
+fn parsing_http_does_not_authorize_keys_or_builtin_lines() {
+    for input in [
+        "http://api.example.com",
+        "http://203.0.113.10:8080",
+        "http://localhost.example.com",
+    ] {
+        let origin = Origin::parse(input).unwrap();
+        assert!(superba_core::ResolvedEndpoints::for_base_url(origin.url()).is_err());
+        for mode in [AuthMode::ApiKey, AuthMode::Pat] {
+            assert!(
+                superba_core::ResolvedEndpoints::for_line(
+                    &origin,
+                    CodexPath::BackendApiCodex,
+                    mode
+                )
+                .is_err()
+            );
+        }
+    }
 }

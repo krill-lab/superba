@@ -222,6 +222,14 @@ impl AnthropicEndpoint {
     /// Check a typed base URL: http(s), no query or fragment, no `/v1/messages`
     /// suffix (Claude Code adds it), plain http only on loopback.
     pub fn parse_base(input: &str) -> std::result::Result<Url, &'static str> {
+        Self::parse_base_for_site(input, None)
+    }
+
+    /// Parse a provider endpoint with the owning site's HTTP consent.
+    pub fn parse_base_for_site(
+        input: &str,
+        site: Option<&crate::Site>,
+    ) -> std::result::Result<Url, &'static str> {
         let t = input.trim();
         if t.is_empty() {
             return Err("claude.endpoint.invalid.empty");
@@ -235,13 +243,17 @@ impl AnthropicEndpoint {
                     Some(url::Host::Ipv4(ip)) if ip.is_loopback()
                 ) || matches!(url.host(), Some(url::Host::Ipv6(ip)) if ip.is_loopback())
                     || url.host_str() == Some("localhost");
-                if !loopback {
+                if !loopback && !site.is_some_and(|s| s.allows_plain_http_for(&url)) {
                     return Err("claude.endpoint.invalid.http");
                 }
             }
             _ => return Err("claude.endpoint.invalid.url"),
         }
-        if url.query().is_some() || url.fragment().is_some() {
+        if !url.username().is_empty()
+            || url.password().is_some()
+            || url.query().is_some()
+            || url.fragment().is_some()
+        {
             return Err("claude.endpoint.invalid.query");
         }
         let path = url.path().trim_end_matches('/');

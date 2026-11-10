@@ -199,26 +199,36 @@ fn base_url(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, p: &Provider) {
             .is_some_and(|(id, _)| id == &site.id);
         if !editing {
             state.base_url = Some((site.id.clone(), saved.clone()));
+            state.allow_plain_http = site.allow_plain_http;
         }
         let buffer = &mut state.base_url.as_mut().expect("set above").1;
-        let changed = buffer.trim().trim_end_matches('/') != saved;
+        let changed = buffer.trim().trim_end_matches('/') != saved
+            || state.allow_plain_http != site.allow_plain_http;
         // Room right of the field: latency, the WS / zstd badges and the auth
         // note ("仅 API Key" was cut, review ux-visual #12), and Save while edited.
         let reserve = BASE_URL_SIDE + if changed { 72.0 } else { 0.0 };
-        ui.add_enabled(
-            p.profile.is_some() && !cx.busy && state.base_url_task.is_none(),
-            TextEdit::singleline(buffer)
-                .id(egui::Id::unique(("providers-base-url", site.id.as_str())))
-                .font(egui::TextStyle::Monospace)
-                .desired_width((ui.available_width() - reserve).max(200.0))
-                .margin(vec2(10.0, 6.0)),
-        )
-        .labelled_by(url_label)
-        .on_hover_text(cx.tr.t("providers.base_url_hint"));
+        let url_changed = ui
+            .add_enabled(
+                p.profile.is_some() && !cx.busy && state.base_url_task.is_none(),
+                TextEdit::singleline(buffer)
+                    .id(egui::Id::unique(("providers-base-url", site.id.as_str())))
+                    .font(egui::TextStyle::Monospace)
+                    .desired_width((ui.available_width() - reserve).max(200.0))
+                    .margin(vec2(10.0, 6.0)),
+            )
+            .labelled_by(url_label)
+            .on_hover_text(cx.tr.t("providers.base_url_hint"))
+            .changed();
+        if url_changed {
+            state.allow_plain_http = false;
+        }
+        let allowed = url::Url::parse(buffer.trim())
+            .is_ok_and(|u| form::check_url_with_consent(&u, state.allow_plain_http).is_ok());
         if changed
             && ui
                 .add(
                     Button::primary(cx.tr.t("providers.base_url_save"))
+                        .enabled(allowed)
                         .small()
                         .loading(state.base_url_task.is_some()),
                 )
@@ -241,6 +251,9 @@ fn base_url(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, p: &Provider) {
             availability(ui, cx, state, p, line, caps);
         }
     });
+    if let Some((_, url)) = &state.base_url {
+        form::http_consent(ui, cx, url, &mut state.allow_plain_http);
+    }
     super::transports::footer(ui, cx, p);
     if let Some(e) = &state.base_url_error {
         ui.label(Text::small(e, cx.pal).color(cx.pal.red));
@@ -271,6 +284,7 @@ fn save_base_url(state: &mut State, cx: &Cx<'_>, p: &Provider) {
         }),
         name: p.site.name.fallback.clone(),
         url: text.trim().to_owned(),
+        allow_plain_http: state.allow_plain_http,
         key: String::new(),
         reveal: false,
         model: profile.model.model.clone().unwrap_or_default(),

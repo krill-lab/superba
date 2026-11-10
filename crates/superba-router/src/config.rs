@@ -162,6 +162,9 @@ pub struct MemberConfig {
     pub kind: MemberKind,
     /// Lines in priority order; interchangeable at any request boundary.
     pub lines: Vec<LineConfig>,
+    /// Explicit consent inherited from a custom compatible site.
+    #[serde(default)]
+    pub allow_plain_http: bool,
     /// The member serves Responses over WebSocket. When false, WebSocket
     /// handshakes routed to it are answered 426 locally (Codex then uses HTTP).
     /// Superba sets it from the site kind and the lines' probe results
@@ -213,6 +216,20 @@ pub struct LineConfig {
 }
 
 impl MemberConfig {
+    /// Consent applies only to compatible members and their configured origins.
+    pub fn allows_plain_http_for(&self, url: &Url) -> bool {
+        self.allow_plain_http
+            && self.kind == MemberKind::Compatible
+            && !matches!(
+                self.id.as_str(),
+                superba_core::catalog::KRILL_SITE_ID | superba_core::catalog::OFFICIAL_SITE_ID
+            )
+            && self
+                .lines
+                .iter()
+                .any(|l| l.base_url.origin() == url.origin())
+    }
+
     /// Derive [`MemberConfig::websocket`] from the lines' probe results: a
     /// Krill member serves WebSocket unless every line refused the handshake
     /// (WebSocket is a per-account gate, the same on every line); a compatible
@@ -445,6 +462,18 @@ impl RouterConfig {
         let mut ids = BTreeSet::new();
         for m in &self.members {
             check_id("member", &m.id)?;
+            if m.allow_plain_http
+                && (m.kind != MemberKind::Compatible
+                    || matches!(
+                        m.id.as_str(),
+                        superba_core::catalog::KRILL_SITE_ID
+                            | superba_core::catalog::OFFICIAL_SITE_ID
+                    ))
+            {
+                return Err(Error::invalid(
+                    "plain HTTP consent is only valid for compatible members",
+                ));
+            }
             if !ids.insert(m.id.as_str()) {
                 return Err(Error::invalid(format!("duplicate member id {:?}", m.id)));
             }
@@ -463,10 +492,10 @@ impl RouterConfig {
                 if m.kind == MemberKind::Official {
                     check_official_url(&l.base_url)?;
                 } else {
-                    check_upstream_url(&l.base_url)?;
+                    check_upstream_url(&l.base_url, m.allows_plain_http_for(&l.base_url))?;
                 }
                 if let Some(p) = &l.probe_url {
-                    check_upstream_url(p)?;
+                    check_upstream_url(p, m.allows_plain_http_for(p))?;
                 }
             }
             for (from, to) in &m.model_map {
@@ -692,7 +721,7 @@ pub fn check_official_url(url: &Url) -> Result<()> {
 
 /// Upstream rule: https, or plain http to a loopback host (tests, local
 /// forwarders); no credentials, query or fragment; never a ChatGPT host.
-pub fn check_upstream_url(url: &Url) -> Result<()> {
+pub fn check_upstream_url(url: &Url, allow_plain_http: bool) -> Result<()> {
     let loopback = match url.host() {
         Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
         Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
@@ -701,7 +730,7 @@ pub fn check_upstream_url(url: &Url) -> Result<()> {
     };
     match url.scheme() {
         "https" => {}
-        "http" if loopback => {}
+        "http" if loopback || allow_plain_http => {}
         other => {
             return Err(Error::invalid(format!(
                 "{url}: scheme {other} not allowed (https required)"

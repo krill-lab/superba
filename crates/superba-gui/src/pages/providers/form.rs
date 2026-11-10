@@ -102,6 +102,8 @@ pub struct SiteForm {
     pub name: String,
     /// Responses API base URL (`https://api.example.com/v1`).
     pub url: String,
+    /// Explicit consent for a non-loopback HTTP address.
+    pub allow_plain_http: bool,
     /// API key; on edit an empty field keeps the stored key.
     pub key: String,
     /// Show the key.
@@ -147,6 +149,7 @@ impl SiteForm {
                 .as_ref()
                 .map(|u| u.as_str().trim_end_matches('/').to_owned())
                 .unwrap_or_else(|| base_url(site)),
+            allow_plain_http: site.allow_plain_http,
             key: String::new(),
             reveal: false,
             model: profile.model.model.clone().unwrap_or_default(),
@@ -233,6 +236,26 @@ pub fn parse_mapping(rows: &[MapRow]) -> Result<BTreeMap<String, String>, FormEr
 
 /// The URL rule of custom sites: https, or http to a loopback host (local tests).
 pub fn check_url(url: &url::Url) -> Result<(), FormError> {
+    check_url_with_consent(url, false)
+}
+
+/// Whether the address needs an explicit warning and consent.
+pub fn needs_http_consent(url: &url::Url) -> bool {
+    url.scheme() == "http"
+        && !superba_core::Origin::parse(&url.origin().ascii_serialization())
+            .is_ok_and(|o| o.is_loopback())
+}
+
+/// Whether a saved site has a plain HTTP line off this machine (consented or
+/// imported and still waiting for consent): its provider shows a lasting marker.
+pub fn shows_plain_http(site: &superba_core::Site) -> bool {
+    site.lines
+        .iter()
+        .any(|l| l.origin.url().scheme() == "http" && !l.origin.is_loopback())
+}
+
+/// The URL rule after the user has acknowledged the plaintext warning.
+pub fn check_url_with_consent(url: &url::Url, allow_plain_http: bool) -> Result<(), FormError> {
     let loopback = matches!(
         url.host(),
         Some(url::Host::Ipv4(ip)) if ip.is_loopback()
@@ -240,7 +263,7 @@ pub fn check_url(url: &url::Url) -> Result<(), FormError> {
         || url.host_str() == Some("localhost");
     match url.scheme() {
         "https" => Ok(()),
-        "http" if loopback => Ok(()),
+        "http" if loopback || allow_plain_http => Ok(()),
         "http" => Err(FormError::InsecureUrl),
         _ => Err(FormError::InvalidUrl),
     }
@@ -263,11 +286,11 @@ pub fn prepare(
         return Err(FormError::Required);
     }
     let url = form.parsed_url().ok_or(FormError::InvalidUrl)?;
-    check_url(&url)?;
+    check_url_with_consent(&url, form.allow_plain_http)?;
     let mapping = parse_mapping(&form.mapping)?;
     let model = form.model.trim();
     let model = (!model.is_empty()).then(|| model.to_owned());
-    let (site, profile) = match existing {
+    let (mut site, profile) = match existing {
         Some((site, profile)) => {
             let mut new_site = make_site(site.id.clone(), name, &url)
                 .map_err(|e| FormError::Rejected(e.to_string()))?;
@@ -318,6 +341,7 @@ pub fn prepare(
             (site, profile)
         }
     };
+    site.allow_plain_http = needs_http_consent(&url) && form.allow_plain_http;
     debug_assert_eq!(site.kind, SiteKind::Compatible);
     Ok(Prepared { site, profile, key })
 }
@@ -341,4 +365,18 @@ pub fn unique_name(base: &str, taken: &[&str]) -> String {
         .map(|n| format!("{base} {n}"))
         .find(|candidate| !taken.contains(&candidate.as_str()))
         .unwrap_or_else(|| base.to_owned())
+}
+
+/// Warning shown beside every editable custom HTTP URL.
+pub fn http_consent(ui: &mut egui::Ui, cx: &crate::pages::Cx<'_>, url: &str, allowed: &mut bool) {
+    if url::Url::parse(url.trim()).is_ok_and(|u| needs_http_consent(&u)) {
+        ui.add(
+            egui::Label::new(
+                crate::design::widgets::Text::small(cx.tr.t("sites.form.http_warning"), cx.pal)
+                    .color(cx.pal.amber),
+            )
+            .wrap(),
+        );
+        ui.checkbox(allowed, cx.tr.t("sites.form.http_confirm"));
+    }
 }

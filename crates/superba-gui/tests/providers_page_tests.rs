@@ -938,3 +938,86 @@ async fn the_official_detail_offers_mixed_login_and_says_where_it_stands() {
     let zh = official_detail(true, true, Some("acct"), Locale::ZhCn).await;
     assert!(zh.contains("远程功能使用官方账号"), "{zh}");
 }
+
+#[tokio::test]
+async fn http_add_shows_warning_requires_confirmation_and_keeps_a_visible_marker() {
+    let svc = Arc::new(FakeService::new(FakeOptions {
+        fast: true,
+        ..Default::default()
+    }));
+    let service: Arc<dyn SwitchService> = svc.clone();
+    let data = data_of(&svc).await;
+    let mut d = providers::AddDialog::new();
+    d.step = providers::AddStep::Custom;
+    d.name = "LAN HTTP".into();
+    d.url = "http://192.168.1.20:8080/v1".into();
+    d.key = "sk-http-fixture-only".into();
+    with_cx(&data, &service, Locale::En, |cx| d.start_save(cx, false));
+    assert!(!d.saving());
+    assert!(d.error.as_deref().unwrap().contains("Confirm"));
+    d.error = None;
+    let mut state = providers::State::default();
+    state.add = Some(d);
+    let mut frames = 0;
+    let (_, text) = drive(&data, service.clone(), &mut state, Locale::En, |_, _| {
+        frames += 1;
+        frames > 2
+    });
+    assert!(text.contains("Your API key and conversations"), "{text}");
+    assert!(text.contains("I understand the risk"), "{text}");
+    let d = state.add.as_mut().unwrap();
+    d.allow_plain_http = true;
+    with_cx(&data, &service, Locale::En, |cx| d.start_save(cx, false));
+    drive(&data, service.clone(), &mut state, Locale::En, |s, _| {
+        s.add.is_none()
+    });
+    let data = data_of(&svc).await;
+    let saved = data
+        .sites
+        .iter()
+        .find(|s| s.name.fallback == "LAN HTTP")
+        .unwrap();
+    assert!(saved.allow_plain_http);
+    let mut frames = 0;
+    let (_, text) = drive(&data, service, &mut state, Locale::En, |_, _| {
+        frames += 1;
+        frames > 2
+    });
+    // The list row of the saved provider carries the lasting marker.
+    assert!(
+        text.lines()
+            .any(|l| l.contains("192.168.1.20") && l.contains("Plain HTTP")),
+        "{text}"
+    );
+}
+
+#[tokio::test]
+async fn an_imported_http_provider_asks_for_consent_on_its_connection_tab() {
+    // Imports keep the HTTP address with consent off; the connection tab is
+    // where the user confirms it, and the marker is visible meanwhile.
+    let svc = Arc::new(FakeService::new(FakeOptions {
+        fast: true,
+        ..Default::default()
+    }));
+    let service: Arc<dyn SwitchService> = svc.clone();
+    let base = url::Url::parse("http://192.168.1.20:8080/v1").unwrap();
+    let site = superba_switch::new_compatible_site(SiteId::new("lan"), "LAN", &base).unwrap();
+    assert!(!site.allow_plain_http);
+    svc.save_site(site.clone()).await.unwrap();
+    let mut profile = shared::new_profile(&site, "LAN".into());
+    profile.id = ProfileId::new("lan");
+    svc.save_profile(profile, Some(superba_core::Secret::new("sk-lan")))
+        .await
+        .unwrap();
+    let data = data_of(&svc).await;
+    let mut state = providers::State::default();
+    state.select(ProviderId::Profile(ProfileId::new("lan")));
+    let mut frames = 0;
+    let (_, text) = drive(&data, service, &mut state, Locale::ZhCn, |_, _| {
+        frames += 1;
+        frames > 2
+    });
+    assert!(text.contains("API Key 和对话内容会明文经过网络"), "{text}");
+    assert!(text.contains("我了解风险"), "{text}");
+    assert!(text.lines().any(|l| l == "明文 http"), "{text}");
+}

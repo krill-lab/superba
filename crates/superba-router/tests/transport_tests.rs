@@ -397,6 +397,7 @@ fn member_websocket_follows_the_line_hints() {
     };
     let m = |kind, lines: Vec<LineConfig>| {
         let mut m = MemberConfig {
+            allow_plain_http: false,
             id: "m".into(),
             name: "M".into(),
             kind,

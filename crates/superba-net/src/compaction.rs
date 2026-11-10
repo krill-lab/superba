@@ -285,7 +285,7 @@ impl HttpLineProber {
     ) -> Result<CompactionCheck> {
         let base = &endpoints.openai_base_url;
         Self::ensure_key(key)?;
-        ensure_key_target(base, key)?;
+        ensure_key_target(base, key, endpoints.allows_plain_http())?;
         if base.origin() != endpoints.origin.url().origin() {
             return Err(Error::invalid(format!(
                 "openai_base_url {} is not on the endpoints' origin {}",
@@ -302,6 +302,7 @@ impl HttpLineProber {
         let url = join_base(base, "responses");
         let req = Request::get(url, self.config.responses_timeout, BODY_LIMIT)
             .with_key(key)
+            .allow_plain_http(endpoints.allows_plain_http())
             .with_json(compaction_body(model), ACCEPT_SSE)
             .until(stream_finished);
         let mut check = match self.http.send(req).await {

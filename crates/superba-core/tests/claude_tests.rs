@@ -100,6 +100,7 @@ fn presets_are_https_and_unique() {
     }
     // A compatible DeepSeek provider gets the DeepSeek preset.
     let site = superba_core::Site {
+        allow_plain_http: false,
         id: "ds".into(),
         lines: vec![superba_core::Line {
             id: "default".into(),
@@ -165,4 +166,44 @@ fn desired_values_redact_the_key() {
     assert_eq!(d.get(&env_path(ENV_API_KEY)), None);
     let debug = format!("{d:?}");
     assert!(!debug.contains("sk-very-secret"), "{debug}");
+}
+
+#[test]
+fn http_tool_endpoints_inherit_only_the_same_custom_sites_consent() {
+    let mut site = superba_core::catalog::compatible_template_site();
+    site.id = "lan".into();
+    site.lines.push(superba_core::Line {
+        id: "default".into(),
+        name: superba_core::LocalizedText::new("", "LAN"),
+        origin: superba_core::Origin::parse("http://192.168.1.2:8080").unwrap(),
+        source: superba_core::LineSource::User,
+    });
+    let input = "http://192.168.1.2:8080/anthropic";
+    assert!(AnthropicEndpoint::parse_base_for_site(input, Some(&site)).is_err());
+    assert!(superba_core::harness::check_site_base_url(input, Some(&site)).is_err());
+    site.allow_plain_http = true;
+    assert_eq!(
+        AnthropicEndpoint::parse_base_for_site(input, Some(&site))
+            .unwrap()
+            .as_str(),
+        input
+    );
+    assert_eq!(
+        superba_core::harness::check_site_base_url(input, Some(&site))
+            .unwrap()
+            .as_str(),
+        input
+    );
+    assert!(AnthropicEndpoint::parse_base(input).is_err());
+    assert!(superba_core::harness::check_base_url(input).is_err());
+    for input in [
+        "http://other.example/anthropic",
+        "http://192.168.1.2:9090/anthropic",
+        "http://user:pass@192.168.1.2:8080/anthropic",
+    ] {
+        assert!(AnthropicEndpoint::parse_base_for_site(input, Some(&site)).is_err());
+        assert!(superba_core::harness::check_site_base_url(input, Some(&site)).is_err());
+    }
+    site.kind = superba_core::SiteKind::Krill;
+    assert!(AnthropicEndpoint::parse_base_for_site(input, Some(&site)).is_err());
 }

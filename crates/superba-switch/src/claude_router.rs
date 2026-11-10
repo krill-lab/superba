@@ -100,6 +100,7 @@ fn claude_only_member(site: &Site, profile: &Profile, base: Option<&Url>) -> Opt
     });
     let mut member = from_site.or_else(|| {
         base.map(|base| MemberConfig {
+            allow_plain_http: site.allows_plain_http_for(base),
             id: String::new(),
             name: String::new(),
             kind: MemberKind::Compatible,

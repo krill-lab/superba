@@ -1993,7 +1993,7 @@ impl Switcher {
                         auth_mode: choice.representative_mode(),
                     }),
                 }
-                endpoints = Some(ResolvedEndpoints::for_base_url(base)?);
+                endpoints = Some(ResolvedEndpoints::for_site_base_url(&site, base)?);
             } else {
                 let candidates = match &line_override {
                     Some(l) => vec![l.clone()],
@@ -2653,7 +2653,7 @@ impl Switcher {
         let models = match self
             .deps
             .prober
-            .list_models(&endpoints.openai_base_url, key)
+            .list_models_for_site(site, &endpoints.openai_base_url, key)
             .await
         {
             Ok(m) if !m.is_empty() => m,
@@ -2767,7 +2767,17 @@ impl Switcher {
         else {
             return Ok(());
         };
-        let mut endpoints = ResolvedEndpoints::for_base_url(&base)?;
+        let owner = sites.iter().find(|site| {
+            site.lines
+                .iter()
+                .any(|l| l.origin.url().origin() == base.origin())
+        });
+        let mut endpoints = match owner {
+            Some(site) if auth == AuthMode::ApiKey => {
+                ResolvedEndpoints::for_site_base_url(site, &base)?
+            }
+            _ => ResolvedEndpoints::for_base_url(&base)?,
+        };
         endpoints.chatgpt_base_url = rendered_state
             .chatgpt_base_url
             .as_deref()

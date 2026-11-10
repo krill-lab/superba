@@ -198,7 +198,7 @@ pub(crate) fn check_endpoint(id: &str, member: &MemberConfig, ep: &OpenAiEndpoin
                 "OpenAI ingress member {id:?}: no line {line:?}"
             )));
         }
-        check_upstream_url(url)?;
+        check_upstream_url(url, member.allows_plain_http_for(url))?;
     }
     Ok(())
 }

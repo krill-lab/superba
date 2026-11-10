@@ -37,6 +37,7 @@ fn line(id: &str, url: &str) -> LineConfig {
 
 fn member(id: &str, lines: Vec<LineConfig>) -> MemberConfig {
     MemberConfig {
+        allow_plain_http: false,
         id: id.into(),
         name: id.into(),
         kind: MemberKind::Krill,
@@ -510,4 +511,24 @@ fn members_from_sites() {
     assert!(member_from_site(&site, &[], &MemberPath::Custom("v1".into())).is_err());
     assert_eq!(router_id("Ab/中"), "ab--");
     assert_eq!(router_id(""), "member");
+}
+
+#[test]
+fn plain_http_members_require_consent_and_keep_other_origins_blocked() {
+    let mut m = member("lan", vec![line("main", "http://192.168.1.2:8080/v1")]);
+    m.kind = MemberKind::Compatible;
+    let mut cfg = RouterConfig::new(41000, vec![m]);
+    assert!(cfg.validate().is_err());
+    cfg.members[0].allow_plain_http = true;
+    cfg.validate().unwrap();
+    let roundtrip: RouterConfig =
+        serde_json::from_slice(&serde_json::to_vec(&cfg).unwrap()).unwrap();
+    assert!(roundtrip.members[0].allow_plain_http);
+    cfg.members[0].lines[0].probe_url = Some(Url::parse("http://other.example/models").unwrap());
+    assert!(cfg.validate().is_err());
+    cfg.members[0].lines[0].probe_url = None;
+    for kind in [MemberKind::Krill, MemberKind::Official] {
+        cfg.members[0].kind = kind;
+        assert!(cfg.validate().is_err());
+    }
 }

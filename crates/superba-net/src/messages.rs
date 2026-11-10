@@ -25,7 +25,8 @@ impl HttpLineProber {
     ) -> Result<ClaudeProbe> {
         Self::ensure_key(req.key)?;
         let url = req.endpoint.join("v1/messages");
-        ensure_key_target(&url, req.key)?;
+        let allow_plain_http = req.site.is_some_and(|s| s.allows_plain_http_for(&url));
+        ensure_key_target(&url, req.key, allow_plain_http)?;
         let body = json!({
             "model": req.model,
             "max_tokens": 1,
@@ -33,7 +34,8 @@ impl HttpLineProber {
         });
         let mut request = Request::get(url.clone(), self.config.request_timeout, LIMIT)
             .with_json(body.to_string().into_bytes(), "application/json")
-            .with_key(req.key);
+            .with_key(req.key)
+            .allow_plain_http(allow_plain_http);
         request = match req.endpoint.auth {
             AnthropicAuth::Bearer => request.anthropic_bearer(),
             AnthropicAuth::ApiKey => request.anthropic_api_key(),

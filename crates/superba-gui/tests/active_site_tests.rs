@@ -16,6 +16,7 @@ use support::fake::{FakeOptions, FakeService};
 
 fn test_site() -> Site {
     Site {
+        allow_plain_http: false,
         id: "krill-e2e".into(),
         kind: SiteKind::Krill,
         name: LocalizedText::new("", "Krill e2e"),

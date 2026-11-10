@@ -243,6 +243,11 @@ pub(super) fn draft_custom(cx: &Cx<'_>, w: &mut Wizard) -> bool {
             return false;
         }
     };
+    if let Err(e) = crate::pages::providers::form::check_url_with_consent(&url, w.allow_plain_http)
+    {
+        w.custom.error = Some(cx.tr.t(e.key()));
+        return false;
+    }
     let (id, existing): (superba_core::SiteId, Option<Profile>) = match &w.custom.saved {
         Some((site, profile)) => (site.clone(), cx.data.profile(profile).cloned()),
         None => {
@@ -269,6 +274,8 @@ pub(super) fn draft_custom(cx: &Cx<'_>, w: &mut Wizard) -> bool {
             return false;
         }
     };
+    site.allow_plain_http =
+        w.allow_plain_http && crate::pages::providers::form::needs_http_consent(&url);
     // A re-run keeps the stored site's model map.
     if let Some(stored) = cx.data.site(&id) {
         site.model_map = stored.model_map.clone();
@@ -854,8 +861,9 @@ fn custom_form(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard) {
         if mono {
             edit = edit.font(egui::TextStyle::Monospace);
         }
-        ui.add(edit).labelled_by(l.id);
+        let changed = ui.add(edit).labelled_by(l.id).changed();
         ui.add_space(8.0);
+        changed
     };
     field(
         ui,
@@ -864,13 +872,17 @@ fn custom_form(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard) {
         "My API",
         false,
     );
-    field(
+    let url_changed = field(
         ui,
         cx.tr.t("wizard.custom.url"),
         &mut w.custom_url,
         "https://api.example.com/v1",
         true,
     );
+    if url_changed {
+        w.allow_plain_http = false;
+    }
+    crate::pages::providers::form::http_consent(ui, cx, &w.custom_url, &mut w.allow_plain_http);
     let l = ui.label(Text::caption(cx.tr.t("wizard.custom.key"), cx.pal));
     KeyInput::new(
         "wizard-custom-key",

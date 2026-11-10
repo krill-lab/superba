@@ -475,6 +475,7 @@ pub fn line(id: &str, base_url: Url) -> LineConfig {
 
 pub fn member(id: &str, kind: MemberKind, websocket: bool, lines: Vec<LineConfig>) -> MemberConfig {
     MemberConfig {
+        allow_plain_http: false,
         id: id.into(),
         name: id.to_uppercase(),
         kind,

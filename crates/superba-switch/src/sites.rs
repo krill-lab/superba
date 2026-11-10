@@ -33,7 +33,7 @@ fn apikey_endpoints(
     if site.kind == SiteKind::Compatible {
         let base: Url = compatible_base_url(site, Some(&line.id))
             .ok_or_else(|| Error::invalid(format!("site {} has no Responses base URL", site.id)))?;
-        return ResolvedEndpoints::for_base_url(&base);
+        return ResolvedEndpoints::for_site_base_url(site, &base);
     }
     let path = path
         .or_else(|| site.capabilities.codex_paths.first().copied())
@@ -117,7 +117,10 @@ impl Switcher {
             }
         };
         if site.capabilities.model_catalog {
-            match prober.list_models(&endpoints.openai_base_url, &key).await {
+            match prober
+                .list_models_for_site(&site, &endpoints.openai_base_url, &key)
+                .await
+            {
                 Ok(models) => {
                     report.mapped = mapped_models(&site, Some(&models));
                     report.models = Some(models);

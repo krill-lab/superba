@@ -115,6 +115,7 @@ pub struct State {
     pub(crate) key_edit: Option<KeyEdit>,
     /// Edited base URL of a custom site: (site, text).
     pub(crate) base_url: Option<(SiteId, String)>,
+    pub(crate) allow_plain_http: bool,
     /// Saving the base URL.
     pub(crate) base_url_task: Option<ReadTask<Profile>>,
     /// Why the base URL was not saved.

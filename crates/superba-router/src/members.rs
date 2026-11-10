@@ -86,7 +86,7 @@ pub fn member_from_site(
     let mut out = Vec::with_capacity(lines.len());
     for line in lines {
         let base_url = line.origin.join(path.suffix());
-        check_upstream_url(&base_url)?;
+        check_upstream_url(&base_url, site.allows_plain_http_for(&base_url))?;
         let probe_url = match site.kind {
             SiteKind::Krill => Some(line.origin.join(&site.endpoints.models_unauth)),
             _ => None,
@@ -101,6 +101,7 @@ pub fn member_from_site(
         });
     }
     Ok(MemberConfig {
+        allow_plain_http: site.allows_plain_http(),
         id: router_id(site.id.as_str()),
         name: site.name.fallback.clone(),
         kind,

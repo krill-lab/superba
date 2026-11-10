@@ -358,6 +358,8 @@ impl Switcher {
                 profile.name
             ))
         })?;
+        AnthropicEndpoint::parse_base_for_site(endpoint.base_url.as_str(), Some(site))
+            .map_err(Error::invalid)?;
         let key_ref = profile.key_ref.as_ref().ok_or_else(|| Error::NotFound {
             what: format!("the key of provider {}", profile.name),
         })?;
@@ -803,6 +805,7 @@ impl Switcher {
         self.deps
             .prober
             .probe_messages(MessagesProbeRequest {
+                site: Some(&site),
                 endpoint: &endpoint,
                 key: &key,
                 model: &model,

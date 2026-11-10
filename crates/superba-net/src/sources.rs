@@ -189,7 +189,7 @@ impl HttpLineProber {
         // vouched for.
         for t in &targets {
             for u in &t.urls {
-                ensure_key_target(u, key)?;
+                ensure_key_target(u, key, req.site.allows_plain_http_for(u))?;
                 let vouched = req
                     .standard_base
                     .is_some_and(|b| t.kind == ModelListKind::Standard && b.origin() == u.origin());
@@ -316,6 +316,7 @@ impl HttpLineProber {
                 self.config.max_catalog_bytes,
             )
             .with_key(key)
+            .allow_plain_http(req.site.allows_plain_http_for(url))
             .if_none_match(etag);
             if t.anthropic {
                 request = request.anthropic();
@@ -371,7 +372,8 @@ impl HttpLineProber {
                                     self.config.request_timeout,
                                     self.config.max_catalog_bytes,
                                 )
-                                .with_key(key);
+                                .with_key(key)
+                                .allow_plain_http(req.site.allows_plain_http_for(url));
                                 if t.anthropic {
                                     r = r.anthropic();
                                 }

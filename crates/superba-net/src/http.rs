@@ -3,7 +3,7 @@
 //! Every request goes through [`Http::send`], which
 //! - never follows redirects (a redirect is reported, not followed, so a key never
 //!   reaches a second origin),
-//! - refuses to attach a key to anything but https or a loopback http URL,
+//! - requires HTTPS, loopback HTTP, or the owning custom site's explicit HTTP consent,
 //! - reads at most a bounded number of body bytes,
 //! - and returns a [`Transport`] failure whose message never contains the key.
 
@@ -126,6 +126,8 @@ pub(crate) fn display_url(url: &Url) -> String {
 pub(crate) struct Request<'a> {
     /// Target.
     pub url: Url,
+    /// Consent resolved by the caller from the owning custom site.
+    pub allow_plain_http: bool,
     /// Bearer key, if the request is authenticated.
     pub key: Option<&'a Secret>,
     /// JSON body; `Some` makes it a POST.
@@ -158,6 +160,7 @@ impl<'a> Request<'a> {
         Self {
             url,
             key: None,
+            allow_plain_http: false,
             json_body: None,
             accept: ACCEPT_JSON,
             timeout,
@@ -213,6 +216,12 @@ impl<'a> Request<'a> {
         self
     }
 
+    /// Carry the owning site's explicit plain HTTP consent.
+    pub fn allow_plain_http(mut self, allowed: bool) -> Self {
+        self.allow_plain_http = allowed;
+        self
+    }
+
     /// Attach a bearer key.
     pub fn with_key(mut self, key: &'a Secret) -> Self {
         self.key = Some(key);
@@ -240,7 +249,7 @@ pub(crate) fn is_loopback_url(url: &Url) -> bool {
 /// Key scoping rule: a key may only be sent to https, or to plain http on a
 /// loopback host (tests and local forwarders), and never inside the URL (no
 /// userinfo, and the key must not appear in the URL, percent-encoded or not).
-pub(crate) fn ensure_key_target(url: &Url, key: &Secret) -> Result<()> {
+pub(crate) fn ensure_key_target(url: &Url, key: &Secret, allow_plain_http: bool) -> Result<()> {
     if url_contains_key(url, key) {
         return Err(Error::invalid(
             "refusing to send a key to a URL that contains the key",
@@ -254,7 +263,7 @@ pub(crate) fn ensure_key_target(url: &Url, key: &Secret) -> Result<()> {
     }
     match url.scheme() {
         "https" if url.host().is_some() => Ok(()),
-        "http" if is_loopback_url(url) => Ok(()),
+        "http" if url.host().is_some() && (is_loopback_url(url) || allow_plain_http) => Ok(()),
         _ => Err(Error::invalid(format!(
             "refusing to send a key over a non-https URL: {}",
             display_url(url)
@@ -378,7 +387,7 @@ impl Http {
     /// Send one request. Key scoping is enforced here as well as by callers.
     pub async fn send(&self, req: Request<'_>) -> std::result::Result<Answer, Transport> {
         if let Some(key) = req.key {
-            ensure_key_target(&req.url, key).map_err(|e| Transport {
+            ensure_key_target(&req.url, key, req.allow_plain_http).map_err(|e| Transport {
                 kind: TransportKind::Other,
                 message: e.to_string(),
             })?;
@@ -500,11 +509,12 @@ impl Http {
         url: &Url,
         key: &Secret,
         extra: HeaderMap,
+        allow_plain_http: bool,
         timeout: Duration,
         limit: usize,
     ) -> std::result::Result<Handshake, Transport> {
         use reqwest::header::{CONNECTION, SEC_WEBSOCKET_KEY, SEC_WEBSOCKET_VERSION, UPGRADE};
-        ensure_key_target(url, key).map_err(|e| Transport {
+        ensure_key_target(url, key, allow_plain_http).map_err(|e| Transport {
             kind: TransportKind::Other,
             message: e.to_string(),
         })?;
@@ -693,7 +703,7 @@ mod tests {
     #[test]
     fn key_targets_refuse_urls_that_carry_the_key() {
         let key = Secret::new("sk-test-1234567890");
-        let ok = |s: &str| ensure_key_target(&Url::parse(s).unwrap(), &key).is_ok();
+        let ok = |s: &str| ensure_key_target(&Url::parse(s).unwrap(), &key, false).is_ok();
         assert!(ok("https://api.example.com/v1"));
         assert!(!ok("https://api.example.com/v1?api_key=sk-test-1234567890"));
         assert!(!ok("https://api.example.com/sk-test-1234567890/v1"));
@@ -701,6 +711,7 @@ mod tests {
         let e = ensure_key_target(
             &Url::parse("http://h.example/?k=sk-test-1234567890").unwrap(),
             &key,
+            false,
         )
         .unwrap_err();
         assert!(!e.to_string().contains("sk-test-1234567890"));
@@ -710,7 +721,7 @@ mod tests {
     #[test]
     fn key_targets_require_https_or_loopback_http() {
         let key = Secret::new("sk-test-1234567890");
-        let ok = |s: &str| ensure_key_target(&Url::parse(s).unwrap(), &key).is_ok();
+        let ok = |s: &str| ensure_key_target(&Url::parse(s).unwrap(), &key, false).is_ok();
         assert!(ok("https://api.example.com/v1/models"));
         assert!(ok("http://127.0.0.1:8080/v1/models"));
         assert!(ok("http://127.8.9.10/x"));
@@ -720,6 +731,30 @@ mod tests {
         assert!(!ok("http://127.attacker.example/v1/models"));
         assert!(!ok("https://user:pw@api.example.com/"));
         assert!(!ok("ftp://api.example.com/"));
+    }
+
+    #[test]
+    fn plaintext_consent_does_not_relax_other_key_target_rules() {
+        let key = Secret::new("sk-test-1234567890");
+        assert!(
+            ensure_key_target(
+                &Url::parse("http://192.168.1.2:8080/v1").unwrap(),
+                &key,
+                true
+            )
+            .is_ok()
+        );
+        for input in [
+            "http://user:pass@192.168.1.2/v1",
+            "http://192.168.1.2/?key=sk%2Dtest%2D1234567890",
+            "ftp://192.168.1.2/v1",
+            "file:///key",
+        ] {
+            assert!(
+                ensure_key_target(&Url::parse(input).unwrap(), &key, true).is_err(),
+                "{input}"
+            );
+        }
     }
 
     #[test]

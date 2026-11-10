@@ -5,7 +5,8 @@
 //! `superba-config`'s `ProfileStore`. Validation keeps keys safe: a site's key is
 //! only ever sent to that site's line origins, so a site definition that could
 //! point a key somewhere unexpected (credentials in a URL, absolute endpoint
-//! paths on another host, plain http to a non-loopback host) is refused.
+//! paths on another host) is refused. HTTP sites may be stored unconfirmed;
+//! sending keys requires the site's explicit consent at the request boundary.
 
 use superba_core::catalog::{self, KRILL_SITE_ID, OFFICIAL_SITE_ID};
 use superba_core::{
@@ -165,6 +166,7 @@ pub fn new_compatible_site(id: SiteId, name: &str, base_url: &Url) -> Result<Sit
     };
     let line_id = LineId::new("default");
     let site = Site {
+        allow_plain_http: false,
         id,
         kind: SiteKind::Compatible,
         name: LocalizedText::new("", name),
@@ -220,6 +222,11 @@ pub fn parse_test_lines(spec: &str) -> Result<Vec<Line>> {
 /// Structural validation of any site (built-in, custom or test-extended).
 pub fn validate_site(site: &Site) -> Result<()> {
     let sid = site.id.as_str();
+    if site.allow_plain_http && !site.allows_plain_http() {
+        return Err(Error::invalid(
+            "plain HTTP consent is only valid for user-defined compatible sites",
+        ));
+    }
     validate_id("site id", sid)?;
     if site.name.fallback.trim().is_empty() && site.name.key.trim().is_empty() {
         return Err(Error::invalid(format!("site {sid}: empty name")));
@@ -299,6 +306,14 @@ pub fn validate_site(site: &Site) -> Result<()> {
     }
     for (i, line) in site.lines.iter().enumerate() {
         validate_id("line id", line.id.as_str())?;
+        if (site.kind != SiteKind::Compatible
+            || is_builtin_site_id(&site.id)
+            || line.source == LineSource::Builtin)
+            && !line.origin.is_https()
+            && !(line.source == LineSource::Test && line.origin.is_loopback())
+        {
+            return Err(Error::invalid("built-in lines require https"));
+        }
         let earlier = &site.lines[..i];
         if earlier.iter().any(|l| l.id == line.id) {
             return Err(Error::invalid(format!(
@@ -493,7 +508,6 @@ mod tests {
         assert_eq!(s.endpoints.models_unauth, "/models");
 
         for bad in [
-            "http://api.example.com/v1",
             "https://u:p@api.example.com/v1",
             "https://api.example.com/v1?x=1",
         ] {
@@ -631,5 +645,55 @@ mod tests {
         assert!(SiteCatalog::from_env(&env, []).is_err(), "id clash");
         let cat = SiteCatalog::from_env(&MapEnv::new(), []).unwrap();
         assert_eq!(cat, SiteCatalog::builtin());
+    }
+}
+
+#[cfg(test)]
+mod plain_http_tests {
+    use super::*;
+    use superba_core::ResolvedEndpoints;
+
+    #[test]
+    fn http_is_stored_without_consent_and_only_custom_origins_can_be_authorized() {
+        let base = Url::parse("http://192.168.1.2:8000/v1").unwrap();
+        let mut site = new_compatible_site("lan".into(), "LAN", &base).unwrap();
+        assert!(!site.allow_plain_http);
+        assert!(ResolvedEndpoints::for_site_base_url(&site, &base).is_err());
+        site.allow_plain_http = true;
+        assert_eq!(
+            ResolvedEndpoints::for_site_base_url(&site, &base)
+                .unwrap()
+                .openai_base_url,
+            base
+        );
+        assert!(
+            ResolvedEndpoints::for_site_base_url(
+                &site,
+                &Url::parse("http://other.example/v1").unwrap()
+            )
+            .is_err()
+        );
+        let mut saved = serde_json::to_value(&site).unwrap();
+        assert!(
+            serde_json::from_value::<Site>(saved.clone())
+                .unwrap()
+                .allows_plain_http()
+        );
+        saved.as_object_mut().unwrap().remove("allow_plain_http");
+        assert!(
+            !serde_json::from_value::<Site>(saved)
+                .unwrap()
+                .allow_plain_http
+        );
+        for kind in [SiteKind::Krill, SiteKind::Official] {
+            site.kind = kind;
+            assert!(!site.allows_plain_http());
+            assert!(validate_site(&site).is_err());
+        }
+        let mut builtin = catalog::krill_site();
+        builtin.lines[0].origin = Origin::parse("http://192.168.1.2").unwrap();
+        assert!(validate_site(&builtin).is_err());
+        builtin.allow_plain_http = true;
+        assert!(validate_site(&builtin).is_err());
     }
 }

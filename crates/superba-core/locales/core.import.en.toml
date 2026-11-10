@@ -17,6 +17,7 @@ unknown = "It cannot be imported."
 unreadable_settings = "Its settings in {tool} could not be read."
 
 [import.note]
+plain_http = "This address uses unencrypted HTTP. Import keeps it disabled for key requests. Open the provider's connection settings and confirm plain HTTP before use."
 chat_wire_api = "It is set up for the Chat Completions API; Superba uses the Responses API. Test it before you switch."
 disabled = "It is disabled in {tool}."
 duplicate = "Same address and key as {name} from {tool}, which is selected instead."

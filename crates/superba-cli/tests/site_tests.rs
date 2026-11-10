@@ -56,6 +56,37 @@ async fn site_add_refuses_unusable_base_urls() {
     }
 }
 
+#[tokio::test]
+async fn site_add_leaves_plain_http_consent_to_the_app() {
+    let service = FakeService::new();
+    let (code, _, stderr) = invoke(
+        service.clone(),
+        &[
+            "site",
+            "add",
+            "lan",
+            "--base-url",
+            "http://192.168.1.20:8080/v1",
+        ],
+    )
+    .await;
+    assert_ne!(code, 0);
+    assert!(stderr.contains("unencrypted HTTP"), "{stderr}");
+    assert!(!service.calls().names.contains(&"save_site"));
+    let (code, _, stderr) = invoke(
+        service.clone(),
+        &[
+            "site",
+            "add",
+            "local",
+            "--base-url",
+            "http://127.0.0.1:8080/v1",
+        ],
+    )
+    .await;
+    assert_eq!(code, 0, "{stderr}");
+}
+
 fn compatible(service: &FakeService) {
     let base = url::Url::parse("https://api.acme.example/v1").unwrap();
     let site = superba_switch::new_compatible_site(SiteId::new("acme"), "Acme", &base).unwrap();

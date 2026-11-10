@@ -628,6 +628,14 @@ pub fn pick_protocol(
 /// or fragment, plain http only on loopback. Returns the message key of the
 /// problem.
 pub fn check_base_url(input: &str) -> std::result::Result<Url, &'static str> {
+    check_site_base_url(input, None)
+}
+
+/// Provider endpoints inherit consent only for a saved origin of the same site.
+pub fn check_site_base_url(
+    input: &str,
+    site: Option<&crate::Site>,
+) -> std::result::Result<Url, &'static str> {
     let t = input.trim();
     if t.is_empty() {
         return Err("harness.url.empty");
@@ -642,13 +650,17 @@ pub fn check_base_url(input: &str) -> std::result::Result<Url, &'static str> {
                 Some(url::Host::Domain(d)) => d.eq_ignore_ascii_case("localhost"),
                 None => false,
             };
-            if !loopback {
+            if !loopback && !site.is_some_and(|s| s.allows_plain_http_for(&url)) {
                 return Err("harness.url.http");
             }
         }
         _ => return Err("harness.url.invalid"),
     }
-    if url.query().is_some() || url.fragment().is_some() {
+    if !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
         return Err("harness.url.query");
     }
     Ok(url)

@@ -187,6 +187,7 @@ mod tests {
             websocket: None,
         };
         let m = MemberConfig {
+            allow_plain_http: false,
             id: "m".into(),
             name: "M".into(),
             kind: crate::config::MemberKind::Krill,

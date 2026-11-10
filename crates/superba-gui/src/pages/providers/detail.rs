@@ -144,6 +144,10 @@ fn header(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, p: &Provider, out: &mut V
             .truncate(),
         );
         ui.add(Badge::new(cx.tr.t(p.kind.badge_key())).outline());
+        if super::form::shows_plain_http(&p.site) {
+            ui.add(Badge::new(cx.tr.t("sites.form.http_badge")).status(Status::Warn))
+                .on_hover_text(cx.tr.t("sites.form.http_warning"));
+        }
         if p.applied {
             ui.add(Badge::new(cx.tr.t("providers.applied")).status(Status::Ok));
         }

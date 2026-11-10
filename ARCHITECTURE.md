@@ -1168,8 +1168,19 @@ home, a remote host or a WSL distribution through four `SwitchService` methods
   mismatch disables CDP for that session), connects only while switching, and
   evaluates only the restart call and read-only checks. Safe mode launches without
   CDP (no hot switching); so does running as root.
-- Keys are only sent to https origins (loopback allowed for tests), never logged,
-  never placed on command lines (remote writes use stdin), stored in the keyring.
+- Keys are sent to HTTPS origins (loopback HTTP is allowed for tests). A user-created
+  compatible/API-key site may persist `allow_plain_http = true` only after the user
+  explicitly acknowledges that API keys and conversation contents cross the network
+  unencrypted. The setting defaults to false, is inherited by router members and
+  tools using that site's saved origins, and never authorizes an unrelated endpoint.
+  Built-in sites and PAT retain their HTTPS requirement. Imported HTTP addresses
+  remain HTTP with consent off and a prompt to confirm in provider settings; they
+  cannot send keys or be switched to until confirmed. HTTP probes keep HTTP and
+  WebSocket connections use `ws://`; redirects are never followed. Consent is
+  given only in the app's provider forms: `spb site add/edit` refuses non-loopback
+  HTTP.
+- Keys are never logged, never placed on command lines (remote writes use stdin),
+  and are stored in the keyring.
 - `auth.json` is written 0600; stashes and backups of logins are encrypted
   (ChaCha20-Poly1305, key in the keyring).
 - Superba refuses to run under `sudo` (euid 0 with `SUDO_USER`) and, on Windows, as
