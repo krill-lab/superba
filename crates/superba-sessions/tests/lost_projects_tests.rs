@@ -103,7 +103,8 @@ fn the_app_server_project_list_brings_back_what_the_app_forgot() {
     let d = w.dir("work/proj-d");
     w.project("s-a", "proj-a", &[&a], 1_000, Some("local-aaaa"));
     w.project("s-c", "proj-c", &[&c], 3_000, Some("877476ef-uuid"));
-    w.project("s-d", "", &[&d, &a], 2_000, None);
+    let assets = w.dir("work/proj-d-assets");
+    w.project("s-d", "", &[&d, &a, &assets], 2_000, None);
     w.thread("t1", &c, 5, false);
     w.thread("t2", &c, 4, false);
     w.thread("t3", &c, 9, true);
@@ -125,9 +126,10 @@ fn the_app_server_project_list_brings_back_what_the_app_forgot() {
     assert_eq!(pc.last_used, Some(Timestamp::from_millis(5_000)));
     assert!(pc.recommended());
     let pd = &got[1];
-    // A project without a name gets its folder's; further roots are kept.
+    // A project without a name gets its folder's; further roots are kept,
+    // except one some project already has (proj-a).
     assert_eq!(pd.name, "proj-d");
-    assert_eq!(pd.extra_roots, std::slice::from_ref(&a));
+    assert_eq!(pd.extra_roots, std::slice::from_ref(&assets));
     assert_eq!(pd.app_id, None);
     // Answered folders are not offered again.
     let got = w.discover(std::slice::from_ref(&a), &[c.clone(), d.clone()]);
@@ -230,4 +232,77 @@ fn chat_folders_are_capped_and_ranked() {
 fn no_databases_no_candidates() {
     let w = World::new();
     assert!(w.discover(&[], &[]).is_empty());
+}
+
+#[test]
+fn every_root_of_a_project_passes_the_same_filter() {
+    let w = World::new();
+    let m = w.dir("work/proj-m");
+    let other = w.dir("work/proj-m-docs");
+    let gone = w.home_dir.join("work/gone");
+    let home = w.home_dir.clone();
+    w.project("s-m", "proj-m", &[&m, &home, &gone, &other], 5, None);
+    let got = w.discover(&[], &[]);
+    assert_eq!(got.len(), 1);
+    assert_eq!(got[0].path, m);
+    // The home directory and the missing folder are left out of the project.
+    assert_eq!(got[0].extra_roots, std::slice::from_ref(&other));
+    // A further root some project already has is left out too.
+    let got = w.discover(std::slice::from_ref(&other), &[]);
+    assert!(got[0].extra_roots.is_empty());
+}
+
+/// Codex keeps the state database in rollback-journal mode on network file
+/// systems: a writer then blocks readers. The probe waits briefly and skips
+/// the database instead of stalling the overview.
+#[test]
+fn a_locked_database_is_skipped_quickly() {
+    let w = World::new();
+    let p = w.dir("work/proj");
+    {
+        let conn = w.db();
+        conn.pragma_update(None, "journal_mode", "delete").unwrap();
+    }
+    w.project("s-p", "proj", &[&p], 1, None);
+    let writer = Connection::open(w.codex.state_db()).unwrap();
+    writer.execute_batch("BEGIN EXCLUSIVE;").unwrap();
+    let start = std::time::Instant::now();
+    let got = w.discover(&[], &[]);
+    let took = start.elapsed();
+    writer.execute_batch("ROLLBACK").unwrap();
+    assert!(got.is_empty());
+    assert!(
+        took < lost_projects::PROBE_BUSY_TIMEOUT * 4,
+        "took {took:?}"
+    );
+    // Unlocked, it is read again.
+    assert_eq!(w.discover(&[], &[]).len(), 1);
+}
+
+#[test]
+fn the_databases_of_a_configured_sqlite_home_are_read() {
+    let w = World::new();
+    let elsewhere = w.dir("state-elsewhere");
+    fs::write(
+        w.codex.config_toml(),
+        format!("sqlite_home = \"{}\"\n", elsewhere.display()),
+    )
+    .unwrap();
+    assert!(lost_projects::database_dirs(&w.codex, &w.home_dir).contains(&elsewhere));
+    let p = w.dir("work/proj");
+    let conn = Connection::open(elsewhere.join("state_5.sqlite")).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, position INTEGER NOT NULL, \
+           created_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL);
+         CREATE TABLE project_roots (project_id TEXT NOT NULL, position INTEGER NOT NULL, path TEXT NOT NULL);",
+    )
+    .unwrap();
+    conn.execute("INSERT INTO projects VALUES ('s', 'proj', 0, 1, 1)", [])
+        .unwrap();
+    conn.execute(
+        "INSERT INTO project_roots VALUES ('s', 0, ?1)",
+        params![p.to_str().unwrap()],
+    )
+    .unwrap();
+    assert_eq!(w.discover(&[], &[]).len(), 1);
 }

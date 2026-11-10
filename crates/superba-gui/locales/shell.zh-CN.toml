@@ -358,7 +358,7 @@ unset = "（未设置）"
 [lost_projects]
 title = "恢复项目文件夹"
 body = "在 Superba 修复之前，用个人访问令牌（PAT）登录时添加的项目会被 ChatGPT 清掉。下面这些文件夹还在，曾经是你的项目或在里面聊过天。勾选要恢复的文件夹。"
-promise = "Superba 会在下次打开 ChatGPT 时（那时 ChatGPT 需要是关闭的）把它们加回 ChatGPT 的项目列表；改之前先备份 ChatGPT 的状态文件，其他内容不动。"
+promise = "Superba 会在下次打开 ChatGPT 时（那时 ChatGPT 需要是关闭的）把勾选的文件夹加回 ChatGPT 的项目列表；改之前先备份 ChatGPT 的状态文件，其他内容不动。没勾选的文件夹以后不再提示。"
 restore = "恢复 {n} 个文件夹"
 dismiss = "不恢复"
 dismiss_tip = "以后不再提示这些文件夹"

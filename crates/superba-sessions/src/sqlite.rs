@@ -261,13 +261,19 @@ pub(crate) fn candidate_files(dirs: &[PathBuf]) -> Vec<PathBuf> {
 
 /// Open read-only.
 pub(crate) fn open_ro(path: &Path) -> Result<Connection> {
+    open_ro_waiting(path, BUSY_TIMEOUT)
+}
+
+/// Open read-only, waiting at most `busy` for a writer's lock (a database in
+/// the rollback-journal mode Codex uses on network file systems blocks
+/// readers while it writes).
+pub(crate) fn open_ro_waiting(path: &Path, busy: Duration) -> Result<Connection> {
     let conn = Connection::open_with_flags(
         path,
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )
     .map_err(|e| db_err(path, e))?;
-    conn.busy_timeout(BUSY_TIMEOUT)
-        .map_err(|e| db_err(path, e))?;
+    conn.busy_timeout(busy).map_err(|e| db_err(path, e))?;
     Ok(conn)
 }
 

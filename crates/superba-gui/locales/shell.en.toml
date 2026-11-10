@@ -367,7 +367,7 @@ unset = "(not set)"
 [lost_projects]
 title = "Bring back project folders"
 body = "Before Superba's fix, ChatGPT dropped projects you added while signed in with a personal access token. These folders still exist and were your projects or had chats. Tick the ones to bring back."
-promise = "Superba adds them to ChatGPT's project list the next time it opens ChatGPT (ChatGPT has to be closed then). It keeps a copy of ChatGPT's state first and changes nothing else."
+promise = "Superba adds the ticked ones to ChatGPT's project list the next time it opens ChatGPT (ChatGPT has to be closed then). It keeps a copy of ChatGPT's state first and changes nothing else. Folders you leave unticked are not offered again."
 restore = "Bring back {n} {n|folder|folders}"
 dismiss = "Don't bring back"
 dismiss_tip = "These folders are not offered again"

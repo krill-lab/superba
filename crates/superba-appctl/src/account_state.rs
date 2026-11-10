@@ -251,8 +251,9 @@ pub fn prepare_launch(
         done.backup = Some(write_backup(backup_dir, &bytes, now)?);
         replace(home, &path, &state)?;
     }
-    if let (Some(dir), Some(_)) = (app_state_dir, &pending) {
-        crate::project_restore::clear_pending(dir, home.root())?;
+    // Only what this launch read: folders queued meanwhile wait for the next.
+    if let (Some(dir), Some(p)) = (app_state_dir, &pending) {
+        crate::project_restore::clear_applied(dir, home.root(), &p.items)?;
     }
     Ok(done)
 }

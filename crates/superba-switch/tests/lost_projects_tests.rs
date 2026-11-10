@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use pretty_assertions::assert_eq;
 use rusqlite::{Connection, params};
 use superba_core::{CodexHome, Error, LostProjectsAnswer, Timestamp};
-use superba_switch::lost_projects::{answer, discover_cached, discover_for};
+use superba_switch::lost_projects::{answer, discover_cached, discover_cached_for, discover_for};
 
 struct World {
     _tmp: tempfile::TempDir,
@@ -143,5 +143,139 @@ fn without_the_app_state_nothing_is_offered() {
     fs::remove_file(w.codex.global_state_json()).unwrap();
     assert_eq!(discover_for(&w.codex, &w.home_dir, &w.app_state), None);
     fs::write(w.codex.global_state_json(), b"\xEF\xBB\xBF{}").unwrap();
+    assert_eq!(discover_for(&w.codex, &w.home_dir, &w.app_state), None);
+}
+
+fn make_db(path: &std::path::Path) -> Connection {
+    let conn = Connection::open(path).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, metadata TEXT NOT NULL DEFAULT '{}', \
+           position INTEGER NOT NULL, created_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL);
+         CREATE TABLE project_roots (project_id TEXT NOT NULL, position INTEGER NOT NULL, path TEXT NOT NULL);",
+    )
+    .unwrap();
+    conn
+}
+
+fn add_project(conn: &Connection, id: &str, dir: &std::path::Path) {
+    conn.execute(
+        "INSERT INTO projects (id, name, position, created_at_ms, updated_at_ms) VALUES (?1, ?1, 0, 1, 1)",
+        params![id],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO project_roots VALUES (?1, 0, ?2)",
+        params![id, dir.to_str().unwrap()],
+    )
+    .unwrap();
+}
+
+/// A bare home: the app's state knows nothing, no database yet.
+fn bare() -> World {
+    let tmp = tempfile::tempdir_in(env!("CARGO_TARGET_TMPDIR")).unwrap();
+    let root = superba_core::paths::canonical(tmp.path()).unwrap();
+    let home_dir = root.join("home");
+    let codex = CodexHome::new(home_dir.join(".codex"));
+    fs::create_dir_all(codex.root()).unwrap();
+    fs::write(codex.global_state_json(), br#"{"local-projects": {}}"#).unwrap();
+    World {
+        app_state: root.join("data/app-state"),
+        _tmp: tmp,
+        home_dir,
+        codex,
+    }
+}
+
+#[test]
+fn a_change_in_a_configured_sqlite_home_reaches_the_cache() {
+    let w = bare();
+    let db_dir = w.home_dir.join("elsewhere-state");
+    fs::create_dir_all(&db_dir).unwrap();
+    let a = w.home_dir.join("work/proj-a");
+    let b = w.home_dir.join("work/proj-b");
+    fs::create_dir_all(&a).unwrap();
+    fs::create_dir_all(&b).unwrap();
+    fs::write(
+        w.codex.config_toml(),
+        format!("sqlite_home = {:?}\n", db_dir.display().to_string()),
+    )
+    .unwrap();
+    let conn = make_db(&db_dir.join("state_5.sqlite"));
+    add_project(&conn, "s-a", &a);
+    let first = discover_cached(&w.codex, &w.home_dir, &w.app_state).unwrap();
+    assert_eq!(first.candidates.len(), 1);
+    // The app-server adds a project there; nothing under the Codex home changes.
+    add_project(&conn, "s-b", &b);
+    let cached = discover_cached(&w.codex, &w.home_dir, &w.app_state).unwrap();
+    assert_eq!(cached.candidates.len(), 2);
+}
+
+/// Same size and same time hide a change from the stamp; the age limit
+/// still brings it in (here with a zero age, the default is a minute).
+#[test]
+fn a_change_the_stamp_cannot_see_is_seen_once_the_result_is_too_old() {
+    let w = bare();
+    let x = w.home_dir.join("work/proj-x");
+    let c = w.home_dir.join("work/proj-c");
+    fs::create_dir_all(&x).unwrap();
+    fs::create_dir_all(&c).unwrap();
+    let db = w.codex.state_db();
+    let conn = make_db(&db);
+    add_project(&conn, "s-c", &c);
+    let pin = |t| {
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&db)
+            .unwrap()
+            .set_modified(t)
+            .unwrap()
+    };
+    let t = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_800_000_000);
+    pin(t);
+    let first = discover_cached(&w.codex, &w.home_dir, &w.app_state).unwrap();
+    assert_eq!(first.candidates[0].path, c);
+    let len = fs::metadata(&db).unwrap().len();
+    conn.execute(
+        "UPDATE project_roots SET path = ?1 WHERE project_id = 's-c'",
+        params![x.to_str().unwrap()],
+    )
+    .unwrap();
+    pin(t);
+    assert_eq!(fs::metadata(&db).unwrap().len(), len);
+    // Within the age limit the stamp hides it ...
+    assert_eq!(
+        discover_cached(&w.codex, &w.home_dir, &w.app_state)
+            .unwrap()
+            .candidates[0]
+            .path,
+        c
+    );
+    // ... past it, it is read again.
+    let fresh = discover_cached_for(
+        &w.codex,
+        &w.home_dir,
+        &w.app_state,
+        std::time::Duration::ZERO,
+    )
+    .unwrap();
+    assert_eq!(fresh.candidates[0].path, x);
+}
+
+/// An answers file of an unknown shape does not block "don't bring back".
+#[test]
+fn a_scalar_answers_file_does_not_block_a_dismissal() {
+    let w = world();
+    fs::create_dir_all(&w.app_state).unwrap();
+    fs::write(w.app_state.join("lost-projects-answered.json"), b"\"x\"").unwrap();
+    let lost = discover_for(&w.codex, &w.home_dir, &w.app_state).unwrap();
+    answer(
+        &w.codex,
+        &w.home_dir,
+        &w.app_state,
+        &lost.fingerprint,
+        &LostProjectsAnswer::Dismiss,
+        Timestamp::EPOCH,
+    )
+    .unwrap();
     assert_eq!(discover_for(&w.codex, &w.home_dir, &w.app_state), None);
 }

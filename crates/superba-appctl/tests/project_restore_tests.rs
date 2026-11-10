@@ -11,7 +11,7 @@ use pretty_assertions::assert_eq;
 use serde_json::{Value, json};
 use superba_appctl::account_state::{ACCOUNT_STATE_KEY, Prepared, prepare_launch};
 use superba_appctl::project_restore::{
-    self, ANSWERED_FILE, PENDING_FILE, RestoreItem, answered, apply, clear_pending, known_roots,
+    self, ANSWERED_FILE, PENDING_FILE, RestoreItem, answered, apply, clear_applied, known_roots,
     pending, queue, record_answered,
 };
 use superba_core::{CodexHome, Timestamp};
@@ -176,10 +176,11 @@ fn the_queue_and_the_answers_are_kept_per_codex_home_and_owner_only() {
         [item("/w/c", "c", Some("k")), item("/w/d", "d", None)]
     );
     assert_eq!(p.requested_at, Timestamp::from_millis(2));
-    clear_pending(&dir, h1).unwrap();
+    clear_applied(&dir, h1, &p.items).unwrap();
     assert_eq!(pending(&dir, h1).unwrap(), None);
     assert!(pending(&dir, h2).unwrap().is_some());
-    clear_pending(&dir, h2).unwrap();
+    let p2 = pending(&dir, h2).unwrap().unwrap();
+    clear_applied(&dir, h2, &p2.items).unwrap();
     assert!(!dir.join(PENDING_FILE).exists());
 
     record_answered(&dir, h1, &["/w/c".into(), "/w/d".into()]).unwrap();
@@ -374,4 +375,134 @@ fn folders_already_present_clear_the_queue_without_a_write() {
     assert_eq!(pending(&w.app_state, w.home.root()).unwrap(), None);
     assert!(!w.backups.exists());
     let _ = project_restore::path_key(Path::new("/"));
+}
+
+/// A launch whose replacement of the app's state fails reports it and keeps
+/// the queued folders for the next launch (acceptance mutation (c)).
+#[cfg(unix)]
+#[test]
+fn a_failed_replacement_keeps_the_queued_folders() {
+    use std::os::unix::fs::PermissionsExt;
+    let w = world(CHATGPT, &json!({"local-projects": {}}));
+    let before = fs::read(w.home.global_state_json()).unwrap();
+    queue(
+        &w.app_state,
+        w.home.root(),
+        vec![item("/w/c", "c", Some("k"))],
+        Timestamp::EPOCH,
+    )
+    .unwrap();
+    // The Codex home refuses new files: the atomic replacement cannot be
+    // written. (Root ignores the mode; nothing to test then.)
+    fs::set_permissions(w.home.root(), fs::Permissions::from_mode(0o555)).unwrap();
+    let writable = fs::write(w.home.root().join("probe"), b"").is_ok();
+    let result = prepare_launch(
+        &w.home,
+        &w.backups,
+        Some(&w.app_state),
+        Timestamp::from_millis(3),
+    );
+    fs::set_permissions(w.home.root(), fs::Permissions::from_mode(0o755)).unwrap();
+    if writable {
+        eprintln!("skipped: running with permission overrides");
+        return;
+    }
+    assert!(result.is_err(), "the failed replacement must be reported");
+    assert_eq!(fs::read(w.home.global_state_json()).unwrap(), before);
+    let left = pending(&w.app_state, w.home.root()).unwrap().unwrap();
+    assert_eq!(left.items, [item("/w/c", "c", Some("k"))]);
+}
+
+/// A launch reads the queue (A), the GUI's answer queues B, then the launch
+/// clears what it applied: B stays for the next launch.
+#[test]
+fn an_answer_landing_during_a_launch_survives_the_clear() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("app-state");
+    let home = Path::new("/u/.codex");
+    queue(&dir, home, vec![item("/w/a", "a", None)], Timestamp::EPOCH).unwrap();
+    let read_by_launch = pending(&dir, home).unwrap().unwrap();
+    queue(
+        &dir,
+        home,
+        vec![item("/w/b", "b", None)],
+        Timestamp::from_millis(2),
+    )
+    .unwrap();
+    clear_applied(&dir, home, &read_by_launch.items).unwrap();
+    let left = pending(&dir, home)
+        .unwrap()
+        .expect("the answered folder was dropped");
+    assert_eq!(left.items, [item("/w/b", "b", None)]);
+    // And through a whole launch: the queue read by it is applied, the rest stays.
+    let w = world(CHATGPT, &json!({"local-projects": {}}));
+    queue(
+        &w.app_state,
+        w.home.root(),
+        vec![item("/w/a", "a", None)],
+        Timestamp::EPOCH,
+    )
+    .unwrap();
+    let done = prepare_launch(&w.home, &w.backups, Some(&w.app_state), Timestamp::EPOCH).unwrap();
+    assert_eq!(done.restored, 1);
+    queue(
+        &w.app_state,
+        w.home.root(),
+        vec![item("/w/b", "b", None)],
+        Timestamp::EPOCH,
+    )
+    .unwrap();
+    assert_eq!(
+        pending(&w.app_state, w.home.root()).unwrap().unwrap().items,
+        [item("/w/b", "b", None)]
+    );
+}
+
+/// Concurrent read-modify-writes of the queue (answers from several threads
+/// and a clearing launch) lose nothing: the lock serialises them.
+#[test]
+fn concurrent_answers_and_clears_lose_no_queued_folder() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("app-state");
+    let home = PathBuf::from("/u/.codex");
+    let threads: Vec<_> = (0..8)
+        .map(|t| {
+            let dir = dir.clone();
+            let home = home.clone();
+            std::thread::spawn(move || {
+                for i in 0..10 {
+                    let p = format!("/w/{t}-{i}");
+                    queue(&dir, &home, vec![item(&p, &p, None)], Timestamp::EPOCH).unwrap();
+                    // A launch clearing a folder nobody queued must not
+                    // take anyone else's.
+                    clear_applied(&dir, &home, &[item("/w/never", "x", None)]).unwrap();
+                }
+            })
+        })
+        .collect();
+    for t in threads {
+        t.join().unwrap();
+    }
+    let left = pending(&dir, &home).unwrap().unwrap();
+    assert_eq!(left.items.len(), 80);
+}
+
+/// A queue or answers file of an unknown shape holds nothing usable: it
+/// reads as empty and the next write replaces it.
+#[test]
+fn files_of_an_unknown_shape_are_replaced_not_fatal() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("app-state");
+    let home = Path::new("/u/.codex");
+    fs::create_dir_all(&dir).unwrap();
+    for bad in [&b"\"x\""[..], b"42", b"{not json", b"{\"homes\": 7}"] {
+        fs::write(dir.join(ANSWERED_FILE), bad).unwrap();
+        fs::write(dir.join(PENDING_FILE), bad).unwrap();
+        assert!(answered(&dir, home).unwrap().is_empty());
+        assert_eq!(pending(&dir, home).unwrap(), None);
+        record_answered(&dir, home, &["/w/c".into()]).unwrap();
+        assert_eq!(answered(&dir, home).unwrap(), [PathBuf::from("/w/c")]);
+        queue(&dir, home, vec![item("/w/d", "d", None)], Timestamp::EPOCH).unwrap();
+        assert!(pending(&dir, home).unwrap().is_some());
+    }
 }

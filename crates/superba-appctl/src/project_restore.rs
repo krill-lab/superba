@@ -98,12 +98,19 @@ pub fn path_key(path: &Path) -> String {
     }
 }
 
+/// Read a queue or answers file. A missing file is empty; so is one of an
+/// unknown shape (logged): it holds nothing usable, and treating it as empty
+/// lets the next write replace it instead of failing for good.
 fn read_json<T: Default + for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
     match fs::read(path) {
-        Ok(bytes) => serde_json::from_slice(&bytes).map_err(|e| Error::Parse {
-            what: path.display().to_string(),
-            message: e.to_string(),
-        }),
+        Ok(bytes) => Ok(serde_json::from_slice(&bytes).unwrap_or_else(|e| {
+            tracing::warn!(
+                path = %path.display(),
+                error = %e,
+                "ignored a project-restore file of an unknown shape"
+            );
+            T::default()
+        })),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(T::default()),
         Err(e) => Err(Error::io(path, &e)),
     }
@@ -134,6 +141,28 @@ fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
     Ok(())
 }
 
+/// Lock file serialising every read-modify-write of the queue and the
+/// answers (the GUI's answer and a launch may run at the same time, in one
+/// process or two).
+pub const LOCK_FILE: &str = "project-restore.lock";
+
+/// Run `f` holding the exclusive lock of `app_state_dir` (released when the
+/// file closes, also when `f` fails).
+fn locked<R>(app_state_dir: &Path, f: impl FnOnce() -> Result<R>) -> Result<R> {
+    fs::create_dir_all(app_state_dir).map_err(|e| Error::io(app_state_dir, &e))?;
+    let path = app_state_dir.join(LOCK_FILE);
+    let file = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&path)
+        .map_err(|e| Error::io(&path, &e))?;
+    file.lock().map_err(|e| Error::io(&path, &e))?;
+    let result = f();
+    drop(file);
+    result
+}
+
 /// The folders waiting for `codex_home`, if any.
 pub fn pending(app_state_dir: &Path, codex_home: &Path) -> Result<Option<Pending>> {
     let file: PendingFile = read_json(&app_state_dir.join(PENDING_FILE))?;
@@ -152,56 +181,65 @@ pub fn queue(
     items: Vec<RestoreItem>,
     now: Timestamp,
 ) -> Result<()> {
-    let path = app_state_dir.join(PENDING_FILE);
-    let mut file: PendingFile = read_json(&path)?;
-    let home = path_key(codex_home);
-    let idx = match file
-        .homes
-        .iter()
-        .position(|p| path_key(&p.codex_home) == home)
-    {
-        Some(i) => i,
-        None => {
-            file.homes.push(Pending {
-                codex_home: codex_home.to_path_buf(),
-                items: Vec::new(),
-                requested_at: now,
-            });
-            file.homes.len() - 1
-        }
-    };
-    let entry = &mut file.homes[idx];
-    entry.requested_at = now;
-    for item in items {
-        if !entry
-            .items
+    locked(app_state_dir, || {
+        let path = app_state_dir.join(PENDING_FILE);
+        let mut file: PendingFile = read_json(&path)?;
+        let home = path_key(codex_home);
+        let idx = match file
+            .homes
             .iter()
-            .any(|i| path_key(&i.path) == path_key(&item.path))
+            .position(|p| path_key(&p.codex_home) == home)
         {
-            entry.items.push(item);
+            Some(i) => i,
+            None => {
+                file.homes.push(Pending {
+                    codex_home: codex_home.to_path_buf(),
+                    items: Vec::new(),
+                    requested_at: now,
+                });
+                file.homes.len() - 1
+            }
+        };
+        let entry = &mut file.homes[idx];
+        entry.requested_at = now;
+        for item in items {
+            if !entry
+                .items
+                .iter()
+                .any(|i| path_key(&i.path) == path_key(&item.path))
+            {
+                entry.items.push(item);
+            }
         }
-    }
-    write_json(&path, &file)
+        write_json(&path, &file)
+    })
 }
 
-/// Forget the folders waiting for `codex_home` (they were written).
-pub fn clear_pending(app_state_dir: &Path, codex_home: &Path) -> Result<()> {
-    let path = app_state_dir.join(PENDING_FILE);
-    let mut file: PendingFile = read_json(&path)?;
-    let home = path_key(codex_home);
-    let before = file.homes.len();
-    file.homes.retain(|p| path_key(&p.codex_home) != home);
-    if file.homes.len() == before {
-        return Ok(());
-    }
-    if file.homes.is_empty() {
-        return match fs::remove_file(&path) {
-            Ok(()) => Ok(()),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(e) => Err(Error::io(&path, &e)),
-        };
-    }
-    write_json(&path, &file)
+/// Forget the folders of `done` waiting for `codex_home` (they were written,
+/// or were there already). Folders queued since `done` was read stay.
+pub fn clear_applied(app_state_dir: &Path, codex_home: &Path, done: &[RestoreItem]) -> Result<()> {
+    locked(app_state_dir, || {
+        let path = app_state_dir.join(PENDING_FILE);
+        let mut file: PendingFile = read_json(&path)?;
+        let home = path_key(codex_home);
+        let done: BTreeSet<String> = done.iter().map(|i| path_key(&i.path)).collect();
+        for entry in file
+            .homes
+            .iter_mut()
+            .filter(|p| path_key(&p.codex_home) == home)
+        {
+            entry.items.retain(|i| !done.contains(&path_key(&i.path)));
+        }
+        file.homes.retain(|p| !p.items.is_empty());
+        if file.homes.is_empty() {
+            return match fs::remove_file(&path) {
+                Ok(()) => Ok(()),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(e) => Err(Error::io(&path, &e)),
+            };
+        }
+        write_json(&path, &file)
+    })
 }
 
 /// The folders offered before for `codex_home`.
@@ -216,15 +254,17 @@ pub fn answered(app_state_dir: &Path, codex_home: &Path) -> Result<Vec<PathBuf>>
 
 /// Remember `paths` as offered for `codex_home`.
 pub fn record_answered(app_state_dir: &Path, codex_home: &Path, paths: &[PathBuf]) -> Result<()> {
-    let path = app_state_dir.join(ANSWERED_FILE);
-    let mut file: AnsweredFile = read_json(&path)?;
-    let list = file.homes.entry(path_key(codex_home)).or_default();
-    for p in paths {
-        if !list.iter().any(|q| path_key(q) == path_key(p)) {
-            list.push(p.clone());
+    locked(app_state_dir, || {
+        let path = app_state_dir.join(ANSWERED_FILE);
+        let mut file: AnsweredFile = read_json(&path)?;
+        let list = file.homes.entry(path_key(codex_home)).or_default();
+        for p in paths {
+            if !list.iter().any(|q| path_key(q) == path_key(p)) {
+                list.push(p.clone());
+            }
         }
-    }
-    write_json(&path, &file)
+        write_json(&path, &file)
+    })
 }
 
 /// Every folder of a project the app knows in `state` (any account): the

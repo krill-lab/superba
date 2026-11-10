@@ -19,11 +19,17 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use rusqlite::Connection;
 use superba_core::{CodexHome, LostProject, LostProjectSource, Timestamp};
 
 use crate::sqlite;
+
+/// How long one database may keep this read-only probe waiting for a
+/// writer's lock before it is skipped (logged): the overview polls, it must
+/// not stall.
+pub const PROBE_BUSY_TIMEOUT: Duration = Duration::from_millis(500);
 
 /// At most this many folders seen only in chats are offered.
 pub const MAX_CHAT_FOLDERS: usize = 20;
@@ -42,32 +48,54 @@ pub fn discover(
     known: &[PathBuf],
     answered: &[PathBuf],
 ) -> Vec<LostProject> {
-    let mut warnings = Vec::new();
-    let dirs = crate::inventory::sqlite_dirs(home, Some(home_dir), &mut warnings);
+    let dirs = database_dirs(home, home_dir);
     let mut projects = Vec::new();
     let mut chats: BTreeMap<String, (PathBuf, u32, Option<i64>)> = BTreeMap::new();
     for path in sqlite::candidate_files(&dirs) {
         if crate::util::is_unlockable_share(&path) {
             continue;
         }
-        let Ok(conn) = sqlite::open_ro(&path) else {
-            continue;
-        };
-        if let Ok(rows) = read_projects(&conn) {
-            projects.extend(rows);
-        }
-        if let Ok(rows) = read_chat_folders(&conn) {
-            for (cwd, count, last) in rows {
-                let entry = chats
-                    .entry(key(&cwd))
-                    .or_insert_with(|| (cwd.clone(), 0, None));
-                entry.1 = entry.1.saturating_add(count);
-                entry.2 = entry.2.max(last);
+        let conn = match sqlite::open_ro_waiting(&path, PROBE_BUSY_TIMEOUT) {
+            Ok(conn) => conn,
+            Err(error) => {
+                tracing::warn!(path = %path.display(), %error, "skipped a database while looking for dropped projects");
+                continue;
             }
+        };
+        match read_projects(&conn) {
+            Ok(rows) => projects.extend(rows),
+            Err(error) => tracing::warn!(
+                path = %path.display(),
+                %error,
+                "gave up reading the project list (busy or unreadable); its projects are not offered now"
+            ),
+        }
+        match read_chat_folders(&conn) {
+            Ok(rows) => {
+                for (cwd, count, last) in rows {
+                    let entry = chats
+                        .entry(key(&cwd))
+                        .or_insert_with(|| (cwd.clone(), 0, None));
+                    entry.1 = entry.1.saturating_add(count);
+                    entry.2 = entry.2.max(last);
+                }
+            }
+            Err(error) => tracing::warn!(
+                path = %path.display(),
+                %error,
+                "gave up reading the chat folders (busy or unreadable)"
+            ),
         }
     }
     let filter = Filter::new(home, home_dir, known, answered);
     candidates(projects, chats.into_values().collect(), &filter)
+}
+
+/// The directories whose databases are read: the Codex home, its sqlite
+/// home (`CODEX_SQLITE_HOME`) and the `sqlite_home` of `config.toml`.
+pub fn database_dirs(home: &CodexHome, home_dir: &Path) -> Vec<PathBuf> {
+    let mut warnings = Vec::new();
+    crate::inventory::sqlite_dirs(home, Some(home_dir), &mut warnings)
 }
 
 /// One project row of the app-server's list.
@@ -297,10 +325,18 @@ pub fn candidates(
         } else {
             row.name.clone()
         };
+        // Every further root passes the same filter; one that does not (the
+        // home directory, a missing folder, ...) is left out of the project.
+        let mut extra_roots = Vec::new();
+        for r in &row.roots[1..] {
+            if filter.allows(r) && seen.insert(key(r)) {
+                extra_roots.push(r.clone());
+            }
+        }
         out.push((
             last,
             LostProject {
-                extra_roots: row.roots[1..].to_vec(),
+                extra_roots,
                 path,
                 name,
                 last_used: last.map(Timestamp::from_millis),

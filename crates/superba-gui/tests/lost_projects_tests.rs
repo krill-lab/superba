@@ -149,6 +149,7 @@ async fn the_dialog_ticks_the_project_list_folders_and_sends_the_answer() {
         "Bring back 1 folder",
         "Don't bring back",
         "Not now",
+        "Folders you leave unticked are not offered again",
     ] {
         assert!(
             shown.iter().any(|t| t.contains(want)),

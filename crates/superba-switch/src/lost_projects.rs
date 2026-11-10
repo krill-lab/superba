@@ -5,12 +5,15 @@
 //! knows, any account), Superba's queue and answers
 //! (`superba_appctl::project_restore`) and the Codex databases
 //! (`superba_sessions::lost_projects`). The overview polls every few seconds,
-//! so the result is cached per Codex home until one of those files changes.
+//! so the result is cached per Codex home until one of those files changes
+//! (the state databases of every directory discovery reads, `config.toml`
+//! included) and for at most [`MAX_AGE`]: a change a file's size and time do
+//! not show, or a candidate folder removed meanwhile, is seen within it.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
-use std::time::SystemTime;
+use std::time::{Duration, Instant, SystemTime};
 
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -20,7 +23,10 @@ use superba_core::{CodexHome, Error, LostProjects, LostProjectsAnswer, Result};
 use crate::Switcher;
 
 type Stamp = Vec<(PathBuf, Option<SystemTime>, u64)>;
-type Cache = Mutex<BTreeMap<PathBuf, (Stamp, Option<LostProjects>)>>;
+type Cache = Mutex<BTreeMap<PathBuf, (Stamp, Instant, Option<LostProjects>)>>;
+
+/// The longest a cached result is used.
+pub const MAX_AGE: Duration = Duration::from_secs(60);
 
 fn cache() -> &'static Cache {
     static CACHE: OnceLock<Cache> = OnceLock::new();
@@ -28,14 +34,15 @@ fn cache() -> &'static Cache {
 }
 
 /// Modification times and sizes of everything the result depends on.
-fn stamp(home: &CodexHome, app_state_dir: &Path) -> Stamp {
+fn stamp(home: &CodexHome, home_dir: &Path, app_state_dir: &Path) -> Stamp {
     let mut files = vec![
         home.global_state_json(),
+        home.config_toml(),
         app_state_dir.join(project_restore::PENDING_FILE),
         app_state_dir.join(project_restore::ANSWERED_FILE),
     ];
-    for dir in [home.root(), home.sqlite_home()] {
-        for sub in [dir.to_path_buf(), dir.join("sqlite")] {
+    for dir in superba_sessions::lost_projects::database_dirs(home, home_dir) {
+        for sub in [dir.clone(), dir.join("sqlite")] {
             if let Ok(entries) = std::fs::read_dir(&sub) {
                 let mut found: Vec<PathBuf> = entries
                     .filter_map(|e| e.ok().map(|e| e.path()))
@@ -91,23 +98,35 @@ pub fn discover_for(
     })
 }
 
-/// [`discover_for`], cached until one of its files changes.
+/// [`discover_for`], cached until one of its files changes, at most for
+/// [`MAX_AGE`].
 pub fn discover_cached(
     home: &CodexHome,
     home_dir: &Path,
     app_state_dir: &Path,
 ) -> Option<LostProjects> {
-    let now = stamp(home, app_state_dir);
+    discover_cached_for(home, home_dir, app_state_dir, MAX_AGE)
+}
+
+/// [`discover_cached`] with another longest age.
+pub fn discover_cached_for(
+    home: &CodexHome,
+    home_dir: &Path,
+    app_state_dir: &Path,
+    max_age: Duration,
+) -> Option<LostProjects> {
+    let now = stamp(home, home_dir, app_state_dir);
     let key = home.root().to_path_buf();
     if let Ok(c) = cache().lock()
-        && let Some((s, v)) = c.get(&key)
+        && let Some((s, at, v)) = c.get(&key)
         && *s == now
+        && at.elapsed() < max_age
     {
         return v.clone();
     }
     let value = discover_for(home, home_dir, app_state_dir);
     if let Ok(mut c) = cache().lock() {
-        c.insert(key, (now, value.clone()));
+        c.insert(key, (now, Instant::now(), value.clone()));
     }
     value
 }
