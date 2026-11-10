@@ -158,3 +158,60 @@ async fn a_new_profile_set_needs_no_migration() {
             .openai_telemetry_off()
     );
 }
+
+/// Recording the run fails (here: `profiles.json` is a link into a folder
+/// Superba cannot write). The load still answers with the migrated set and
+/// logs; once writing works again, the next save records the run with the
+/// value the user set in between, and later loads keep that value.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_failed_record_neither_fails_the_load_nor_loses_a_later_choice() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let ctx = context(tmp.path());
+    write_old_file(&ctx);
+    // Move the file into a read-only folder and link it back.
+    let ro = tmp.path().join("ro");
+    fs::create_dir_all(&ro).unwrap();
+    let real = ro.join("profiles.json");
+    fs::rename(ctx.data_dir.profiles_json(), &real).unwrap();
+    std::os::unix::fs::symlink(&real, ctx.data_dir.profiles_json()).unwrap();
+    let before = fs::read(&real).unwrap();
+    fs::set_permissions(&ro, fs::Permissions::from_mode(0o555)).unwrap();
+    if fs::write(ro.join("probe"), b"").is_ok() {
+        // Running with CAP_DAC_OVERRIDE (root): the folder cannot be made
+        // read-only for this process, so the failure cannot be staged.
+        eprintln!("skipped: permissions are not enforced for this user");
+        fs::set_permissions(&ro, fs::Permissions::from_mode(0o755)).unwrap();
+        return;
+    }
+
+    let store = JsonProfileStore::new(ctx.clone());
+    let mut set = store.load().await.expect("the load does not fail");
+    assert!(set.settings.analytics_preset_dropped);
+    assert_eq!(analytics(&set, "krill-old"), None);
+    assert_eq!(
+        analytics(&set, "krill-on"),
+        Some(SettingEntry::Set(SettingValue::Bool(true)))
+    );
+    assert_eq!(fs::read(&real).unwrap(), before, "nothing was written");
+
+    // Writing works again; the user switches telemetry off and it is saved.
+    fs::set_permissions(&ro, fs::Permissions::from_mode(0o755)).unwrap();
+    set.profiles
+        .iter_mut()
+        .find(|p| p.id == "krill-old")
+        .unwrap()
+        .codex_settings
+        .set_openai_telemetry_off(true);
+    store.save(&set).await.unwrap();
+    for _ in 0..2 {
+        let set = JsonProfileStore::new(ctx.clone()).load().await.unwrap();
+        assert!(set.settings.analytics_preset_dropped);
+        assert_eq!(
+            analytics(&set, "krill-old"),
+            Some(SettingEntry::Set(SettingValue::Bool(false)))
+        );
+    }
+}

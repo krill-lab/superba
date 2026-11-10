@@ -247,3 +247,63 @@ async fn after_the_migration_the_next_switch_keeps_the_user_s_own_value() {
     rig.apply("original").await;
     assert_eq!(rig.config(), USER_OFF);
 }
+
+/// The recorded run survives the Preferences page: a copy of the settings
+/// without the marker (an older window's copy, a hand-made request) is saved
+/// through the service, yet the next start does not migrate again and the
+/// user's own "Disable OpenAI telemetry" stays. Real profile store. Remove
+/// after alpha.14+N with the migration.
+#[tokio::test]
+async fn saving_settings_without_the_marker_keeps_the_migration_recorded() {
+    use superba_config::JsonProfileStore;
+    use superba_core::{ProfileStore, Settings};
+
+    let w = World::new();
+    let store = JsonProfileStore::new(w.ctx.clone());
+    // profiles.json as Superba up to alpha.13 wrote it: the old preset, no marker.
+    let mut old = w.profiles.set.lock().unwrap().clone();
+    old.profiles
+        .iter_mut()
+        .find(|p| p.id == "work")
+        .unwrap()
+        .codex_settings
+        .set_openai_telemetry_off(true);
+    old.settings.analytics_preset_dropped = false;
+    std::fs::create_dir_all(w.ctx.data_dir.root()).unwrap();
+    std::fs::write(
+        w.ctx.data_dir.profiles_json(),
+        serde_json::to_vec_pretty(&old).unwrap(),
+    )
+    .unwrap();
+    let mut deps = w.deps();
+    deps.profiles = Arc::new(store.clone());
+    let sw = Switcher::new(deps);
+
+    // First start: migrated.
+    let set = sw.profile_set().await.unwrap();
+    assert!(set.settings.analytics_preset_dropped);
+    let mut work = set.profile(&ProfileId::new("work")).unwrap().clone();
+    assert!(!work.codex_settings.openai_telemetry_off());
+    // The user wants telemetry off after all.
+    work.codex_settings.set_openai_telemetry_off(true);
+    sw.save_profile(work, None).await.unwrap();
+    // Preferences saved from a copy without the marker.
+    let stale = Settings {
+        analytics_preset_dropped: false,
+        countdown_secs: 3,
+        ..set.settings.clone()
+    };
+    sw.save_settings(stale).await.unwrap();
+
+    // Next start (a fresh store reads the file).
+    let set = JsonProfileStore::new(w.ctx.clone()).load().await.unwrap();
+    assert_eq!(set.settings.countdown_secs, 3, "the settings were saved");
+    assert!(set.settings.analytics_preset_dropped);
+    assert!(
+        set.profile(&ProfileId::new("work"))
+            .unwrap()
+            .codex_settings
+            .openai_telemetry_off(),
+        "the user's own choice survives"
+    );
+}
