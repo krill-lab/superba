@@ -158,3 +158,50 @@ fn io_failure_leaves_the_existing_path_alone() {
     assert!(home.global_state_json().is_dir());
     assert_eq!(fs::read_dir(home.root()).unwrap().count(), 1);
 }
+
+#[cfg(unix)]
+#[test]
+fn a_symlinked_state_file_is_written_through_and_stays_a_link() {
+    use std::os::unix::fs::{PermissionsExt, symlink};
+    let tmp = tempfile::tempdir().unwrap();
+    let home = CodexHome::new(tmp.path().join(".codex"));
+    let elsewhere = tmp.path().join("dotfiles");
+    fs::create_dir_all(home.root()).unwrap();
+    fs::create_dir_all(&elsewhere).unwrap();
+    let target = elsewhere.join("state.json");
+    fs::write(&target, br#"{"a":1}"#).unwrap();
+    fs::set_permissions(&target, fs::Permissions::from_mode(0o640)).unwrap();
+    // A relative link, resolved against the link's own directory.
+    symlink("../dotfiles/state.json", home.global_state_json()).unwrap();
+    ensure_completed(&home).unwrap();
+    let link = fs::symlink_metadata(home.global_state_json()).unwrap();
+    assert!(link.file_type().is_symlink());
+    assert_eq!(
+        fs::read_link(home.global_state_json()).unwrap(),
+        std::path::Path::new("../dotfiles/state.json")
+    );
+    assert_eq!(
+        fs::read_to_string(&target).unwrap(),
+        format!(r#"{{"a":1,"{ATOMS}":{{"{COMPLETED}":true}}}}"#)
+    );
+    assert_eq!(
+        fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+        0o640
+    );
+    // No temporary file left in either directory.
+    assert_eq!(fs::read_dir(home.root()).unwrap().count(), 1);
+    assert_eq!(fs::read_dir(&elsewhere).unwrap().count(), 1);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_dangling_state_file_link_is_left_alone() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = CodexHome::new(tmp.path());
+    let missing = tmp.path().join("gone/state.json");
+    std::os::unix::fs::symlink(&missing, home.global_state_json()).unwrap();
+    assert!(ensure_completed(&home).is_err());
+    assert_eq!(fs::read_link(home.global_state_json()).unwrap(), missing);
+    assert!(!missing.exists());
+    assert_eq!(fs::read_dir(home.root()).unwrap().count(), 1);
+}

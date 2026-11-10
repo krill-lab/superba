@@ -131,6 +131,76 @@ impl EnvSource for OverlayEnv {
     }
 }
 
+/// [`OverlayEnv`] of `base` with the changes a launch with `options` makes.
+fn launch_overlay(base: Arc<dyn EnvSource>, options: &LaunchOptions) -> OverlayEnv {
+    let mut overrides: BTreeMap<String, Option<String>> = BTreeMap::new();
+    if let Some(home) = &options.home_override {
+        let (set, remove) = launch::home_override_env(home);
+        for k in remove {
+            overrides.insert(k, None);
+        }
+        for (k, v) in set {
+            overrides.insert(k, Some(v));
+        }
+    }
+    for k in &options.env_remove {
+        overrides.insert(k.clone(), None);
+    }
+    for (k, v) in &options.env {
+        overrides.insert(k.clone(), Some(v.clone()));
+    }
+    OverlayEnv { base, overrides }
+}
+
+/// Which environment the started app gets.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AppEnv {
+    /// Linux and a directly started Windows exe: Superba's, with the launch's
+    /// changes.
+    Inherited,
+    /// macOS LaunchServices: only what `open --env` passes (the launch's
+    /// `env_set`), nothing of Superba's own environment.
+    LaunchOnly,
+    /// Windows MSIX activation: nothing of the launch; the user's environment.
+    #[cfg_attr(not(windows), allow(dead_code))]
+    Activation,
+}
+
+impl AppEnv {
+    /// How [`launch::spawn`] will start `install`. Blocking on Windows (the
+    /// package API).
+    fn of(install: &AppInstall) -> Self {
+        if cfg!(target_os = "macos") {
+            return Self::LaunchOnly;
+        }
+        #[cfg(windows)]
+        if appx::resolve_aumid(install).is_some() {
+            return Self::Activation;
+        }
+        let _ = install;
+        Self::Inherited
+    }
+}
+
+/// The Codex home whose desktop state the started app reads (user bug 129):
+/// resolved from the environment the app actually gets, never from Superba's
+/// own where the app does not inherit it. `None` when the launch will be
+/// refused (an isolated home for an MSIX package).
+fn launched_codex_home(
+    app_env: AppEnv,
+    base: Arc<dyn EnvSource>,
+    options: &LaunchOptions,
+    app_home: &Path,
+) -> Option<CodexHome> {
+    let empty: Arc<dyn EnvSource> = Arc::new(superba_core::MapEnv::new());
+    Some(match app_env {
+        AppEnv::Inherited => CodexHome::resolve(&launch_overlay(base, options), app_home),
+        AppEnv::LaunchOnly => CodexHome::resolve(&launch_overlay(empty, options), app_home),
+        AppEnv::Activation if options.home_override.is_some() => return None,
+        AppEnv::Activation => CodexHome::resolve(empty.as_ref(), app_home),
+    })
+}
+
 fn blocking_err(e: tokio::task::JoinError) -> Error {
     Error::other(format!("background task failed: {e}"))
 }
@@ -244,26 +314,7 @@ impl DesktopAppController {
     }
 
     fn launch_env_view(&self, options: &LaunchOptions) -> OverlayEnv {
-        let mut overrides: BTreeMap<String, Option<String>> = BTreeMap::new();
-        if let Some(home) = &options.home_override {
-            let (set, remove) = launch::home_override_env(home);
-            for k in remove {
-                overrides.insert(k, None);
-            }
-            for (k, v) in set {
-                overrides.insert(k, Some(v));
-            }
-        }
-        for k in &options.env_remove {
-            overrides.insert(k.clone(), None);
-        }
-        for (k, v) in &options.env {
-            overrides.insert(k.clone(), Some(v.clone()));
-        }
-        OverlayEnv {
-            base: self.ctx.env.clone(),
-            overrides,
-        }
+        launch_overlay(self.ctx.env.clone(), options)
     }
 
     /// Build sessions for every running app main process in `snap`.
@@ -704,12 +755,16 @@ impl AppController for DesktopAppController {
         let spawn_spec = spec.clone();
         let spawn_install = install.clone();
         let log = self.launch_log_path();
-        let state_home = app_codex_home.clone();
+        let base_env = self.ctx.env.clone();
+        let seed_options = options.clone();
         // LaunchServices may take several seconds to expose the new main pid.
         let spawned = tokio::task::spawn_blocking(move || {
             // After the running-instance check, before any platform starts the
             // app (user bug 129). Never fails the launch; see `onboarding`.
-            onboarding::seed(&state_home);
+            let app_env = AppEnv::of(&spawn_install);
+            if let Some(home) = launched_codex_home(app_env, base_env, &seed_options, &app_home) {
+                onboarding::seed(&home);
+            }
             launch::spawn(&spawn_spec, &spawn_install, Some(&log))
         })
         .await
@@ -1296,6 +1351,51 @@ impl DesktopAppController {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// User bug 129: the onboarding flag goes to the home the app will read,
+    /// which for LaunchServices and MSIX activation is not Superba's own
+    /// `CODEX_HOME`.
+    #[test]
+    fn launched_codex_home_follows_what_the_app_environment_gets() {
+        let base: Arc<dyn EnvSource> = Arc::new(
+            superba_core::MapEnv::new()
+                .with("CODEX_HOME", "/superba-only")
+                .with("HOME", "/home/u"),
+        );
+        let app_home = Path::new("/home/u");
+        let root = |env, options: &LaunchOptions, home: &Path| {
+            launched_codex_home(env, base.clone(), options, home).map(|h| h.root().to_path_buf())
+        };
+        let plain = LaunchOptions::default();
+        let user = Some(PathBuf::from("/home/u/.codex"));
+        assert_eq!(
+            root(AppEnv::Inherited, &plain, app_home),
+            Some(PathBuf::from("/superba-only"))
+        );
+        assert_eq!(root(AppEnv::LaunchOnly, &plain, app_home), user);
+        assert_eq!(root(AppEnv::Activation, &plain, app_home), user);
+
+        // A CODEX_HOME the launch passes reaches `open --env`, not activation.
+        let mut passed = LaunchOptions::default();
+        passed.env.insert("CODEX_HOME".into(), "/passed".into());
+        for env in [AppEnv::Inherited, AppEnv::LaunchOnly] {
+            assert_eq!(root(env, &passed, app_home), Some(PathBuf::from("/passed")));
+        }
+        assert_eq!(root(AppEnv::Activation, &passed, app_home), user);
+
+        // An isolated home removes the inherited CODEX_HOME; MSIX refuses it.
+        let isolated = LaunchOptions {
+            home_override: Some(PathBuf::from("/iso")),
+            ..LaunchOptions::default()
+        };
+        for env in [AppEnv::Inherited, AppEnv::LaunchOnly] {
+            assert_eq!(
+                root(env, &isolated, Path::new("/iso")),
+                Some(PathBuf::from("/iso/.codex"))
+            );
+        }
+        assert_eq!(root(AppEnv::Activation, &isolated, Path::new("/iso")), None);
+    }
 
     #[test]
     fn mismatched_listener_is_never_recorded_as_cdp() {

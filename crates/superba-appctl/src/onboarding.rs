@@ -10,6 +10,7 @@
 
 use std::fs;
 use std::io::Write;
+use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 use superba_core::{CodexHome, Error, Result};
@@ -31,7 +32,7 @@ pub(crate) fn seed(home: &CodexHome) {
 
 /// Only a missing flag is ours to seed; even `false` belongs to the app.
 pub(crate) fn ensure_completed(home: &CodexHome) -> Result<()> {
-    let path = home.global_state_json();
+    let path = state_file(&home.global_state_json())?;
     let (mut state, permissions) = match fs::read(&path) {
         Ok(bytes) => {
             // App 26.1103's global-state loader uses readFileSync("utf8") +
@@ -70,9 +71,9 @@ pub(crate) fn ensure_completed(home: &CodexHome) -> Result<()> {
     // preserve_order keeps all existing keys in place, including unknown ones.
     let bytes = serde_json::to_vec(&state)
         .map_err(|e| Error::other(format!("serialize desktop global state: {e}")))?;
-    fs::create_dir_all(home.root()).map_err(|e| Error::io(home.root(), &e))?;
-    let mut temp =
-        tempfile::NamedTempFile::new_in(home.root()).map_err(|e| Error::io(home.root(), &e))?;
+    let dir = path.parent().unwrap_or(home.root());
+    fs::create_dir_all(dir).map_err(|e| Error::io(dir, &e))?;
+    let mut temp = tempfile::NamedTempFile::new_in(dir).map_err(|e| Error::io(dir, &e))?;
     temp.write_all(&bytes)
         .map_err(|e| Error::io(temp.path(), &e))?;
     if let Some(permissions) = permissions {
@@ -83,11 +84,23 @@ pub(crate) fn ensure_completed(home: &CodexHome) -> Result<()> {
     temp.as_file()
         .sync_all()
         .map_err(|e| Error::io(temp.path(), &e))?;
-    // Same-directory atomic replacement; NamedTempFile cleans up on failure.
+    // Same-directory atomic replacement (the link target's directory for a
+    // symlink, which stays a link); NamedTempFile cleans up on failure.
     // Deliberately never read or write the app's .bak file.
     temp.persist(&path)
         .map_err(|e| Error::io(&path, &e.error))?;
     Ok(())
+}
+
+/// The file to read and replace: a symlinked state file is written through to
+/// its target so the link survives. A dangling link is an error (left alone).
+fn state_file(path: &Path) -> Result<PathBuf> {
+    match fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_symlink() => {
+            fs::canonicalize(path).map_err(|e| Error::io(path, &e))
+        }
+        _ => Ok(path.to_path_buf()),
+    }
 }
 
 #[cfg(test)]
