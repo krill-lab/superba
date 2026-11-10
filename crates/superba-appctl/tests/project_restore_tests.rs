@@ -506,3 +506,36 @@ fn files_of_an_unknown_shape_are_replaced_not_fatal() {
         assert!(pending(&dir, home).unwrap().is_some());
     }
 }
+
+/// The app's state is written but the queue cannot be cleared (a read-only
+/// data directory): the launch preparation succeeds, the folders are in the
+/// app's state, the queue stays and the next launch clears it.
+#[cfg(unix)]
+#[test]
+fn a_queue_that_cannot_be_cleared_after_the_write_is_kept_and_the_launch_goes_on() {
+    use std::os::unix::fs::PermissionsExt;
+    let w = world(CHATGPT, &json!({"local-projects": {}}));
+    queue(
+        &w.app_state,
+        w.home.root(),
+        vec![item("/w/c", "c", Some("k"))],
+        Timestamp::EPOCH,
+    )
+    .unwrap();
+    fs::set_permissions(&w.app_state, fs::Permissions::from_mode(0o555)).unwrap();
+    let writable = fs::write(w.app_state.join("probe"), b"").is_ok();
+    let result = prepare_launch(&w.home, &w.backups, Some(&w.app_state), Timestamp::EPOCH);
+    fs::set_permissions(&w.app_state, fs::Permissions::from_mode(0o755)).unwrap();
+    if writable {
+        eprintln!("skipped: running with permission overrides");
+        return;
+    }
+    let done = result.unwrap();
+    assert_eq!(done.restored, 1);
+    assert_eq!(read_state(&w.home)["local-projects"]["k"]["name"], "c");
+    assert!(pending(&w.app_state, w.home.root()).unwrap().is_some());
+    // The next launch: already present, nothing written, the queue cleared.
+    let done = prepare_launch(&w.home, &w.backups, Some(&w.app_state), Timestamp::EPOCH).unwrap();
+    assert_eq!(done, Prepared::default());
+    assert_eq!(pending(&w.app_state, w.home.root()).unwrap(), None);
+}

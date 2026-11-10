@@ -205,7 +205,8 @@ pub struct Prepared {
 /// ([`crate::project_restore`]), whatever the login: one read, one backup,
 /// one atomic replacement. The queue is cleared once its folders are in the
 /// file (or were there already); it stays when the file is missing or cannot
-/// be changed.
+/// be changed. An error means the app's state was left as it was; a queue
+/// that cannot be cleared after the write is only logged.
 pub fn prepare_launch(
     home: &CodexHome,
     backup_dir: &Path,
@@ -252,8 +253,19 @@ pub fn prepare_launch(
         replace(home, &path, &state)?;
     }
     // Only what this launch read: folders queued meanwhile wait for the next.
-    if let (Some(dir), Some(p)) = (app_state_dir, &pending) {
-        crate::project_restore::clear_applied(dir, home.root(), &p.items)?;
+    // The app's state is already written here: a queue that cannot be
+    // cleared is no reason to report the launch preparation as failed (the
+    // next launch finds the folders present and clears it then).
+    if let (Some(dir), Some(p)) = (app_state_dir, &pending)
+        && let Err(error) = crate::project_restore::clear_applied(dir, home.root(), &p.items)
+    {
+        tracing::warn!(
+            path = %home.global_state_json().display(),
+            restored = done.restored,
+            %error,
+            "updated the desktop's project state but kept the queue of folders to bring back; \
+             the next launch clears it"
+        );
     }
     Ok(done)
 }

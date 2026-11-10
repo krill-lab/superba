@@ -252,11 +252,37 @@ fn every_root_of_a_project_passes_the_same_filter() {
     assert!(got[0].extra_roots.is_empty());
 }
 
+/// Log lines written while `f` runs.
+fn logged<R>(f: impl FnOnce() -> R) -> (R, String) {
+    use std::sync::{Arc, Mutex};
+    #[derive(Clone, Default)]
+    struct Buf(Arc<Mutex<Vec<u8>>>);
+    impl std::io::Write for Buf {
+        fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(b);
+            Ok(b.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let buf = Buf::default();
+    let sink = buf.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(move || sink.clone())
+        .with_ansi(false)
+        .finish();
+    let out = tracing::subscriber::with_default(subscriber, f);
+    let text = String::from_utf8(buf.0.lock().unwrap().clone()).unwrap();
+    (out, text)
+}
+
 /// Codex keeps the state database in rollback-journal mode on network file
-/// systems: a writer then blocks readers. The probe waits briefly and skips
-/// the database instead of stalling the overview.
+/// systems: a writer then blocks readers. The probe waits at most
+/// [`lost_projects::PROBE_BUSY_TIMEOUT`] in all for a database (one read
+/// transaction), skips it and says so.
 #[test]
-fn a_locked_database_is_skipped_quickly() {
+fn a_busy_database_is_skipped_quickly_and_logged() {
     let w = World::new();
     let p = w.dir("work/proj");
     {
@@ -264,19 +290,50 @@ fn a_locked_database_is_skipped_quickly() {
         conn.pragma_update(None, "journal_mode", "delete").unwrap();
     }
     w.project("s-p", "proj", &[&p], 1, None);
+    w.thread("t1", &p, 1, false);
     let writer = Connection::open(w.codex.state_db()).unwrap();
     writer.execute_batch("BEGIN EXCLUSIVE;").unwrap();
     let start = std::time::Instant::now();
-    let got = w.discover(&[], &[]);
+    let (got, log) = logged(|| w.discover(&[], &[]));
     let took = start.elapsed();
     writer.execute_batch("ROLLBACK").unwrap();
     assert!(got.is_empty());
     assert!(
-        took < lost_projects::PROBE_BUSY_TIMEOUT * 4,
+        took >= lost_projects::PROBE_BUSY_TIMEOUT
+            && took < lost_projects::PROBE_BUSY_TIMEOUT + std::time::Duration::from_millis(400),
         "took {took:?}"
     );
-    // Unlocked, it is read again.
-    assert_eq!(w.discover(&[], &[]).len(), 1);
+    assert!(log.contains("WARN"), "{log}");
+    assert!(
+        log.contains("skipped a database while looking for dropped projects"),
+        "{log}"
+    );
+    assert!(log.contains("state_5.sqlite"), "{log}");
+    // Unlocked, it is read again, without a warning.
+    let (got, log) = logged(|| w.discover(&[], &[]));
+    assert_eq!(got.len(), 1);
+    assert!(!log.contains("skipped a database"), "{log}");
+}
+
+#[test]
+fn a_folder_two_projects_share_stays_with_the_first_and_the_second_keeps_the_rest() {
+    let w = World::new();
+    let shared = w.dir("work/shared");
+    let x_own = w.dir("work/x-own");
+    let y_own = w.dir("work/y-own");
+    // Read by id: "s-x" before "s-y".
+    w.project("s-x", "proj-x", &[&shared, &x_own], 2, None);
+    w.project("s-y", "proj-y", &[&shared, &y_own], 1, None);
+    // A third project with only the shared folder has nothing left.
+    w.project("s-z", "proj-z", &[&shared], 3, None);
+    let got = w.discover(&[], &[]);
+    let names: Vec<_> = got.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(names, ["proj-x", "proj-y"]);
+    assert_eq!(got[0].path, shared);
+    assert_eq!(got[0].extra_roots, std::slice::from_ref(&x_own));
+    // proj-y keeps its own folder as its first one.
+    assert_eq!(got[1].path, y_own);
+    assert!(got[1].extra_roots.is_empty());
 }
 
 #[test]

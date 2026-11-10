@@ -27,8 +27,10 @@ use superba_core::{CodexHome, LostProject, LostProjectSource, Timestamp};
 use crate::sqlite;
 
 /// How long one database may keep this read-only probe waiting for a
-/// writer's lock before it is skipped (logged): the overview polls, it must
-/// not stall.
+/// writer's lock, in all, before it is skipped (logged): the overview polls,
+/// it must not stall. Only the first read of a database waits: every read
+/// runs in one read transaction, which then holds the shared lock (or the
+/// WAL snapshot), so the later statements never wait again.
 pub const PROBE_BUSY_TIMEOUT: Duration = Duration::from_millis(500);
 
 /// At most this many folders seen only in chats are offered.
@@ -55,24 +57,10 @@ pub fn discover(
         if crate::util::is_unlockable_share(&path) {
             continue;
         }
-        let conn = match sqlite::open_ro_waiting(&path, PROBE_BUSY_TIMEOUT) {
-            Ok(conn) => conn,
-            Err(error) => {
-                tracing::warn!(path = %path.display(), %error, "skipped a database while looking for dropped projects");
-                continue;
-            }
-        };
-        match read_projects(&conn) {
-            Ok(rows) => projects.extend(rows),
-            Err(error) => tracing::warn!(
-                path = %path.display(),
-                %error,
-                "gave up reading the project list (busy or unreadable); its projects are not offered now"
-            ),
-        }
-        match read_chat_folders(&conn) {
-            Ok(rows) => {
-                for (cwd, count, last) in rows {
+        match probe(&path) {
+            Ok((rows, folders)) => {
+                projects.extend(rows);
+                for (cwd, count, last) in folders {
                     let entry = chats
                         .entry(key(&cwd))
                         .or_insert_with(|| (cwd.clone(), 0, None));
@@ -83,7 +71,8 @@ pub fn discover(
             Err(error) => tracing::warn!(
                 path = %path.display(),
                 %error,
-                "gave up reading the chat folders (busy or unreadable)"
+                "skipped a database while looking for dropped projects (busy or unreadable); \
+                 its projects are not offered now"
             ),
         }
     }
@@ -96,6 +85,26 @@ pub fn discover(
 pub fn database_dirs(home: &CodexHome, home_dir: &Path) -> Vec<PathBuf> {
     let mut warnings = Vec::new();
     crate::inventory::sqlite_dirs(home, Some(home_dir), &mut warnings)
+}
+
+type ChatFolder = (PathBuf, u32, Option<i64>);
+
+/// Read one database: its project list and chat folders, in one read
+/// transaction waiting at most [`PROBE_BUSY_TIMEOUT`] in all.
+fn probe(path: &Path) -> superba_core::Result<(Vec<ProjectRow>, Vec<ChatFolder>)> {
+    let conn = sqlite::open_ro_waiting(path, PROBE_BUSY_TIMEOUT)?;
+    let read = |conn: &Connection| -> rusqlite::Result<(Vec<ProjectRow>, Vec<ChatFolder>)> {
+        conn.execute_batch("BEGIN DEFERRED")?;
+        let have = tables(conn)?;
+        let projects = read_projects(conn, &have)?;
+        let chats = read_chat_folders(conn, &have)?;
+        conn.execute_batch("COMMIT")?;
+        Ok((projects, chats))
+    };
+    read(&conn).map_err(|e| {
+        let _ = conn.execute_batch("ROLLBACK");
+        superba_core::Error::other(format!("{}: {e}", path.display()))
+    })
 }
 
 /// One project row of the app-server's list.
@@ -111,8 +120,7 @@ pub struct ProjectRow {
     pub updated_ms: Option<i64>,
 }
 
-fn read_projects(conn: &Connection) -> rusqlite::Result<Vec<ProjectRow>> {
-    let have = tables(conn);
+fn read_projects(conn: &Connection, have: &BTreeSet<String>) -> rusqlite::Result<Vec<ProjectRow>> {
     if !have.contains("projects") || !have.contains("project_roots") {
         return Ok(Vec::new());
     }
@@ -158,8 +166,11 @@ fn read_projects(conn: &Connection) -> rusqlite::Result<Vec<ProjectRow>> {
     Ok(out.into_values().filter(|r| !r.roots.is_empty()).collect())
 }
 
-fn read_chat_folders(conn: &Connection) -> rusqlite::Result<Vec<(PathBuf, u32, Option<i64>)>> {
-    if !tables(conn).contains("threads") {
+fn read_chat_folders(
+    conn: &Connection,
+    have: &BTreeSet<String>,
+) -> rusqlite::Result<Vec<ChatFolder>> {
+    if !have.contains("threads") {
         return Ok(Vec::new());
     }
     let mut cols = BTreeSet::new();
@@ -205,14 +216,12 @@ fn read_chat_folders(conn: &Connection) -> rusqlite::Result<Vec<(PathBuf, u32, O
         .collect())
 }
 
-fn tables(conn: &Connection) -> BTreeSet<String> {
-    let mut out = BTreeSet::new();
-    if let Ok(mut stmt) = conn.prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
-        && let Ok(rows) = stmt.query_map([], |r| r.get::<_, String>(0))
-    {
-        out.extend(rows.flatten());
-    }
-    out
+/// The tables of the database; a busy or unreadable database is an error
+/// (the caller skips it and says so), not an empty one.
+fn tables(conn: &Connection) -> rusqlite::Result<BTreeSet<String>> {
+    let mut stmt = conn.prepare("SELECT name FROM sqlite_master WHERE type = 'table'")?;
+    let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+    rows.collect()
 }
 
 /// Comparison key of a folder: separators unified, trailing ones dropped,
@@ -270,6 +279,16 @@ impl Filter {
         }
     }
 
+    /// Whether `path` is a folder the app knows or one offered before.
+    pub fn settled(&self, path: &Path) -> bool {
+        let mut keys = vec![key(path)];
+        if let Ok(c) = superba_core::paths::canonical(path) {
+            keys.push(key(&c));
+        }
+        keys.iter()
+            .any(|k| self.known.contains(k) || self.answered.contains(k))
+    }
+
     /// Whether `path` may be offered.
     pub fn allows(&self, path: &Path) -> bool {
         if !path.is_absolute() || path.parent().is_none() || !path.is_dir() {
@@ -310,10 +329,26 @@ pub fn candidates(
     let mut seen = BTreeSet::new();
     let mut out: Vec<(Option<i64>, LostProject)> = Vec::new();
     for row in projects {
-        let path = row.roots[0].clone();
-        if !filter.allows(&path) || !seen.insert(key(&path)) {
+        // A project whose first folder the app knows again, or that was
+        // offered before, is settled as a whole.
+        if filter.settled(&row.roots[0]) {
             continue;
         }
+        // Every root passes the same filter; one that does not (the home
+        // directory, a missing folder, ...) or that an earlier candidate
+        // already has is left out of the project, which stays offered with
+        // the roots it has left.
+        let mut roots = Vec::new();
+        for r in &row.roots {
+            if filter.allows(r) && seen.insert(key(r)) {
+                roots.push(r.clone());
+            }
+        }
+        if roots.is_empty() {
+            continue;
+        }
+        let path = roots.remove(0);
+        let extra_roots = roots;
         let mut sources = vec![LostProjectSource::ProjectList];
         let mut last = row.updated_ms;
         if let Some((n, l)) = chat_of.get(&key(&path)) {
@@ -325,14 +360,6 @@ pub fn candidates(
         } else {
             row.name.clone()
         };
-        // Every further root passes the same filter; one that does not (the
-        // home directory, a missing folder, ...) is left out of the project.
-        let mut extra_roots = Vec::new();
-        for r in &row.roots[1..] {
-            if filter.allows(r) && seen.insert(key(r)) {
-                extra_roots.push(r.clone());
-            }
-        }
         out.push((
             last,
             LostProject {
