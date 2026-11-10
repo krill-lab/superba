@@ -21,6 +21,8 @@ use superba_core::{
 const CAPTURE: &str = "SUPERBA_ACCOUNT_STATE_TEST_CAPTURE";
 const STOP: &str = "SUPERBA_ACCOUNT_STATE_TEST_STOP";
 const PAT: &str = r#"{"personal_access_token":"nb_test","OPENAI_API_KEY":"nb_test"}"#;
+const ATOMS: &str = "electron-persisted-atom-state";
+const ONBOARDING: &str = "electron:onboarding-projectless-completed";
 const CHATGPT: &str = r#"{"OPENAI_API_KEY":null,"tokens":{"id_token":"a.b.c","access_token":"a.b.c","refresh_token":"r","account_id":"acc"}}"#;
 
 #[test]
@@ -182,7 +184,11 @@ async fn a_pat_launch_sees_its_projects_and_no_account_state() {
 async fn a_chatgpt_launch_keeps_the_app_s_account_state() {
     let mut f = Fixture::new();
     f.write(CHATGPT, &stashed_projects());
-    assert_eq!(f.launch_and_capture().await, stashed_projects());
+    // Only the onboarding flag (user bug 129) is added; the account state is
+    // the app's.
+    let mut expected = stashed_projects();
+    expected[ATOMS] = json!({ONBOARDING: true});
+    assert_eq!(f.launch_and_capture().await, expected);
     assert!(!f.data.app_state_backups_dir().exists());
 }
 
@@ -211,4 +217,65 @@ async fn a_launch_brings_back_the_queued_folders_before_the_desktop_starts() {
         superba_appctl::project_restore::pending(&f.data.app_state_dir(), f.home().root()).unwrap(),
         None
     );
+}
+
+/// All three launch preparations land in the one file the desktop reads: the
+/// fold of the stashed account state and the queued folders (user bugs
+/// 135/136) first, then the onboarding flag (user bug 129), neither
+/// replacement losing the other's change.
+#[tokio::test]
+async fn a_launch_folds_restores_and_seeds_onboarding_in_the_same_state_file() {
+    let mut f = Fixture::new();
+    let mut original = stashed_projects();
+    original[ACCOUNT_STATE_KEY]["inactive"]["owner-hash"]["atoms"] =
+        json!({"thread-sort-key": "updated_at"});
+    original[ATOMS] = json!({"composer-mode": "local"});
+    f.write(PAT, &original);
+    superba_appctl::project_restore::queue(
+        &f.data.app_state_dir(),
+        f.home().root(),
+        vec![superba_appctl::project_restore::RestoreItem {
+            path: "/w/proj-d".into(),
+            extra_roots: Vec::new(),
+            name: "proj-d".into(),
+            app_id: Some("local-d".into()),
+        }],
+        superba_core::Timestamp::EPOCH,
+    )
+    .unwrap();
+
+    let seen = f.launch_and_capture().await;
+
+    // Folded: no account-scoped state, the stashed projects and atoms are back.
+    assert!(seen.get(ACCOUNT_STATE_KEY).is_none());
+    assert_eq!(seen["electron-saved-workspace-roots"], json!(["/w/proj-a"]));
+    // Restored: the queued folder is a project, and the queue is cleared.
+    let projects = seen["local-projects"].as_object().unwrap();
+    assert!(projects.contains_key("c"), "{seen}");
+    assert!(projects.contains_key("local-a"), "{seen}");
+    assert_eq!(
+        seen["local-projects"]["local-d"]["rootPaths"],
+        json!(["/w/proj-d"])
+    );
+    assert_eq!(
+        superba_appctl::project_restore::pending(&f.data.app_state_dir(), f.home().root()).unwrap(),
+        None
+    );
+    // Seeded: the flag sits next to the app's and the folded atoms.
+    assert_eq!(
+        seen[ATOMS],
+        json!({"composer-mode": "local", "thread-sort-key": "updated_at", ONBOARDING: true})
+    );
+    // The file on disk after the launch is what the desktop read.
+    let on_disk: Value =
+        serde_json::from_slice(&fs::read(f.home().global_state_json()).unwrap()).unwrap();
+    assert_eq!(on_disk, seen);
+    // One backup, of the file as it was before any launch preparation.
+    let backups: Vec<_> = fs::read_dir(f.data.app_state_backups_dir())
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect();
+    assert_eq!(backups.len(), 1);
+    let backup: Value = serde_json::from_slice(&fs::read(&backups[0]).unwrap()).unwrap();
+    assert_eq!(backup, original);
 }
