@@ -7,7 +7,9 @@
 //!   Windows MSIX) and Codex CLI binaries ([`clibin`]); which program a Codex
 //!   path really runs (the macOS launcher and its `CodexCLI.app` target, [`codexid`]);
 //! - launch with loopback CDP and injected environment ([`launch`]), launch records
-//!   in `DataDir::app_sessions_json` ([`store`]);
+//!   in `DataDir::app_sessions_json` ([`store`]); before a launch without a
+//!   ChatGPT sign-in, the app's account-scoped state is folded back so its
+//!   projects survive ([`account_state`]);
 //! - a minimal CDP client ([`cdp`]) with listener ownership checks ([`owner`]);
 //! - hot restart through `superba_core::codex::hot_restart_js`, verified by a new
 //!   app-server child of the app main process; graceful quit ([`quit`]);
@@ -20,6 +22,7 @@
 //! Platform code sits behind `cfg(target_os = ...)`; Linux is the reference and the
 //! only platform exercised end to end.
 
+pub mod account_state;
 pub mod activity;
 pub mod appx;
 pub mod cdp;
@@ -703,8 +706,13 @@ impl AppController for DesktopAppController {
         let spawn_spec = spec.clone();
         let spawn_install = install.clone();
         let log = self.launch_log_path();
+        let state_home = app_codex_home.clone();
+        let state_backups = self.ctx.data_dir.app_state_backups_dir();
         // LaunchServices may take several seconds to expose the new main pid.
         let spawned = tokio::task::spawn_blocking(move || {
+            // After the running-instance check, before any platform starts the
+            // app (user bugs 135/136). Never fails the launch.
+            account_state::seed(&state_home, &state_backups);
             launch::spawn(&spawn_spec, &spawn_install, Some(&log))
         })
         .await
