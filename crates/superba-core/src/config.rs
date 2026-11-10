@@ -23,6 +23,9 @@ use crate::time::Timestamp;
 pub struct ResolvedEndpoints {
     /// Line origin (Krill) or the compatible site's origin.
     pub origin: Origin,
+    /// Consent resolved from a user-defined compatible site (API key only).
+    #[serde(default)]
+    pub allow_plain_http: bool,
     /// Value of top-level `openai_base_url`.
     pub openai_base_url: Url,
     /// Value of `chatgpt_base_url` (PAT only; `None` = restore baseline value).
@@ -38,11 +41,22 @@ pub struct ResolvedEndpoints {
 }
 
 impl ResolvedEndpoints {
+    /// API-key-only transport exception. PAT endpoints never inherit it.
+    pub fn allows_plain_http(&self) -> bool {
+        self.allow_plain_http
+            && self.codex_path == CodexPath::AsIs
+            && self.chatgpt_base_url.is_none()
+            && self.authapi_origin.is_none()
+    }
+
     /// Endpoints for a Krill-style line: `openai_base_url = origin + path`;
     /// PAT additionally gets `chatgpt_base_url = origin/backend-api/` and the
     /// authapi origin. PAT requires [`CodexPath::BackendApiCodex`] (`/codex/v1` is
     /// an API-key-only fallback); other combinations return [`Error::Invalid`].
     pub fn for_line(origin: &Origin, path: CodexPath, mode: AuthMode) -> Result<Self> {
+        if !origin.is_https() && !origin.is_loopback() {
+            return Err(Error::invalid("built-in lines require https"));
+        }
         if mode.writes_chatgpt_base_url() && path != CodexPath::BackendApiCodex {
             return Err(Error::invalid(format!(
                 "{mode:?} requires the /backend-api/codex path, not {path:?}"
@@ -56,6 +70,7 @@ impl ResolvedEndpoints {
         }
         Ok(Self {
             origin: origin.clone(),
+            allow_plain_http: false,
             openai_base_url: path.base_url(origin),
             chatgpt_base_url: mode
                 .writes_chatgpt_base_url()
@@ -68,9 +83,34 @@ impl ResolvedEndpoints {
 
     /// Endpoints for a compatible site with a full base URL (API key only).
     pub fn for_base_url(base: &Url) -> Result<Self> {
+        Self::base_url(base, false)
+    }
+
+    /// Endpoints authorized by this site's transport policy. Unconfirmed HTTP
+    /// imports can be stored, but cannot be switched to or probed with a key.
+    pub fn for_site_base_url(site: &crate::Site, base: &Url) -> Result<Self> {
+        Self::base_url(base, site.allows_plain_http_for(base))
+    }
+
+    fn base_url(base: &Url, allow_plain_http: bool) -> Result<Self> {
         let origin = Origin::parse(&base.origin().ascii_serialization())?;
+        if !origin.is_https() && !origin.is_loopback() && !allow_plain_http {
+            return Err(Error::invalid(
+                "plain HTTP requires confirmation in the custom provider's connection settings",
+            ));
+        }
+        if !base.username().is_empty()
+            || base.password().is_some()
+            || base.query().is_some()
+            || base.fragment().is_some()
+        {
+            return Err(Error::invalid(
+                "the base URL must not contain credentials, query or fragment",
+            ));
+        }
         Ok(Self {
             origin,
+            allow_plain_http,
             openai_base_url: base.clone(),
             chatgpt_base_url: None,
             authapi_origin: None,

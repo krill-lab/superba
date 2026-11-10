@@ -222,8 +222,10 @@ fn the_router_origin_for_wsl_is_plain_http_on_a_private_address_only() {
         "http://172.25.80.1:50947/backend-api/codex"
     );
     assert!(Origin::local_router_for_wsl(Ipv4Addr::new(8, 8, 8, 8), 1).is_err());
-    // User input never gets plain http to a private address.
-    assert!(Origin::parse("http://172.25.80.1:50947").is_err());
+    // Parsing user input as an origin authorizes nothing: no key-bearing
+    // endpoints for plain http to a private address without a site's consent.
+    let typed = Origin::parse("http://172.25.80.1:50947").unwrap();
+    assert!(superba_core::ResolvedEndpoints::for_base_url(&typed.join("/v1")).is_err());
 }
 
 #[test]

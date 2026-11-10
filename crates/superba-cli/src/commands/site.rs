@@ -60,8 +60,21 @@ pub(super) async fn run(command: &SiteCommand, rt: &Runtime, out: &mut Output) -
     }
 }
 
+/// A custom site's base URL. Plain HTTP off this machine needs the explicit
+/// consent the app's provider form asks for, so the CLI does not store it.
 fn parse_url(value: &str, out: &Output) -> Result<url::Url> {
-    url::Url::parse(value.trim()).map_err(|_| usage(out, text("cli.error.base_url")))
+    let url = url::Url::parse(value.trim()).map_err(|_| usage(out, text("cli.error.base_url")))?;
+    let loopback = superba_core::Origin::parse(&url.origin().ascii_serialization())
+        .is_ok_and(|o| o.is_loopback());
+    if url.scheme() == "http" && !loopback {
+        // Only scheme, host and port: the typed URL may carry userinfo or a
+        // key in its query.
+        return Err(usage(
+            out,
+            text("cli.error.plain_http").arg("url", url.origin().ascii_serialization()),
+        ));
+    }
+    Ok(url)
 }
 
 async fn edit(args: &SiteEditArgs, rt: &Runtime, out: &mut Output) -> Result {

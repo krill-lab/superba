@@ -8,11 +8,9 @@ use url::Url;
 
 use crate::error::{Error, Result};
 
-/// An https origin (`scheme://host[:port]`, no path, query, fragment or userinfo).
-///
-/// `http` is accepted only for loopback hosts (`127.0.0.1`, `::1`, `localhost`) so
-/// e2e line forwarders and a future localhost shell forwarder can be expressed;
-/// real lines must be https (Codex requires https for `chatgpt_base_url`).
+/// An HTTP(S) origin (`scheme://host[:port]`, no path, query, fragment or userinfo).
+/// Transport authorization belongs to the site and authentication mode; parsing
+/// an origin does not authorize sending credentials to it.
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Origin(Url);
 
@@ -23,13 +21,11 @@ impl Origin {
         if url.host().is_none() {
             return Err(Error::invalid(format!("origin {s:?}: no host")));
         }
-        let loopback = is_loopback(&url);
         match url.scheme() {
-            "https" => {}
-            "http" if loopback => {}
+            "https" | "http" => {}
             other => {
                 return Err(Error::invalid(format!(
-                    "origin {s:?}: scheme {other} not allowed (https required)"
+                    "origin {s:?}: scheme {other} not allowed (http or https required)"
                 )));
             }
         }

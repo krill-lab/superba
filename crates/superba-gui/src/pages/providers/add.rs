@@ -51,6 +51,8 @@ pub struct AddDialog {
     pub name: String,
     /// Base URL (custom sites).
     pub url: String,
+    /// Explicit consent for this custom HTTP URL.
+    pub allow_plain_http: bool,
     /// Key.
     pub key: String,
     /// Show the key.
@@ -108,6 +110,7 @@ impl AddDialog {
             pick,
             name: String::new(),
             url: String::new(),
+            allow_plain_http: false,
             key: String::new(),
             reveal: false,
             responses: false,
@@ -137,7 +140,8 @@ impl AddDialog {
     /// The custom site passed a test with the current URL and key.
     pub fn tested_ok(&self) -> bool {
         let current = (self.url.trim().to_owned(), self.key.trim().to_owned());
-        self.tested.as_ref() == Some(&current)
+        form_url(self).is_some()
+            && self.tested.as_ref() == Some(&current)
             && self
                 .report
                 .as_ref()
@@ -185,6 +189,7 @@ impl AddDialog {
                     mode: Some(form::FormMode::Add),
                     name: self.name.clone(),
                     url: self.url.clone(),
+                    allow_plain_http: self.allow_plain_http,
                     key: self.key.clone(),
                     reveal: false,
                     model: String::new(),
@@ -655,7 +660,7 @@ fn custom_step(ui: &mut Ui, cx: &Cx<'_>, d: &mut AddDialog, close: &mut bool) {
                 l.id
             })
             .inner;
-        ui.add(
+        let url_changed = ui.add(
             TextEdit::singleline(&mut d.url)
                 .id(egui::Id::unique("providers-add-url"))
                 .font(egui::TextStyle::Monospace)
@@ -663,7 +668,9 @@ fn custom_step(ui: &mut Ui, cx: &Cx<'_>, d: &mut AddDialog, close: &mut bool) {
                 .desired_width(f32::INFINITY)
                 .margin(vec2(12.0, 8.0)),
         )
-        .labelled_by(url_label);
+        .labelled_by(url_label).changed();
+        if url_changed { d.allow_plain_http = false; }
+        form::http_consent(ui, cx, &d.url, &mut d.allow_plain_http);
         let l = field_label(ui, cx, &cx.tr.t("sites.form.key"));
         KeyField::new(
             "providers-add-custom-key",
@@ -786,7 +793,9 @@ fn switch_after(ui: &mut Ui, cx: &Cx<'_>, d: &mut AddDialog, enabled: bool) {
 
 fn form_url(d: &AddDialog) -> Option<url::Url> {
     let u = url::Url::parse(d.url.trim()).ok()?;
-    form::check_url(&u).ok().map(|_| u)
+    form::check_url_with_consent(&u, d.allow_plain_http)
+        .ok()
+        .map(|_| u)
 }
 
 /// Test the typed site with the typed key before it is saved (keys go only to
@@ -800,11 +809,13 @@ fn start_test(cx: &Cx<'_>, d: &AddDialog) -> ReadTask<SiteReport> {
     let url = form_url(d);
     let key = Secret::new(d.key.trim());
     let responses = d.responses;
+    let allow_plain_http = d.allow_plain_http;
     let service = cx.service.clone();
     crate::runtime::task(async move {
         let url = url.ok_or_else(|| superba_core::Error::invalid("invalid base URL"))?;
-        let site =
+        let mut site =
             superba_switch::new_compatible_site(SiteId::new("superba-site-test"), &name, &url)?;
+        site.allow_plain_http = allow_plain_http && form::needs_http_consent(&url);
         Ok(ops::test_unsaved(service, site, key, responses).await)
     })
 }

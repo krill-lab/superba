@@ -73,6 +73,7 @@ fn user_set() -> ProfileSet {
     };
     set.profiles.push(profile);
     set.custom_sites.push(Site {
+        allow_plain_http: false,
         id: site_id,
         kind: SiteKind::Compatible,
         name: LocalizedText::new("user.site.test", "My compatible site"),

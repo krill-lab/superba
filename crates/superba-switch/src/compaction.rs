@@ -192,7 +192,11 @@ impl Switcher {
         {
             return Ok(site.site_model(m).to_owned());
         }
-        let models = self.deps.prober.list_models(base, key).await?;
+        let models = self
+            .deps
+            .prober
+            .list_models_for_site(site, base, key)
+            .await?;
         models.first().map(|m| m.id.clone()).ok_or_else(|| {
             Error::invalid(
                 "no model to check compaction with: the provider lists no models; set the provider's model",
@@ -237,7 +241,7 @@ impl Switcher {
             return Ok(cached);
         };
         let model = self.compaction_model(&site, &profile, &base, &key).await?;
-        let endpoints = ResolvedEndpoints::for_base_url(&base)?;
+        let endpoints = ResolvedEndpoints::for_site_base_url(&site, &base)?;
         let check = self
             .deps
             .prober

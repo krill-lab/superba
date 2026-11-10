@@ -268,7 +268,7 @@ impl HttpLineProber {
                 reasons: vec![superba_core::BlockReason::MissingKey],
             });
         }
-        ensure_key_target(base, key)?;
+        ensure_key_target(base, key, endpoints.allows_plain_http())?;
         if base.origin() != endpoints.origin.url().origin() {
             return Err(Error::invalid(format!(
                 "openai_base_url {} is not on the endpoints' origin {}",
@@ -286,6 +286,7 @@ impl HttpLineProber {
         let post = |body: Vec<u8>, encoding: Option<&'static str>| {
             let req = Request::get(url.clone(), timeout, BODY_LIMIT)
                 .with_key(key)
+                .allow_plain_http(endpoints.allows_plain_http())
                 .with_json(body, crate::http::ACCEPT_JSON);
             match encoding {
                 Some(e) => req.with_content_encoding(e),
@@ -294,8 +295,14 @@ impl HttpLineProber {
         };
         let frame = zstd_frame(PROBE_BODY);
         let (ws, plain, zstd, garbled) = tokio::join!(
-            self.http
-                .websocket_handshake(&url, key, extra, timeout, BODY_LIMIT),
+            self.http.websocket_handshake(
+                &url,
+                key,
+                extra,
+                endpoints.allows_plain_http(),
+                timeout,
+                BODY_LIMIT
+            ),
             self.http.send(post(PROBE_BODY.to_vec(), None)),
             self.http.send(post(frame.clone(), Some("zstd"))),
             self.http.send(post(frame, None)),

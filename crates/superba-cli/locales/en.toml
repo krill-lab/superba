@@ -200,6 +200,7 @@ profile_id = "Profile IDs must match [a-z0-9][a-z0-9_-]{0,63}; original and offi
 profile_exists = "Profile {id} already exists; use --replace to replace it."
 profile_preset_id = "{id} is a preset ID and site {site} already has profile {existing}: saving under {id} would change {existing} instead of adding a profile. Choose another ID, or change {existing} with spb profile edit {existing}."
 base_url = "--base-url requires an absolute URL."
+plain_http = "{url} is unencrypted HTTP. Add the provider in the app, where you can confirm that its API key and conversations may cross the network in plain text."
 key_env = "Environment variable {var} is unset or empty."
 key_profile = "Choose --profile, --key-env or --stdin; no profile is applied."
 key_set_profile = "Missing --profile <PROFILE>; no profile is applied. Run spb profile list to see available profiles."

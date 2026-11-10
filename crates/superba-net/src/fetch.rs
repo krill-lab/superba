@@ -133,13 +133,18 @@ impl HttpLineProber {
     async fn get_optional<T>(
         &self,
         url: Url,
+        site: &Site,
         key: &Secret,
         limit: usize,
         parse: impl FnOnce(&[u8]) -> std::result::Result<T, String>,
     ) -> Fetch<T> {
         let res = self
             .http
-            .send(Request::get(url.clone(), self.config.request_timeout, limit).with_key(key))
+            .send(
+                Request::get(url.clone(), self.config.request_timeout, limit)
+                    .with_key(key)
+                    .allow_plain_http(site.allows_plain_http_for(&url)),
+            )
             .await;
         let out = classify(&url, res, key, parse);
         tracing::debug!(
@@ -169,6 +174,7 @@ impl HttpLineProber {
             match self
                 .get_optional(
                     line.origin.join(path),
+                    site,
                     key,
                     PROBE_BODY_LIMIT,
                     parse_subscription,
@@ -203,7 +209,7 @@ impl HttpLineProber {
                 .append_pair("start_date", &period.0)
                 .append_pair("end_date", &period.1);
             match self
-                .get_optional(url, key, PROBE_BODY_LIMIT, parse_billing_usage)
+                .get_optional(url, site, key, PROBE_BODY_LIMIT, parse_billing_usage)
                 .await
             {
                 Fetch::Ok(u) => {
@@ -224,7 +230,14 @@ impl HttpLineProber {
     /// whoami email (`Ok(None)` when whoami has none).
     async fn whoami_email(&self, site: &Site, line: &Line, key: &Secret) -> Result<Option<String>> {
         let url = line.origin.join(&site.endpoints.whoami);
-        let res = self.get_with_key(url.clone(), key, PROBE_BODY_LIMIT).await;
+        let res = self
+            .get_with_key(
+                url.clone(),
+                key,
+                PROBE_BODY_LIMIT,
+                site.allows_plain_http_for(&url),
+            )
+            .await;
         let a = res.map_err(|t| t.into_error(&url))?;
         let out = whoami_outcome(&Ok(a.clone()));
         match out.info {
@@ -248,6 +261,11 @@ impl HttpLineProber {
         key: &Secret,
     ) -> Result<Option<AccountSummary>> {
         Self::ensure_site_line(site, line)?;
+        crate::http::ensure_key_target(
+            line.origin.url(),
+            key,
+            site.allows_plain_http_for(line.origin.url()),
+        )?;
         Self::ensure_key(key)?;
         let caps = &site.capabilities;
         if !caps.account_summary && !caps.key_check {
@@ -356,6 +374,7 @@ impl HttpLineProber {
     async fn pages(
         &self,
         api: Api,
+        site: &Site,
         line: &Line,
         path: &str,
         key: &Secret,
@@ -375,7 +394,7 @@ impl HttpLineProber {
                 }
             }
             let page = match self
-                .get_optional(url, key, PAGE_BODY_LIMIT, |b| org::parse_page(api, b))
+                .get_optional(url, site, key, PAGE_BODY_LIMIT, |b| org::parse_page(api, b))
                 .await
             {
                 Fetch::Ok(p) => p,
@@ -409,6 +428,11 @@ impl HttpLineProber {
         query: &UsageQuery,
     ) -> Result<UsageReport> {
         Self::ensure_site_line(site, line)?;
+        crate::http::ensure_key_target(
+            line.origin.url(),
+            key,
+            site.allows_plain_http_for(line.origin.url()),
+        )?;
         Self::ensure_key(key)?;
         query.validate()?;
         if !site.capabilities.usage_api {
@@ -443,8 +467,15 @@ impl HttpLineProber {
         usage_query.push(("group_by", "model".to_owned()));
         let e = &site.endpoints;
         let (costs, usage) = futures_util::join!(
-            self.pages(Api::Costs, line, &e.costs, key, &range),
-            self.pages(Api::Usage, line, &e.usage_completions, key, &usage_query),
+            self.pages(Api::Costs, site, line, &e.costs, key, &range),
+            self.pages(
+                Api::Usage,
+                site,
+                line,
+                &e.usage_completions,
+                key,
+                &usage_query
+            ),
         );
 
         let mut notice: Option<UsageNotice> = None;

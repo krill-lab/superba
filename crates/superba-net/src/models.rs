@@ -356,7 +356,7 @@ impl HttpLineProber {
         }
         let (site, base, key) = (req.site, req.base_url, req.key);
         Self::ensure_key(key)?;
-        ensure_key_target(base, key)?;
+        ensure_key_target(base, key, site.allows_plain_http_for(base))?;
         ensure_site_origin(site, base)?;
         let client_version = req
             .client_version
@@ -390,6 +390,7 @@ impl HttpLineProber {
                 self.config.max_catalog_bytes,
             )
             .with_key(key)
+            .allow_plain_http(site.allows_plain_http_for(base))
             .if_none_match(etag);
             let a = self
                 .http

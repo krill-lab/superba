@@ -122,8 +122,13 @@ Conventions:
   carry a key (`ApplyPlan::desired`, `RemotePlan::desired`) skip it when serialized.
   Foreign command lines are shown only through `app::redact_argv`.
 - **Key scoping.** `LineProber` sends a site's key only to that site's origins
-  (`check_authapi` refuses others), never over plain http except loopback, and
-  never follows redirects on authenticated requests.
+  (`check_authapi` refuses others) and never follows redirects on authenticated
+  requests. Plain http is used only on loopback, or for a user-created
+  OpenAI-compatible (API key only) site whose `allow_plain_http` consent the user
+  gave explicitly (user bug 133 / GH#24), and then only to that site's own saved
+  origins. Without that consent a non-loopback http line gets no request at all,
+  keyed or not (probes included), and router members of such a site are refused.
+  Consented plain-http requests bypass the system proxy (§9).
 - **Observations vs. decisions.** Component results are observations;
   `superba-switch` derives decisions (e.g. it sets `ProcessInfo::stale` from start
   times and the generation history, applies the version table, groups shared
@@ -1168,8 +1173,39 @@ home, a remote host or a WSL distribution through four `SwitchService` methods
   mismatch disables CDP for that session), connects only while switching, and
   evaluates only the restart call and read-only checks. Safe mode launches without
   CDP (no hot switching); so does running as root.
-- Keys are only sent to https origins (loopback allowed for tests), never logged,
-  never placed on command lines (remote writes use stdin), stored in the keyring.
+- Keys are sent to HTTPS origins (loopback HTTP is allowed for tests). A user-created
+  compatible/API-key site may persist `allow_plain_http = true` only after the user
+  explicitly acknowledges that API keys and conversation contents cross the network
+  unencrypted. The setting defaults to false, is inherited by router members and
+  tools using that site's saved origins, and never authorizes an unrelated endpoint.
+  Built-in sites and PAT retain their HTTPS requirement. Imported HTTP addresses
+  remain HTTP with consent off and a prompt to confirm in provider settings; they
+  cannot send keys or be switched to until confirmed. Nothing rewrites http to
+  https or back: probes of an http site use http, and its WebSocket check is the
+  same-scheme HTTP/1.1 Upgrade handshake on the http:// URL (what a `ws://` URL
+  means on the wire); redirects are never followed. An unconfirmed non-loopback
+  http line gets no request at all, not even an unauthenticated probe
+  (`Http::send` refuses it before any network I/O). Plain-http requests (probes
+  and router forwarding) always connect directly, never through the system or
+  environment proxy, so the clear-text hop is only between this machine and the
+  confirmed host. A restore applies consent only when exactly one site owns the
+  restored origin, so one site's consent never covers another site's key.
+  Saving a site without the consent its plain-http lines need (consent
+  withdrawn, or a re-import, which never imports consent) first takes its
+  providers out of the router and only then saves the site. Whether the router
+  routes them is asked of the running router (its admin status), so providers
+  only Claude Code or a tool routes count too; the stored configuration counts
+  only when no router process can be running. The rewrite must be loaded by the
+  running router (`RouterManager::rewrite_enforced` reloads whatever one health
+  check says): when a router may be running (service, process or port alive)
+  but does not load it, the previous files are put back and nothing is saved.
+  After the rewrite the running router is asked again and must no longer send
+  the site's key to its plain-http origins; with an unreadable router
+  configuration or keys only a router that is not running is accepted.
+  Consent is given only in the app's provider forms: `spb site add/edit` refuses
+  non-loopback HTTP (its error shows only scheme, host and port).
+- Keys are never logged, never placed on command lines (remote writes use stdin),
+  and are stored in the keyring.
 - `auth.json` is written 0600; stashes and backups of logins are encrypted
   (ChaCha20-Poly1305, key in the keyring).
 - Superba refuses to run under `sudo` (euid 0 with `SUDO_USER`) and, on Windows, as

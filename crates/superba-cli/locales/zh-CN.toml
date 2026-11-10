@@ -200,6 +200,7 @@ profile_id = "配置标识须符合 [a-z0-9][a-z0-9_-]{0,63}；original 和 offi
 profile_exists = "配置 {id} 已存在；使用 --replace 替换。"
 profile_preset_id = "{id} 是预设标识，而站点 {site} 已有配置 {existing}：用 {id} 保存会改动 {existing}，而不是新增配置。请换一个标识，或用 spb profile edit {existing} 修改它。"
 base_url = "--base-url 需要绝对 URL。"
+plain_http = "{url} 是不加密的 HTTP 地址。请在应用里添加这个供应商，并在那里确认允许 API Key 和对话内容明文经过网络。"
 key_env = "环境变量 {var} 未设置或为空。"
 key_profile = "请指定 --profile、--key-env 或 --stdin；当前未应用任何配置。"
 key_set_profile = "缺少 --profile <PROFILE>；当前未应用任何配置。运行 spb profile list 查看可用配置。"

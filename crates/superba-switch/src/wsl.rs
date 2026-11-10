@@ -148,6 +148,7 @@ pub(crate) fn routed(
             .set_scheme("https")
             .expect("HTTPS is a valid URL scheme");
         *endpoints = ResolvedEndpoints {
+            allow_plain_http: false,
             origin: origin.clone(),
             openai_base_url: origin.join(ROUTER_BASE_PATH),
             chatgpt_base_url: Some(tls_origin.join("/backend-api/").expect("absolute URL path")),

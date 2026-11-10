@@ -2206,7 +2206,18 @@ impl Run<'_> {
                 }
             },
         };
-        match d.prober.list_models(&url, &key).await {
+        let models = match &self.pc.site {
+            Some(site)
+                if site
+                    .lines
+                    .iter()
+                    .any(|l| l.origin.url().origin() == url.origin()) =>
+            {
+                d.prober.list_models_for_site(site, &url, &key).await
+            }
+            _ => d.prober.list_models(&url, &key).await,
+        };
+        match models {
             Ok(_) => CheckResult::Passed,
             Err(e) if e.is_not_implemented() => skipped(text("switch.verify.not_supported")),
             Err(e) => CheckResult::Failed {

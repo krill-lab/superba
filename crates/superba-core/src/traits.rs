@@ -314,6 +314,17 @@ pub trait LineProber: Send + Sync {
     /// Model catalog at `openai_base_url` (`<base>/models`).
     async fn list_models(&self, openai_base_url: &Url, key: &Secret) -> Result<Vec<ModelInfo>>;
 
+    /// List models under the owning site's transport policy.
+    async fn list_models_for_site(
+        &self,
+        site: &Site,
+        base: &Url,
+        key: &Secret,
+    ) -> Result<Vec<ModelInfo>> {
+        ResolvedEndpoints::for_site_base_url(site, base)?;
+        self.list_models(base, key).await
+    }
+
     /// The provider's model list for the Models page and catalog generation:
     /// `/backend-api/codex/models?client_version=<x.y.z>` (Codex-native entries,
     /// kept raw) on Codex backend paths, `<base>/models` (OpenAI list, metadata
@@ -969,6 +980,8 @@ pub struct ModelListRequest<'a> {
 /// [`LineProber::probe_messages`]: one minimal Anthropic Messages request.
 #[derive(Clone, Copy, Debug)]
 pub struct MessagesProbeRequest<'a> {
+    /// Owning site, for scoped HTTP consent; absent for standalone endpoints.
+    pub site: Option<&'a Site>,
     /// The endpoint.
     pub endpoint: &'a crate::claude::AnthropicEndpoint,
     /// The key.

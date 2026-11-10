@@ -127,7 +127,7 @@ pub(super) fn endpoint(ctx: &egui::Context, cx: &Cx<'_>, state: &mut State, out:
                 .add(Button::primary(cx.tr.t("claude.endpoint.save")))
                 .clicked()
             {
-                match AnthropicEndpoint::parse_base(&edit.url) {
+                match AnthropicEndpoint::parse_base_for_site(&edit.url, site.as_ref()) {
                     Ok(url) => {
                         save = Some(Some(AnthropicEndpoint {
                             base_url: url,

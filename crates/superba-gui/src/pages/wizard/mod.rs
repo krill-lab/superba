@@ -117,6 +117,8 @@ pub struct Wizard {
     pub custom_name: String,
     /// Custom site: Responses base URL.
     pub custom_url: String,
+    /// Consent for the custom HTTP provider.
+    pub allow_plain_http: bool,
     /// Custom site: also send one minimal Responses request when testing.
     pub custom_responses: bool,
     pub(crate) custom: CustomSave,
@@ -200,6 +202,7 @@ impl Wizard {
             reveal: false,
             custom_name: String::new(),
             custom_url: String::new(),
+            allow_plain_http: false,
             custom_responses: false,
             custom: CustomSave::default(),
             line: None,
@@ -273,11 +276,13 @@ impl Wizard {
                         .profile(profile)
                         .map_or_else(|| site.id.to_string(), |p| p.name.clone());
                     self.custom_url = site_base_url(site);
+                    self.allow_plain_http = site.allow_plain_http;
                     self.custom.saved = Some((site.id.clone(), profile.clone()));
                 }
                 _ => {
                     self.custom_name.clear();
                     self.custom_url.clear();
+                    self.allow_plain_http = false;
                     self.custom.saved = None;
                 }
             }

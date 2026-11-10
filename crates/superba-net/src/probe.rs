@@ -47,13 +47,20 @@ pub(crate) fn with_client_version(mut url: Url, version: &str) -> Url {
 }
 
 impl HttpLineProber {
+    /// An unauthenticated GET at one of `site`'s lines. Plain http off this
+    /// machine is sent only with the site's consent ([`crate::http::Http::send`]
+    /// refuses it otherwise, before any network I/O).
     async fn get_unauth(
         &self,
+        site: &Site,
         url: &Url,
         timeout: std::time::Duration,
     ) -> Result<Answer, Transport> {
         self.http
-            .send(Request::get(url.clone(), timeout, PROBE_BODY_LIMIT))
+            .send(
+                Request::get(url.clone(), timeout, PROBE_BODY_LIMIT)
+                    .allow_plain_http(site.allows_plain_http_for(url)),
+            )
             .await
     }
 
@@ -63,12 +70,12 @@ impl HttpLineProber {
         let cfg = &self.config;
         let url = line.origin.join(&site.endpoints.models_unauth);
         let expect_relay = site.capabilities.latency_probe;
-        let mut warm = self.get_unauth(&url, cfg.request_timeout).await;
+        let mut warm = self.get_unauth(site, &url, cfg.request_timeout).await;
         if let Err(t) = &warm
             && t.kind != TransportKind::Timeout
         {
             // One retry for transient connect failures (not after a full timeout).
-            warm = self.get_unauth(&url, cfg.request_timeout).await;
+            warm = self.get_unauth(site, &url, cfg.request_timeout).await;
         }
         let Ok(first) = &warm else {
             return Latency {
@@ -84,7 +91,7 @@ impl HttpLineProber {
         let mut samples = Vec::new();
         let mut last: Result<Answer, Transport> = Ok(first.clone());
         for _ in 0..cfg.latency_samples {
-            let r = self.get_unauth(&url, cfg.latency_timeout).await;
+            let r = self.get_unauth(site, &url, cfg.latency_timeout).await;
             if let Ok(a) = &r {
                 samples.push(a.elapsed_ms());
                 last = r;
@@ -148,10 +155,10 @@ impl HttpLineProber {
             let backend_url =
                 with_client_version(o.join(&e.backend_codex_models), &cfg.client_version);
             let (who, wham, backend, v1) = tokio::join!(
-                self.maybe_get(pat, o.join(&e.whoami)),
-                self.maybe_get(pat, o.join(&e.accounts_check)),
-                self.maybe_get(want(CodexPath::BackendApiCodex), backend_url),
-                self.maybe_get(want(CodexPath::CodexV1), o.join(&e.codex_v1_models)),
+                self.maybe_get(site, pat, o.join(&e.whoami)),
+                self.maybe_get(site, pat, o.join(&e.accounts_check)),
+                self.maybe_get(site, want(CodexPath::BackendApiCodex), backend_url),
+                self.maybe_get(site, want(CodexPath::CodexV1), o.join(&e.codex_v1_models)),
             );
             let check = |endpoint, r: &Option<Result<Answer, Transport>>| {
                 r.as_ref()
@@ -184,9 +191,17 @@ impl HttpLineProber {
         caps
     }
 
-    async fn maybe_get(&self, cond: bool, url: Url) -> Option<Result<Answer, Transport>> {
+    async fn maybe_get(
+        &self,
+        site: &Site,
+        cond: bool,
+        url: Url,
+    ) -> Option<Result<Answer, Transport>> {
         if cond {
-            Some(self.get_unauth(&url, self.config.request_timeout).await)
+            Some(
+                self.get_unauth(site, &url, self.config.request_timeout)
+                    .await,
+            )
         } else {
             None
         }

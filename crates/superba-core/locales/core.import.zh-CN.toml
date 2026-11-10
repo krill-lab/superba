@@ -16,6 +16,7 @@ unknown = "无法导入。"
 unreadable_settings = "无法读取它在 {tool} 中的设置。"
 
 [import.note]
+plain_http = "此地址使用明文 HTTP。导入后仍禁止发送密钥；请到供应商的连接设置中确认允许明文 HTTP 后再使用。"
 chat_wire_api = "它配置的是 Chat Completions 接口；Superba 使用 Responses 接口。切换前请先测试。"
 disabled = "它在 {tool} 中已停用。"
 duplicate = "与 {tool} 中的 {name} 地址和 Key 都相同，已改为勾选那一个。"

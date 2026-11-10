@@ -249,8 +249,19 @@ impl LineProber for HttpLineProber {
         self.check_authapi_impl(site, origin, key).await
     }
 
+    async fn list_models_for_site(
+        &self,
+        site: &Site,
+        base: &Url,
+        key: &Secret,
+    ) -> Result<Vec<ModelInfo>> {
+        crate::models::ensure_site_origin(site, base)?;
+        self.list_models_impl(base, key, site.allows_plain_http_for(base))
+            .await
+    }
+
     async fn list_models(&self, openai_base_url: &Url, key: &Secret) -> Result<Vec<ModelInfo>> {
-        self.list_models_impl(openai_base_url, key).await
+        self.list_models_impl(openai_base_url, key, false).await
     }
 
     async fn model_list(&self, request: ModelListRequest<'_>) -> Result<ModelList> {

@@ -340,3 +340,68 @@ async fn import_refuses_unknown_candidates() {
     let scan = sw.import_scan(ImportScanRequest::default()).await.unwrap();
     assert!(scan.sources.iter().all(|s| !s.found()));
 }
+
+#[tokio::test]
+async fn reimporting_a_routed_plain_http_provider_takes_it_out_of_the_router() {
+    // The import keeps the http address but never its consent; the provider
+    // was a router member, so it leaves the router before the site is saved.
+    let w = World::new();
+    let base = url::Url::parse("http://192.168.1.20:8080/v1").unwrap();
+    let mut site = superba_switch::new_compatible_site("lan".into(), "LAN", &base).unwrap();
+    site.allow_plain_http = true;
+    let sw = w.switcher();
+    sw.save_site(site.clone()).await.unwrap();
+    let mut profile = fakes::krill_profile("lan", None, superba_core::AuthMode::ApiKey);
+    profile.site_id = site.id.clone();
+    profile.name = "LAN".into();
+    sw.save_profile(profile, Some(superba_core::Secret::new("sk-lan-old")))
+        .await
+        .unwrap();
+    sw.router_install(superba_core::RouterInstallRequest {
+        members: vec!["lan".into(), "work".into()],
+    })
+    .await
+    .unwrap();
+    let last = || w.router.written.lock().unwrap().last().unwrap().clone();
+    assert!(
+        last()
+            .members
+            .iter()
+            .any(|m| m.id == "lan" && m.allow_plain_http)
+    );
+
+    let home = &w.ctx.home_dir;
+    std::fs::create_dir_all(home.join(".cc-switch")).unwrap();
+    std::fs::write(
+        home.join(".cc-switch/config.json"),
+        r#"{"version":2,"codex":{"current":"p1","providers":{
+          "p1":{"id":"p1","name":"LAN","settingsConfig":{"auth":{"OPENAI_API_KEY":"sk-lan-new-000000"},
+            "config":"model_provider = \"lan\"\n\n[model_providers.lan]\nbase_url = \"http://192.168.1.20:8080/v1\"\nwire_api = \"responses\"\n"}}}}}"#,
+    )
+    .unwrap();
+    let scan = sw
+        .import_scan(ImportScanRequest::source(ImportSource::Ccs))
+        .await
+        .unwrap();
+    let lan = scan.candidates().find(|c| c.name == "LAN").unwrap();
+    assert!(lan.conflict.is_some(), "{lan:?}");
+    let report = sw
+        .import_apply(ImportApplyRequest {
+            selections: vec![ImportSelection::new(lan.id.clone(), ConflictAction::Update)],
+            dry_run: false,
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        report.items[0].outcome.profile(),
+        Some(&ProfileId::new("lan")),
+        "{report:?}"
+    );
+    let set = w.profiles.set.lock().unwrap().clone();
+    let saved = set.custom_sites.iter().find(|s| s.id == site.id).unwrap();
+    assert!(!saved.allow_plain_http);
+    assert_eq!(saved.lines[0].origin.url().scheme(), "http");
+    assert!(!set.settings.router.members.contains(&ProfileId::new("lan")));
+    let ids: Vec<String> = last().members.iter().map(|m| m.id.clone()).collect();
+    assert_eq!(ids, ["work"]);
+}

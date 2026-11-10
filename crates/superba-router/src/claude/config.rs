@@ -242,7 +242,7 @@ impl ClaudeConfig {
                             "Claude Code member {id:?}: no line {line:?}"
                         )));
                     }
-                    check_upstream_url(url)?;
+                    check_upstream_url(url, member.allows_plain_http_for(url))?;
                 }
             }
         }

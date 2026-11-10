@@ -677,6 +677,93 @@ impl RouterManager {
         Ok(endpoint)
     }
 
+    /// [`RouterManager::rewrite`] for a change that must not be left to a later
+    /// start: the running router has to take the new configuration (it is
+    /// reloaded whether or not one health check passed), or no router process
+    /// may be running at all. When a router may be running but does not load
+    /// it, the previous files are put back and the call fails, so the files
+    /// and the running router never disagree.
+    pub async fn rewrite_enforced(
+        &self,
+        config: &RouterConfig,
+        member_keys: BTreeMap<String, Secret>,
+    ) -> Result<RouterEndpoint> {
+        let previous = (
+            RouterConfig::load(&self.paths).ok(),
+            RouterSecrets::load(&self.paths).ok(),
+        );
+        let endpoint = self.write_config(config, member_keys)?;
+        let reloaded = match AdminClient::from_runtime(&self.paths) {
+            Ok(client) => client.reload().await.map(|_| ()),
+            Err(e) => Err(e),
+        };
+        let Err(e) = reloaded else {
+            return Ok(endpoint);
+        };
+        if !self.router_may_run().await {
+            // Nothing runs: it reads the new files when it starts.
+            return Ok(endpoint);
+        }
+        if let (Some(config), Some(secrets)) = previous {
+            secrets.save(&self.paths)?;
+            config.save(&self.paths)?;
+        }
+        Err(Error::other(format!(
+            "the local router is running but did not load the new configuration: {e}"
+        )))
+    }
+
+    /// Members of the running router's current configuration, with their
+    /// upstream base URLs. `Ok(None)` only when no router process can be
+    /// running; an error when one may be running but does not answer.
+    pub async fn running_members(&self) -> Result<Option<Vec<(String, Vec<String>)>>> {
+        let status = match AdminClient::from_runtime(&self.paths) {
+            Ok(client) => client.status().await,
+            Err(e) => Err(e),
+        };
+        match status {
+            Ok(s) => Ok(Some(
+                s.members
+                    .into_iter()
+                    .map(|m| (m.id, m.lines.into_iter().map(|l| l.base_url).collect()))
+                    .collect(),
+            )),
+            Err(e) if self.router_may_run().await => Err(Error::other(format!(
+                "the local router may be running but does not answer: {e}"
+            ))),
+            Err(_) => Ok(None),
+        }
+    }
+
+    /// Whether a router process may be running: the service says so, the
+    /// process named in `runtime.json` (or the supervisor) is alive, or
+    /// something accepts connections on its port.
+    pub async fn router_may_run(&self) -> bool {
+        if self
+            .service
+            .status(&self.spec)
+            .is_ok_and(|s| s.running == Some(true))
+        {
+            return true;
+        }
+        if let Ok(r) = crate::runtime::RuntimeInfo::load(&self.paths) {
+            if self.runner.is_router_process(r.pid) {
+                return true;
+            }
+            let connect = tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, r.port));
+            if tokio::time::timeout(Duration::from_secs(2), connect)
+                .await
+                .is_ok_and(|c| c.is_ok())
+            {
+                return true;
+            }
+        }
+        std::fs::read_to_string(self.paths.supervisor_pid())
+            .ok()
+            .and_then(|s| s.trim().parse::<u32>().ok())
+            .is_some_and(|pid| self.runner.is_router_process(pid))
+    }
+
     /// Set the `stats` section of the stored configuration (request recording,
     /// retention, the stats line and prices; build it with
     /// [`StatsConfig::from_settings`]) and reload a running router. Never

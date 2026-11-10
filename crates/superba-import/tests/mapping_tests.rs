@@ -42,6 +42,7 @@ fn read(source: ImportSource, providers: Vec<ForeignProvider>) -> SourceRead {
 fn make_site(id: SiteId, name: &str, url: &Url) -> Result<Site> {
     let origin = superba_core::Origin::parse(&url.origin().ascii_serialization())?;
     Ok(Site {
+        allow_plain_http: false,
         id,
         kind: SiteKind::Compatible,
         name: LocalizedText::new("", name),
@@ -221,15 +222,15 @@ fn what_cannot_be_imported_says_why() {
     let mut none = provider(ImportSource::Ccs, "n", "No URL", "");
     none.base_url = None;
     assert_eq!(reason(none), "import.reason.no_base_url");
-    assert_eq!(
-        reason(provider(
-            ImportSource::Ccs,
-            "h",
-            "Plain",
-            "http://relay.example.com/v1"
-        )),
-        "import.reason.insecure_url"
-    );
+    let http = one(provider(
+        ImportSource::Ccs,
+        "h",
+        "Plain",
+        "http://relay.example.com/v1",
+    ));
+    assert!(http.importable());
+    assert!(http.notes.iter().any(|n| n.key == "import.note.plain_http"));
+    assert_eq!(http.target.unwrap().base_url.unwrap().scheme(), "http");
     assert_eq!(
         reason(provider(
             ImportSource::Ccs,
@@ -658,4 +659,54 @@ fn the_same_provider_in_both_tools_is_selected_once() {
         .filter_map(|c| c.target.as_ref().map(|t| t.site_id.to_string()))
         .collect();
     assert_eq!(names, ["aihub", "aihub-from-cc-switch", "aihub-team"]);
+}
+
+#[test]
+fn importing_http_preserves_the_url_but_never_imports_consent() {
+    for base in [
+        "http://192.168.1.20:8080/v1",
+        "http://api.krill-code.net/v1",
+    ] {
+        let reads = [read(
+            ImportSource::Ccs,
+            vec![provider(ImportSource::Ccs, "lan", "LAN", base)],
+        )];
+        let set = ProfileSet::default();
+        let scan = preview(&reads, &set, &builtin_sites());
+        let candidate = scan.candidates().next().unwrap();
+        assert_eq!(
+            candidate.target.as_ref().unwrap().kind,
+            SiteKind::Compatible
+        );
+        assert!(
+            candidate
+                .notes
+                .iter()
+                .any(|n| n.key == "import.note.plain_http")
+        );
+        let selections = [ImportSelection {
+            candidate: candidate.id.clone(),
+            on_conflict: ConflictAction::Rename,
+        }];
+        let plans = plan(
+            &reads,
+            &scan,
+            &set,
+            &builtin_sites(),
+            &selections,
+            &make_site,
+        );
+        let PlannedAction::Create {
+            site: Some(site), ..
+        } = &plans[0].action
+        else {
+            panic!("{:?}", plans[0]);
+        };
+        assert!(!site.allow_plain_http);
+        assert_eq!(site.lines[0].origin.url().scheme(), "http");
+        assert!(
+            superba_core::ResolvedEndpoints::for_site_base_url(site, &Url::parse(base).unwrap())
+                .is_err()
+        );
+    }
 }

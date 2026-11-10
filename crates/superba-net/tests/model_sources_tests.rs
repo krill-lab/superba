@@ -257,6 +257,7 @@ async fn the_messages_check_sends_one_token_the_way_claude_code_does() {
         AnthropicEndpoint::new(Url::parse(&format!("{}/api/anthropic", server.origin())).unwrap());
     let p = prober
         .probe_messages(MessagesProbeRequest {
+            site: None,
             endpoint: &endpoint,
             key: &key,
             model: "gpt-6-sol",
@@ -281,6 +282,7 @@ async fn the_messages_check_sends_one_token_the_way_claude_code_does() {
     endpoint.base_url = Url::parse(&format!("{}/wrong", server.origin())).unwrap();
     let p = prober
         .probe_messages(MessagesProbeRequest {
+            site: None,
             endpoint: &endpoint,
             key: &key,
             model: "gpt-6-sol",

@@ -467,3 +467,41 @@ fn edit_without_an_override_keeps_none() {
     let prepared = prepare(&form, &[], Some((&site, &profile)), new_compatible_site).unwrap();
     assert!(prepared.profile.base_url_override.is_none());
 }
+
+#[test]
+fn plain_http_requires_explicit_consent_and_round_trips_without_rewriting() {
+    let mut form = form();
+    form.url = "http://192.168.1.20:8080/v1".into();
+    assert_eq!(
+        prepare(&form, &[], None, new_compatible_site).unwrap_err(),
+        FormError::InsecureUrl
+    );
+    form.allow_plain_http = true;
+    let ready = prepare(&form, &[], None, new_compatible_site).unwrap();
+    assert!(ready.site.allow_plain_http);
+    assert_eq!(base_url(&ready.site), form.url);
+    let edit = SiteForm::edit(&ready.site, &ready.profile);
+    assert!(edit.allow_plain_http);
+    assert_eq!(edit.url, form.url);
+    form.url = "https://192.168.1.20:8443/v1".into();
+    assert!(
+        !prepare(&form, &[], None, new_compatible_site)
+            .unwrap()
+            .site
+            .allow_plain_http
+    );
+}
+
+#[test]
+fn consent_never_accepts_an_unrelated_scheme() {
+    for input in [
+        "file:///etc/passwd",
+        "ftp://example.com/v1",
+        "ws://example.com/v1",
+    ] {
+        assert_eq!(
+            check_url_with_consent(&Url::parse(input).unwrap(), true),
+            Err(FormError::InvalidUrl)
+        );
+    }
+}

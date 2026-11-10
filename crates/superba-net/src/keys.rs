@@ -209,16 +209,21 @@ impl HttpLineProber {
         url: Url,
         key: &Secret,
         limit: usize,
+        allow_plain_http: bool,
     ) -> std::result::Result<Answer, Transport> {
         self.http
-            .send(Request::get(url, self.config.request_timeout, limit).with_key(key))
+            .send(
+                Request::get(url, self.config.request_timeout, limit)
+                    .with_key(key)
+                    .allow_plain_http(allow_plain_http),
+            )
             .await
     }
 
     /// Authenticated whoami at `origin` + `path`.
     pub(crate) async fn whoami(&self, origin: &Origin, path: &str, key: &Secret) -> WhoamiOutcome {
         let res = self
-            .get_with_key(origin.join(path), key, PROBE_BODY_LIMIT)
+            .get_with_key(origin.join(path), key, PROBE_BODY_LIMIT, false)
             .await;
         let mut out = whoami_outcome(&res);
         if let AuthApiHealth::Unhealthy { reason } = &mut out.health {
@@ -231,7 +236,7 @@ impl HttpLineProber {
     /// Authenticated accounts check, with diagnostics redacted before use.
     async fn wham(&self, origin: &Origin, path: &str, key: &Secret) -> WhamOutcome {
         let res = self
-            .get_with_key(origin.join(path), key, PROBE_BODY_LIMIT)
+            .get_with_key(origin.join(path), key, PROBE_BODY_LIMIT, false)
             .await;
         let mut out = wham_outcome(&res);
         out.detail = redact(&out.detail, Some(key));
@@ -271,7 +276,12 @@ impl HttpLineProber {
         };
         for (i, path) in paths.iter().copied().enumerate() {
             let res = self
-                .get_with_key(self.models_url(site, line, path), key, PROBE_BODY_LIMIT)
+                .get_with_key(
+                    self.models_url(site, line, path),
+                    key,
+                    PROBE_BODY_LIMIT,
+                    site.allows_plain_http_for(line.origin.url()),
+                )
                 .await;
             let mut access = key_access(site.kind, &res);
             if let KeyAccess::Unknown { message, .. } = &mut access {
@@ -327,6 +337,11 @@ impl HttpLineProber {
             )));
         }
         Self::ensure_site_line(site, line)?;
+        ensure_key_target(
+            line.origin.url(),
+            key,
+            site.allows_plain_http_for(line.origin.url()),
+        )?;
         Self::ensure_key(key)?;
         let pat = mode.writes_chatgpt_base_url() || mode.needs_authapi_env();
         let relay = site.capabilities.key_check;
@@ -376,6 +391,11 @@ impl HttpLineProber {
         key: &Secret,
     ) -> Result<LineCaps> {
         Self::ensure_site_line(site, line)?;
+        ensure_key_target(
+            line.origin.url(),
+            key,
+            site.allows_plain_http_for(line.origin.url()),
+        )?;
         Self::ensure_key(key)?;
         let mut caps = self.probe_line(site, line).await;
         let key_modes = site.capabilities.auth_modes.iter().any(|m| m.uses_key());
@@ -474,12 +494,18 @@ impl HttpLineProber {
         &self,
         openai_base_url: &Url,
         key: &Secret,
+        allow_plain_http: bool,
     ) -> Result<Vec<ModelInfo>> {
         Self::ensure_key(key)?;
-        ensure_key_target(openai_base_url, key)?;
+        ensure_key_target(openai_base_url, key, allow_plain_http)?;
         let url = models_url_for_base(openai_base_url, &self.config.client_version);
         let res = self
-            .get_with_key(url.clone(), key, self.config.max_catalog_bytes)
+            .get_with_key(
+                url.clone(),
+                key,
+                self.config.max_catalog_bytes,
+                allow_plain_http,
+            )
             .await;
         let a = res.map_err(|t| t.into_error(&url))?;
         if edge_intercepted(&a) && !a.truncated {
@@ -516,7 +542,7 @@ impl HttpLineProber {
     ) -> Result<ResponsesProbe> {
         let base = &endpoints.openai_base_url;
         Self::ensure_key(key)?;
-        ensure_key_target(base, key)?;
+        ensure_key_target(base, key, endpoints.allows_plain_http())?;
         if base.origin() != endpoints.origin.url().origin() {
             return Err(Error::invalid(format!(
                 "openai_base_url {} is not on the endpoints' origin {}",
@@ -533,6 +559,7 @@ impl HttpLineProber {
         let url = join_base(base, "responses");
         let req = Request::get(url, self.config.responses_timeout, RESPONSES_BODY_LIMIT)
             .with_key(key)
+            .allow_plain_http(endpoints.allows_plain_http())
             .with_json(responses_body(model), ACCEPT_SSE)
             .until(stream_finished);
         let res = self.http.send(req).await;
@@ -569,6 +596,7 @@ impl HttpLineProber {
             let url = join_base(base, "responses/compact");
             let req = Request::get(url, self.config.responses_timeout, PROBE_BODY_LIMIT * 16)
                 .with_key(key)
+                .allow_plain_http(endpoints.allows_plain_http())
                 .with_json(compact_body(model), crate::http::ACCEPT_JSON);
             probe.compact_ok = Some(match self.http.send(req).await {
                 Ok(a) => judge_compact(&a),

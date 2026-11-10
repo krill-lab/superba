@@ -165,6 +165,9 @@ impl Taken {
 /// Krill-kind site (the built-in one first), else the built-in site's default
 /// line for another Krill host (`exact` false).
 fn krill_line(origin: &Origin, sites: &[Site]) -> Option<(SiteId, LineId, bool)> {
+    if !origin.is_https() && !origin.is_loopback() {
+        return None;
+    }
     let mut krill: Vec<&Site> = sites.iter().filter(|s| s.kind == SiteKind::Krill).collect();
     krill.sort_by_key(|s| s.id.as_str() != KRILL_SITE_ID);
     for site in &krill {
@@ -192,8 +195,8 @@ fn is_loopback(url: &Url) -> bool {
     }
 }
 
-/// Parse and check a base URL the way custom sites are checked: https (plain
-/// http only to loopback), no credentials, query or fragment.
+/// Parse a stored HTTP(S) address; imports never authorize plain HTTP traffic.
+/// Credentials, query and fragment are refused.
 fn parse_base(raw: &str) -> Result<Url, LocalizedText> {
     let raw = raw.trim();
     let url = Url::parse(raw).map_err(|_| {
@@ -204,15 +207,7 @@ fn parse_base(raw: &str) -> Result<Url, LocalizedText> {
         .arg("url", raw)
     })?;
     match url.scheme() {
-        "https" => {}
-        "http" if is_loopback(&url) => {}
-        "http" => {
-            return Err(text(
-                "import.reason.insecure_url",
-                "The address {url} uses plain http; Superba sends keys over https only.",
-            )
-            .arg("url", raw));
-        }
+        "https" | "http" => {}
         _ => {
             return Err(text(
                 "import.reason.bad_url",
@@ -380,6 +375,12 @@ fn target_of(
             )
             .arg("urls", other_paths.join(", ")),
         );
+    }
+    if lines
+        .iter()
+        .any(|l| !l.origin.is_https() && !is_loopback(l.origin.url()))
+    {
+        notes.push(text("import.note.plain_http", "This address uses unencrypted HTTP. Import keeps it disabled for key requests. Open the provider's connection settings and confirm plain HTTP before use."));
     }
     Ok(ImportTarget {
         kind: SiteKind::Compatible,
@@ -806,6 +807,7 @@ fn create(
                     );
                 }
             };
+            site.allow_plain_http = false;
             site.model_map = t.model_map.clone();
             add_lines(&mut site, t);
             let mut profile = new_key_profile(&site, ProfileId::new(&id), name);
@@ -877,6 +879,7 @@ fn update(
                 )
                 .arg("detail", e)
             })?;
+            updated.allow_plain_http = false;
             updated.homepage = site.homepage.clone();
             updated.name = site.name.clone();
             let mut map = site.model_map.clone();

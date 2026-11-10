@@ -19,6 +19,7 @@ use superba_switch::journal::{JournalEntry, JournalStatus, StateLock, SwitchJour
 
 fn compatible_site(id: &str, origin: &str) -> Site {
     Site {
+        allow_plain_http: false,
         id: SiteId::new(id),
         kind: SiteKind::Compatible,
         name: LocalizedText::new("raw", id),

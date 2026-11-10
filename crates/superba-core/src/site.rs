@@ -30,6 +30,10 @@ pub struct Site {
     pub id: SiteId,
     /// Kind.
     pub kind: SiteKind,
+    /// Explicit consent to send API keys and conversations over unencrypted
+    /// HTTP. Only user-defined compatible sites can use this exception.
+    #[serde(default)]
+    pub allow_plain_http: bool,
     /// Display name.
     pub name: LocalizedText,
     /// Main web site (account, billing). Krill: <https://www.krill-code.com>.
@@ -54,6 +58,39 @@ pub struct Site {
 }
 
 impl Site {
+    /// Whether this user-defined API-key site may opt into plain HTTP.
+    pub fn allows_plain_http(&self) -> bool {
+        self.allow_plain_http
+            && self.kind == SiteKind::Compatible
+            && !matches!(
+                self.id.as_str(),
+                crate::catalog::KRILL_SITE_ID | crate::catalog::OFFICIAL_SITE_ID
+            )
+            && self.capabilities.auth_modes == [AuthMode::ApiKey]
+            && self.lines.iter().all(|l| l.source == LineSource::User)
+    }
+
+    /// The site has a plain-http line off this machine that it may not use:
+    /// no consent (yet), or a site that can never have it. Nothing is sent
+    /// there, and it cannot be a router member.
+    pub fn needs_plain_http_consent(&self) -> bool {
+        !self.allows_plain_http()
+            && self
+                .lines
+                .iter()
+                .any(|l| l.origin.url().scheme() == "http" && !l.origin.is_loopback())
+    }
+
+    /// Consent applies only to this site's saved origins, never an unrelated
+    /// endpoint override, model source or tool URL.
+    pub fn allows_plain_http_for(&self, url: &Url) -> bool {
+        self.allows_plain_http()
+            && self
+                .lines
+                .iter()
+                .any(|l| l.origin.url().origin() == url.origin())
+    }
+
     /// Look up a line by id.
     pub fn line(&self, id: &LineId) -> Option<&Line> {
         self.lines.iter().find(|l| &l.id == id)

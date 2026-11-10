@@ -99,7 +99,15 @@ fn claude_only_member(site: &Site, profile: &Profile, base: Option<&Url>) -> Opt
         member_from_site(site, &lines, &p).ok()
     });
     let mut member = from_site.or_else(|| {
+        // An unconfirmed plain-http endpoint is never routed.
+        let base = base.filter(|b| {
+            b.scheme() != "http"
+                || superba_core::Origin::parse(&b.origin().ascii_serialization())
+                    .is_ok_and(|o| o.is_loopback())
+                || site.allows_plain_http_for(b)
+        });
         base.map(|base| MemberConfig {
+            allow_plain_http: site.allows_plain_http_for(base),
             id: String::new(),
             name: String::new(),
             kind: MemberKind::Compatible,

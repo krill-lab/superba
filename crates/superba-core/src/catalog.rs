@@ -118,6 +118,7 @@ pub fn krill_site() -> Site {
         source: LineSource::Builtin,
     };
     Site {
+        allow_plain_http: false,
         id: SiteId::new(KRILL_SITE_ID),
         kind: SiteKind::Krill,
         name: LocalizedText::new("site.krill", "Krill"),
@@ -163,6 +164,7 @@ pub fn krill_site() -> Site {
 /// The official ChatGPT login pseudo-site (no lines).
 pub fn official_site() -> Site {
     Site {
+        allow_plain_http: false,
         id: SiteId::new(OFFICIAL_SITE_ID),
         kind: SiteKind::Official,
         name: LocalizedText::new("site.official", "Official ChatGPT"),
@@ -287,6 +289,7 @@ impl Preset {
 /// The custom-site template: compatible capabilities, no lines.
 pub fn compatible_template_site() -> Site {
     Site {
+        allow_plain_http: false,
         id: SiteId::new(COMPATIBLE_TEMPLATE_SITE_ID),
         kind: SiteKind::Compatible,
         name: LocalizedText::new("site.compatible", "OpenAI-compatible site"),

@@ -61,6 +61,11 @@ pub(super) fn secondary(cx: &Cx<'_>, p: &Provider) -> String {
                 .and_then(|u| u.host_str().map(str::to_owned))
                 .or_else(|| p.site.default_line().map(|l| l.origin.host().to_owned()))
                 .unwrap_or_default();
+            let host = if super::form::shows_plain_http(&p.site) {
+                format!("{host} · {}", cx.tr.t("sites.form.http_badge"))
+            } else {
+                host
+            };
             if p.has_key() {
                 format!("{host} · {}", cx.auth_short(AuthMode::ApiKey))
             } else {

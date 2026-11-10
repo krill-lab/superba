@@ -583,6 +583,10 @@ impl Switcher {
                 (endpoint, token)
             }
         };
+        let site = self.site(&profile.site_id).await?;
+        let owner = (settings.route == HarnessRoute::Direct).then_some(&site);
+        superba_core::harness::check_site_base_url(endpoint.base_url.as_str(), owner)
+            .map_err(|k| Error::invalid(superba_core::harness::base_url_problem(k).fallback))?;
         let specs = self.harness_models(&profile.id).await?;
         let models: Vec<HarnessModel> = if settings.models.is_empty() {
             specs.iter().map(HarnessModel::from_spec).collect()
@@ -781,8 +785,10 @@ impl Switcher {
                 what: format!("provider {provider}"),
             });
         }
+        let profile = set.profile(&provider).expect("validated above");
+        let site = self.site(&profile.site_id).await?;
         for u in protocols.chat.iter().chain(protocols.anthropic.iter()) {
-            superba_core::harness::check_base_url(u.as_str())
+            superba_core::harness::check_site_base_url(u.as_str(), Some(&site))
                 .map_err(|k| Error::invalid(superba_core::harness::base_url_problem(k).fallback))?;
         }
         let store = self.harness_store();

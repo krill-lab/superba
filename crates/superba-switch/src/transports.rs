@@ -204,7 +204,7 @@ impl Switcher {
         }
         let prober = &self.deps.prober;
         let checks = todo.iter().map(|(_, base)| async {
-            let endpoints = ResolvedEndpoints::for_base_url(base)?;
+            let endpoints = ResolvedEndpoints::for_site_base_url(&site, base)?;
             prober.probe_transports(&endpoints, &key).await
         });
         let results = futures_util::future::join_all(checks).await;

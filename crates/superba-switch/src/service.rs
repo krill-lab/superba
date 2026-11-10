@@ -344,15 +344,61 @@ impl Switcher {
             Some(slot) => *slot = site.clone(),
             None => set.custom_sites.push(site.clone()),
         }
-        self.deps.profiles.save(&set).await?;
         // Router members on this site carry its lines and model map.
-        if set
-            .settings
-            .router
-            .members
-            .iter()
-            .any(|id| set.profile(id).is_some_and(|p| p.site_id == site.id))
-        {
+        let routed = |set: &superba_core::ProfileSet| {
+            set.settings
+                .router
+                .members
+                .iter()
+                .any(|id| set.profile(id).is_some_and(|p| p.site_id == site.id))
+        };
+        if site.needs_plain_http_consent() {
+            // Consent was withdrawn (or never given, e.g. a re-import). Its
+            // providers leave the router before the site is saved, and only
+            // once the running router itself no longer sends their keys over
+            // plain HTTP: otherwise nothing is saved and consent stays as it
+            // was. The running router is asked (its stored configuration only
+            // counts when no router can be running), which also finds the
+            // providers only Claude Code or a tool routes.
+            let nothing_saved = |e: Error| {
+                Error::other(format!(
+                    "nothing was saved: the local router could not drop the provider \
+                     whose plain HTTP is no longer confirmed: {e}"
+                ))
+            };
+            let running = self
+                .deps
+                .router
+                .running_members()
+                .await
+                .map_err(nothing_saved)?;
+            let routed_now = running.unwrap_or_else(|| {
+                self.deps
+                    .router
+                    .configuration()
+                    .map(|c| crate::router::RoutedMember::of_config(&c))
+                    .unwrap_or_default()
+            });
+            if routed(&set) || crate::router::plain_http_members(&site, &set, &routed_now) {
+                let site_id = site.id.clone();
+                let profiles = set.profiles.clone();
+                set.settings
+                    .router
+                    .members
+                    .retain(|id| !profiles.iter().any(|p| &p.id == id && p.site_id == site_id));
+                tracing::warn!(
+                    site = %site.id,
+                    "plain HTTP is not confirmed: the site's providers leave the local router"
+                );
+                self.withdraw_from_router(&set, &site)
+                    .await
+                    .map_err(nothing_saved)?;
+                self.deps.profiles.save(&set).await?;
+                return Ok(site);
+            }
+        }
+        self.deps.profiles.save(&set).await?;
+        if routed(&set) {
             self.resync_router_members(&set).await?;
         }
         Ok(site)
