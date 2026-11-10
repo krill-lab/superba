@@ -337,3 +337,36 @@ async fn revoking_consent_takes_the_member_out_of_the_running_router_before_savi
     assert_eq!(responses(&local_up), 3);
     handle.shutdown();
 }
+
+#[tokio::test]
+async fn revocation_is_refused_while_the_routers_configuration_cannot_be_read() {
+    // The router still routes the provider, but its endpoint (configuration
+    // or keys) cannot be read: nothing can be rewritten, so nothing is saved.
+    let base = url::Url::parse("http://192.168.1.20:8080/v1").unwrap();
+    let w = World::new();
+    let sw = Switcher::with_tuning(w.deps(), Tuning::default());
+    let mut site = superba_switch::new_compatible_site("lan".into(), "LAN", &base).unwrap();
+    site.allow_plain_http = true;
+    sw.save_site(site.clone()).await.unwrap();
+    let mut profile = krill_profile("lan", None, AuthMode::ApiKey);
+    profile.site_id = site.id.clone();
+    sw.save_profile(profile, Some(Secret::new(upstream::KEY)))
+        .await
+        .unwrap();
+    sw.router_install(RouterInstallRequest {
+        members: vec!["lan".into(), "work".into()],
+    })
+    .await
+    .unwrap();
+    *w.router.port.lock().unwrap() = None;
+    site.allow_plain_http = false;
+    assert!(sw.save_site(site.clone()).await.is_err());
+    let stored = sw.sites().await.unwrap();
+    assert!(
+        stored
+            .iter()
+            .find(|s| s.id == site.id)
+            .unwrap()
+            .allow_plain_http
+    );
+}

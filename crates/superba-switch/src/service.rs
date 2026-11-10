@@ -349,42 +349,50 @@ impl Switcher {
                 .iter()
                 .any(|id| set.profile(id).is_some_and(|p| p.site_id == site.id))
         };
-        // Any member of the running router on this site: a Codex member, or a
-        // provider only Claude Code or a tool routes through it.
-        let in_router = || {
-            self.deps.router.configuration().is_some_and(|c| {
-                set.profiles.iter().any(|p| {
-                    p.site_id == site.id
-                        && c.members
-                            .iter()
-                            .any(|m| m.id == superba_router::members::router_id(p.id.as_str()))
-                })
-            })
-        };
-        if site.needs_plain_http_consent() && (routed(&set) || in_router()) {
-            // Consent was withdrawn (or never given, e.g. a re-import) while
-            // the site is a router member. Its members leave the router, and
-            // the router is rewritten first: if that fails nothing is saved,
-            // so the router never keeps forwarding a key to a plain-http
-            // upstream whose site is no longer confirmed.
-            let site_id = site.id.clone();
-            let profiles = set.profiles.clone();
-            set.settings
-                .router
-                .members
-                .retain(|id| !profiles.iter().any(|p| &p.id == id && p.site_id == site_id));
-            tracing::warn!(
-                site = %site.id,
-                "plain HTTP is not confirmed: the site's providers leave the local router"
-            );
-            self.resync_router_members(&set).await.map_err(|e| {
+        if site.needs_plain_http_consent() {
+            // Consent was withdrawn (or never given, e.g. a re-import). Its
+            // providers leave the router before the site is saved, and only
+            // once the running router itself no longer sends their keys over
+            // plain HTTP: otherwise nothing is saved and consent stays as it
+            // was. The running router is asked (its stored configuration only
+            // counts when no router can be running), which also finds the
+            // providers only Claude Code or a tool routes.
+            let nothing_saved = |e: Error| {
                 Error::other(format!(
                     "nothing was saved: the local router could not drop the provider \
                      whose plain HTTP is no longer confirmed: {e}"
                 ))
-            })?;
-            self.deps.profiles.save(&set).await?;
-            return Ok(site);
+            };
+            let running = self
+                .deps
+                .router
+                .running_members()
+                .await
+                .map_err(nothing_saved)?;
+            let routed_now = running.unwrap_or_else(|| {
+                self.deps
+                    .router
+                    .configuration()
+                    .map(|c| crate::router::RoutedMember::of_config(&c))
+                    .unwrap_or_default()
+            });
+            if routed(&set) || crate::router::plain_http_members(&site, &set, &routed_now) {
+                let site_id = site.id.clone();
+                let profiles = set.profiles.clone();
+                set.settings
+                    .router
+                    .members
+                    .retain(|id| !profiles.iter().any(|p| &p.id == id && p.site_id == site_id));
+                tracing::warn!(
+                    site = %site.id,
+                    "plain HTTP is not confirmed: the site's providers leave the local router"
+                );
+                self.withdraw_from_router(&set, &site)
+                    .await
+                    .map_err(nothing_saved)?;
+                self.deps.profiles.save(&set).await?;
+                return Ok(site);
+            }
         }
         self.deps.profiles.save(&set).await?;
         if routed(&set) {

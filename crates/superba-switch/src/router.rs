@@ -82,6 +82,30 @@ pub struct RouterServiceInfo {
     pub detail: Option<String>,
 }
 
+/// One member of a router configuration and the upstream base URLs it sends
+/// requests (and its key) to.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RoutedMember {
+    /// Member id ([`superba_router::members::router_id`] of the profile).
+    pub id: String,
+    /// Upstream base URLs of its lines.
+    pub upstreams: Vec<String>,
+}
+
+impl RoutedMember {
+    /// The members of a stored configuration.
+    pub fn of_config(config: &RouterConfig) -> Vec<Self> {
+        config
+            .members
+            .iter()
+            .map(|m| Self {
+                id: m.id.clone(),
+                upstreams: m.lines.iter().map(|l| l.base_url.to_string()).collect(),
+            })
+            .collect()
+    }
+}
+
 /// The router as seen by the switch service (production: `superba-router`'s
 /// manager; tests: a fake).
 #[async_trait]
@@ -125,6 +149,22 @@ pub trait RouterControl: Send + Sync + std::fmt::Debug {
         config: RouterConfig,
         keys: BTreeMap<String, Secret>,
     ) -> Result<RouterEndpointInfo>;
+    /// [`RouterControl::rewrite`] that must be in effect when it returns: the
+    /// running router loaded it, or no router can be running. Fails (with the
+    /// previous files put back) when a router may run but did not load it.
+    async fn rewrite_enforced(
+        &self,
+        config: RouterConfig,
+        keys: BTreeMap<String, Secret>,
+    ) -> Result<RouterEndpointInfo> {
+        self.rewrite(config, keys).await
+    }
+    /// The running router's members with their upstream base URLs: from the
+    /// router itself when it answers; `Ok(None)` only when no router can be
+    /// running; an error when one may run but does not answer.
+    async fn running_members(&self) -> Result<Option<Vec<RoutedMember>>> {
+        Ok(self.configuration().map(|c| RoutedMember::of_config(&c)))
+    }
     /// Stop and remove the service; delete the secrets and runtime files.
     async fn uninstall(&self) -> Result<()>;
     /// Restart the installed service so it runs the binary on disk (after a
@@ -264,6 +304,11 @@ pub struct SystemRouterControl {
 }
 
 impl SystemRouterControl {
+    /// Over a given manager (tests: an in-process service).
+    pub fn with_manager(manager: superba_router::manager::RouterManager) -> Self {
+        Self { manager }
+    }
+
     /// The router service for `data_dir`, running the `superba-router` that ships
     /// with the current executable
     /// ([`superba_router::manager::current_router_exe`]: next to it in every
@@ -390,6 +435,23 @@ impl RouterControl for SystemRouterControl {
         keys: BTreeMap<String, Secret>,
     ) -> Result<RouterEndpointInfo> {
         self.manager.rewrite(&config, keys).await.map(info)
+    }
+
+    async fn rewrite_enforced(
+        &self,
+        config: RouterConfig,
+        keys: BTreeMap<String, Secret>,
+    ) -> Result<RouterEndpointInfo> {
+        self.manager.rewrite_enforced(&config, keys).await.map(info)
+    }
+
+    async fn running_members(&self) -> Result<Option<Vec<RoutedMember>>> {
+        Ok(self.manager.running_members().await?.map(|members| {
+            members
+                .into_iter()
+                .map(|(id, upstreams)| RoutedMember { id, upstreams })
+                .collect()
+        }))
     }
 
     async fn uninstall(&self) -> Result<()> {
@@ -718,6 +780,45 @@ impl Switcher {
                 "the change was saved, but the local router could not be updated: {e}"
             ))
         })
+    }
+
+    /// Take `site`'s providers out of the router (`set` no longer lists
+    /// them): rewrite it so the running router loads the change, or uninstall
+    /// it when nothing is left. Succeeds only when the running router (if any)
+    /// then sends none of the site's keys to its plain-http origins; when its
+    /// configuration or keys cannot be read, only a router that is not running
+    /// is accepted.
+    pub(crate) async fn withdraw_from_router(&self, set: &ProfileSet, site: &Site) -> Result<()> {
+        let d = &self.deps;
+        if d.router.endpoint().is_ok() {
+            let members = &set.settings.router.members;
+            let built = if members.is_empty() {
+                self.build_router_members(set, members).await.ok()
+            } else {
+                Some(self.build_router_members(set, members).await?)
+            };
+            match built {
+                Some(built) => {
+                    d.router.rewrite_enforced(built.config, built.keys).await?;
+                }
+                None => {
+                    if self.claude_routed()
+                        && let Err(e) = self
+                            .claude_fall_back("the local router has no member left")
+                            .await
+                    {
+                        tracing::warn!(error = %e, "Claude Code did not fall back to its provider");
+                    }
+                    d.router.uninstall().await?;
+                }
+            }
+        }
+        match d.router.running_members().await? {
+            Some(running) if plain_http_members(site, set, &running) => Err(Error::other(
+                "the running local router still sends this provider's key over plain HTTP",
+            )),
+            _ => Ok(()),
+        }
     }
 
     /// Forget the current outage (router mode changed).
@@ -1707,4 +1808,27 @@ impl Switcher {
             .is_some_and(|v| std::path::Path::new(v) == target);
         superba_router::tls::prepare_client_bundle(&paths, &sources, extend)
     }
+}
+
+/// Whether one of `members` is a provider of `site` that sends its key to one
+/// of the site's plain-http origins off this machine.
+pub(crate) fn plain_http_members(site: &Site, set: &ProfileSet, members: &[RoutedMember]) -> bool {
+    let origins: Vec<url::Origin> = site
+        .lines
+        .iter()
+        .filter(|l| l.origin.url().scheme() == "http" && !l.origin.is_loopback())
+        .map(|l| l.origin.url().origin())
+        .collect();
+    let ids: Vec<String> = set
+        .profiles
+        .iter()
+        .filter(|p| p.site_id == site.id)
+        .map(|p| router_id(p.id.as_str()))
+        .collect();
+    members.iter().any(|m| {
+        ids.contains(&m.id)
+            && m.upstreams
+                .iter()
+                .any(|u| url::Url::parse(u).is_ok_and(|u| origins.contains(&u.origin())))
+    })
 }
