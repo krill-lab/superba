@@ -32,6 +32,7 @@ fn lost() -> LostProjects {
                     LostProjectSource::Chats { count: 3 },
                 ],
                 app_id: Some("877476ef".into()),
+                project_id: Some("s-c".into()),
             },
             LostProject {
                 path: "/home/u/src/repo".into(),
@@ -40,6 +41,7 @@ fn lost() -> LostProjects {
                 last_used: None,
                 sources: vec![LostProjectSource::Chats { count: 1 }],
                 app_id: None,
+                project_id: None,
             },
         ],
         fingerprint: "fp1".into(),
@@ -149,7 +151,7 @@ async fn the_dialog_ticks_the_project_list_folders_and_sends_the_answer() {
         "Bring back 1 folder",
         "Don't bring back",
         "Not now",
-        "Folders you leave unticked are not offered again",
+        "Projects from ChatGPT's list that you leave unticked are not offered again",
     ] {
         assert!(
             shown.iter().any(|t| t.contains(want)),

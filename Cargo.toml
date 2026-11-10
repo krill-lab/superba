@@ -101,7 +101,7 @@ getrandom = "0.3"
 
 # --- filesystem, storage, processes
 directories = "6"
-rusqlite = { version = "0.40", default-features = false, features = ["bundled", "backup", "cache"] }
+rusqlite = { version = "0.40", default-features = false, features = ["bundled", "backup", "cache", "hooks"] }
 zstd = "0.14"
 # OpenAI request bodies (Content-Encoding: br).
 brotli = "8"

@@ -48,6 +48,10 @@ pub struct LostProject {
     /// so the app finds its project-server entry again.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub app_id: Option<String>,
+    /// The app-server's id of the project (`projects.id`); `None` for a
+    /// folder only seen in chats. An answer about the project is kept by it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
 }
 
 impl LostProject {
@@ -80,16 +84,30 @@ pub struct LostProjects {
     pub fingerprint: String,
 }
 
+/// What was answered before for one Codex home: projects of the app-server's
+/// list by their id (whatever their folders), and folders only seen in
+/// chats that the user turned down.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LostProjectsAnswered {
+    /// App-server project ids.
+    #[serde(default)]
+    pub project_ids: Vec<String>,
+    /// Folders only seen in chats.
+    #[serde(default)]
+    pub folders: Vec<PathBuf>,
+}
+
 /// The user's answer to [`LostProjects`].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum LostProjectsAnswer {
     /// Bring these folders back at the next launch through Superba; the
-    /// others on the list are not offered again.
+    /// projects of the app-server's list left unticked are not offered
+    /// again, folders only seen in chats left unticked may be.
     Restore {
         /// Ticked folders.
         paths: Vec<PathBuf>,
     },
-    /// Do not offer these folders again.
+    /// Do not offer this list again (its projects and chat folders).
     Dismiss,
 }

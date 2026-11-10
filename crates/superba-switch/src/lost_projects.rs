@@ -18,7 +18,9 @@ use std::time::{Duration, Instant, SystemTime};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use superba_appctl::project_restore::{self, RestoreItem, path_key};
-use superba_core::{CodexHome, Error, LostProjects, LostProjectsAnswer, Result};
+use superba_core::{
+    CodexHome, Error, LostProjects, LostProjectsAnswer, LostProjectsAnswered, Result,
+};
 
 use crate::Switcher;
 
@@ -132,7 +134,8 @@ pub fn discover_cached_for(
 }
 
 /// Record `answer` for the offer with `fingerprint`: queue the ticked
-/// folders and stop offering every folder of the list.
+/// folders; stop offering the list's app-server projects (by id), and with
+/// "don't bring back" also its chat folders.
 pub fn answer(
     home: &CodexHome,
     home_dir: &Path,
@@ -160,8 +163,27 @@ pub fn answer(
             project_restore::queue(app_state_dir, home.root(), items, now)?;
         }
     }
-    let all: Vec<PathBuf> = current.candidates.iter().map(|c| c.path.clone()).collect();
-    project_restore::record_answered(app_state_dir, home.root(), &all)?;
+    // Projects of the app-server's list are settled by their id, ticked or
+    // not (the dialog says so). Folders only seen in chats are settled only
+    // when the whole offer is turned down: left unticked while others come
+    // back, they may be offered again.
+    let answered = LostProjectsAnswered {
+        project_ids: current
+            .candidates
+            .iter()
+            .filter_map(|c| c.project_id.clone())
+            .collect(),
+        folders: match answer {
+            LostProjectsAnswer::Dismiss => current
+                .candidates
+                .iter()
+                .filter(|c| c.project_id.is_none())
+                .map(|c| c.path.clone())
+                .collect(),
+            LostProjectsAnswer::Restore { .. } => Vec::new(),
+        },
+    };
+    project_restore::record_answered(app_state_dir, home.root(), &answered)?;
     Ok(queued)
 }
 

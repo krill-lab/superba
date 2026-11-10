@@ -279,3 +279,126 @@ fn a_scalar_answers_file_does_not_block_a_dismissal() {
     .unwrap();
     assert_eq!(discover_for(&w.codex, &w.home_dir, &w.app_state), None);
 }
+
+/// Acceptance repro (880500b7): a chat folder left unticked while another
+/// project comes back must not hide a project lost later that starts there.
+#[test]
+fn an_unticked_chat_folder_does_not_hide_a_project_lost_later() {
+    let w = bare();
+    let (z, a, b) = (
+        w.home_dir.join("work/z"),
+        w.home_dir.join("work/a"),
+        w.home_dir.join("work/b"),
+    );
+    for d in [&z, &a, &b] {
+        fs::create_dir_all(d).unwrap();
+    }
+    let conn = make_db(&w.codex.state_db());
+    conn.execute_batch(
+        "CREATE TABLE threads (id TEXT PRIMARY KEY, rollout_path TEXT NOT NULL, created_at INTEGER NOT NULL, \
+           updated_at INTEGER NOT NULL, cwd TEXT NOT NULL, archived INTEGER NOT NULL DEFAULT 0, updated_at_ms INTEGER);",
+    )
+    .unwrap();
+    add_project(&conn, "s-z", &z);
+    conn.execute(
+        "INSERT INTO threads (id, rollout_path, created_at, updated_at, cwd, archived) VALUES ('t1', 'r', 10, 10, ?1, 0)",
+        params![a.to_str().unwrap()],
+    )
+    .unwrap();
+    let offer = discover_for(&w.codex, &w.home_dir, &w.app_state).unwrap();
+    assert!(
+        offer
+            .candidates
+            .iter()
+            .any(|c| c.path == a && !c.recommended())
+    );
+    answer(
+        &w.codex,
+        &w.home_dir,
+        &w.app_state,
+        &offer.fingerprint,
+        &LostProjectsAnswer::Restore {
+            paths: vec![z.clone()],
+        },
+        Timestamp::EPOCH,
+    )
+    .unwrap();
+    // z is queued, the chat folder a was not offered as a project: nothing
+    // to offer right now.
+    assert_eq!(discover_for(&w.codex, &w.home_dir, &w.app_state), None);
+    // Later the app-server has a project starting in a, which the app lost.
+    conn.execute(
+        "INSERT INTO projects (id, name, position, created_at_ms, updated_at_ms) VALUES ('s-p', 'proj-p', 0, 20, 20)",
+        [],
+    )
+    .unwrap();
+    for (i, r) in [&a, &b].iter().enumerate() {
+        conn.execute(
+            "INSERT INTO project_roots VALUES ('s-p', ?1, ?2)",
+            params![i as i64, r.to_str().unwrap()],
+        )
+        .unwrap();
+    }
+    let later = discover_for(&w.codex, &w.home_dir, &w.app_state)
+        .expect("a project lost with folders a and b must still be offered");
+    let p = later
+        .candidates
+        .iter()
+        .find(|c| c.project_id.as_deref() == Some("s-p"))
+        .unwrap();
+    assert_eq!(p.path, a);
+    assert_eq!(p.extra_roots, std::slice::from_ref(&b));
+
+    // Answered: the unticked project of the list is settled by its id and
+    // does not come back through either folder.
+    answer(
+        &w.codex,
+        &w.home_dir,
+        &w.app_state,
+        &later.fingerprint,
+        &LostProjectsAnswer::Restore { paths: Vec::new() },
+        Timestamp::EPOCH,
+    )
+    .unwrap();
+    assert_eq!(discover_for(&w.codex, &w.home_dir, &w.app_state), None);
+}
+
+/// "Don't bring back" turns down the chat folders of the list as well.
+#[test]
+fn dismissing_also_turns_down_the_chat_folders() {
+    let w = bare();
+    let (z, a) = (w.home_dir.join("work/z"), w.home_dir.join("work/a"));
+    for d in [&z, &a] {
+        fs::create_dir_all(d).unwrap();
+    }
+    let conn = make_db(&w.codex.state_db());
+    conn.execute_batch(
+        "CREATE TABLE threads (id TEXT PRIMARY KEY, rollout_path TEXT NOT NULL, created_at INTEGER NOT NULL, \
+           updated_at INTEGER NOT NULL, cwd TEXT NOT NULL, archived INTEGER NOT NULL DEFAULT 0, updated_at_ms INTEGER);",
+    )
+    .unwrap();
+    add_project(&conn, "s-z", &z);
+    conn.execute(
+        "INSERT INTO threads (id, rollout_path, created_at, updated_at, cwd, archived) VALUES ('t1', 'r', 10, 10, ?1, 0)",
+        params![a.to_str().unwrap()],
+    )
+    .unwrap();
+    let offer = discover_for(&w.codex, &w.home_dir, &w.app_state).unwrap();
+    answer(
+        &w.codex,
+        &w.home_dir,
+        &w.app_state,
+        &offer.fingerprint,
+        &LostProjectsAnswer::Dismiss,
+        Timestamp::EPOCH,
+    )
+    .unwrap();
+    let got = superba_appctl::project_restore::answered(&w.app_state, w.codex.root()).unwrap();
+    assert_eq!(got.project_ids, ["s-z"]);
+    assert_eq!(got.folders, std::slice::from_ref(&a));
+    // A new lost project there would now come with folder a left out.
+    add_project(&conn, "s-q", &w.home_dir.join("work/q"));
+    fs::create_dir_all(w.home_dir.join("work/q")).unwrap();
+    let later = discover_for(&w.codex, &w.home_dir, &w.app_state).unwrap();
+    assert!(later.candidates.iter().all(|c| c.path != a));
+}

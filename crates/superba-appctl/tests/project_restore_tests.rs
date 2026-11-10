@@ -14,7 +14,7 @@ use superba_appctl::project_restore::{
     self, ANSWERED_FILE, PENDING_FILE, RestoreItem, answered, apply, clear_applied, known_roots,
     pending, queue, record_answered,
 };
-use superba_core::{CodexHome, Timestamp};
+use superba_core::{CodexHome, LostProjectsAnswered, Timestamp};
 
 const PAT: &str = r#"{"personal_access_token":"nb_test","OPENAI_API_KEY":"nb_test"}"#;
 const CHATGPT: &str = r#"{"auth_mode":"chatgpt","tokens":{"id_token":"a.b.c","access_token":"a.b.c","refresh_token":"r","account_id":"acc"}}"#;
@@ -183,13 +183,17 @@ fn the_queue_and_the_answers_are_kept_per_codex_home_and_owner_only() {
     clear_applied(&dir, h2, &p2.items).unwrap();
     assert!(!dir.join(PENDING_FILE).exists());
 
-    record_answered(&dir, h1, &["/w/c".into(), "/w/d".into()]).unwrap();
-    record_answered(&dir, h1, &["/w/d/".into(), "/w/e".into()]).unwrap();
+    let ans = |ids: &[&str], folders: &[&str]| LostProjectsAnswered {
+        project_ids: ids.iter().map(|s| s.to_string()).collect(),
+        folders: folders.iter().map(PathBuf::from).collect(),
+    };
+    record_answered(&dir, h1, &ans(&["s-c"], &["/w/c", "/w/d"])).unwrap();
+    record_answered(&dir, h1, &ans(&["s-c", "s-e"], &["/w/d/", "/w/e"])).unwrap();
     assert_eq!(
         answered(&dir, h1).unwrap(),
-        [PathBuf::from("/w/c"), "/w/d".into(), "/w/e".into()]
+        ans(&["s-c", "s-e"], &["/w/c", "/w/d", "/w/e"])
     );
-    assert!(answered(&dir, h2).unwrap().is_empty());
+    assert_eq!(answered(&dir, h2).unwrap(), LostProjectsAnswered::default());
     assert!(dir.join(ANSWERED_FILE).is_file());
     #[cfg(unix)]
     {
@@ -498,10 +502,17 @@ fn files_of_an_unknown_shape_are_replaced_not_fatal() {
     for bad in [&b"\"x\""[..], b"42", b"{not json", b"{\"homes\": 7}"] {
         fs::write(dir.join(ANSWERED_FILE), bad).unwrap();
         fs::write(dir.join(PENDING_FILE), bad).unwrap();
-        assert!(answered(&dir, home).unwrap().is_empty());
+        assert_eq!(
+            answered(&dir, home).unwrap(),
+            LostProjectsAnswered::default()
+        );
         assert_eq!(pending(&dir, home).unwrap(), None);
-        record_answered(&dir, home, &["/w/c".into()]).unwrap();
-        assert_eq!(answered(&dir, home).unwrap(), [PathBuf::from("/w/c")]);
+        let one = LostProjectsAnswered {
+            project_ids: vec!["s-c".into()],
+            folders: vec!["/w/c".into()],
+        };
+        record_answered(&dir, home, &one).unwrap();
+        assert_eq!(answered(&dir, home).unwrap(), one);
         queue(&dir, home, vec![item("/w/d", "d", None)], Timestamp::EPOCH).unwrap();
         assert!(pending(&dir, home).unwrap().is_some());
     }

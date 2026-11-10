@@ -2,8 +2,9 @@
 //! overview's to-do names them; this dialog lists them with where each was
 //! found and when it was last used, ticked when the app's own project list
 //! had it, and the answers: bring the ticked ones back (written at the next
-//! launch through Superba; the unticked ones are not offered again, which the
-//! dialog says), don't (never offered again), or not now (the to-do stays).
+//! launch through Superba; unticked projects of ChatGPT's list are not
+//! offered again, unticked chat folders may be, which the dialog says),
+//! don't (never offered again), or not now (the to-do stays).
 //! It never opens by itself.
 
 use std::collections::BTreeSet;

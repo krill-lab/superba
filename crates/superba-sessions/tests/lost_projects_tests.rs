@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use pretty_assertions::assert_eq;
 use rusqlite::{Connection, params};
-use superba_core::{CodexHome, LostProjectSource, Timestamp};
+use superba_core::{CodexHome, LostProjectSource, LostProjectsAnswered, Timestamp};
 use superba_sessions::lost_projects::{self, Filter, MAX_CHAT_FOLDERS, ProjectRow, discover};
 
 struct World {
@@ -90,7 +90,22 @@ impl World {
             .unwrap();
     }
 
+    /// Discover with `answered` folders (turned-down chat folders).
     fn discover(&self, known: &[PathBuf], answered: &[PathBuf]) -> Vec<superba_core::LostProject> {
+        self.discover_answered(
+            known,
+            &LostProjectsAnswered {
+                project_ids: Vec::new(),
+                folders: answered.to_vec(),
+            },
+        )
+    }
+
+    fn discover_answered(
+        &self,
+        known: &[PathBuf],
+        answered: &LostProjectsAnswered,
+    ) -> Vec<superba_core::LostProject> {
         discover(&self.codex, &self.home_dir, known, answered)
     }
 }
@@ -131,9 +146,24 @@ fn the_app_server_project_list_brings_back_what_the_app_forgot() {
     assert_eq!(pd.name, "proj-d");
     assert_eq!(pd.extra_roots, std::slice::from_ref(&assets));
     assert_eq!(pd.app_id, None);
-    // Answered folders are not offered again.
-    let got = w.discover(std::slice::from_ref(&a), &[c.clone(), d.clone()]);
+    assert_eq!(pc.project_id.as_deref(), Some("s-c"));
+    assert_eq!(pd.project_id.as_deref(), Some("s-d"));
+    // Answered projects are not offered again, whatever their folders (proj-d
+    // does not come back through its other folder).
+    let got = w.discover_answered(
+        std::slice::from_ref(&a),
+        &LostProjectsAnswered {
+            project_ids: vec!["s-c".into(), "s-d".into()],
+            folders: Vec::new(),
+        },
+    );
     assert!(got.is_empty(), "{got:?}");
+    // A turned-down folder only leaves that folder out: proj-d stays with its
+    // other one, proj-c (nothing left) goes.
+    let got = w.discover(std::slice::from_ref(&a), &[c.clone(), d.clone()]);
+    assert_eq!(got.len(), 1);
+    assert_eq!(got[0].project_id.as_deref(), Some("s-d"));
+    assert_eq!(got[0].path, assets);
 }
 
 #[test]
@@ -205,6 +235,7 @@ fn chat_folders_are_capped_and_ranked() {
     let w = World::new();
     let p = w.dir("work/p");
     let rows = vec![ProjectRow {
+        id: "s-p".into(),
         app_id: None,
         name: "p".into(),
         roots: vec![p.clone()],
@@ -362,4 +393,84 @@ fn the_databases_of_a_configured_sqlite_home_are_read() {
     )
     .unwrap();
     assert_eq!(w.discover(&[], &[]).len(), 1);
+}
+
+#[test]
+fn a_project_whose_first_folder_is_known_keeps_its_other_folders() {
+    let w = World::new();
+    let a = w.dir("work/a");
+    let b = w.dir("work/b");
+    w.project("s-p", "proj-p", &[&a, &b], 1, None);
+    let got = w.discover(std::slice::from_ref(&a), &[]);
+    assert_eq!(got.len(), 1);
+    assert_eq!(got[0].path, b);
+    assert!(got[0].extra_roots.is_empty());
+    // Every folder known: nothing left to offer.
+    assert!(w.discover(&[a.clone(), b.clone()], &[]).is_empty());
+}
+
+/// All reads of one database end by the deadline: a slow query (many chats)
+/// is interrupted and logged, what was read before it is kept.
+#[test]
+fn a_slow_database_read_stops_at_the_deadline() {
+    let w = World::new();
+    let p = w.dir("work/proj");
+    w.project("s-p", "proj", &[&p], 1, None);
+    {
+        let conn = w.db();
+        conn.execute_batch("BEGIN").unwrap();
+        let mut stmt = conn
+            .prepare(
+                "INSERT INTO threads (id, rollout_path, created_at, updated_at, cwd, archived) \
+                 VALUES (?1, 'r', 1, 1, ?2, 0)",
+            )
+            .unwrap();
+        for i in 0..200_000 {
+            stmt.execute(params![format!("t{i}"), format!("/chats/{}", i % 50_000)])
+                .unwrap();
+        }
+        drop(stmt);
+        conn.execute_batch("COMMIT").unwrap();
+    }
+    let limits = lost_projects::ProbeLimits {
+        busy: lost_projects::PROBE_BUSY_TIMEOUT,
+        deadline: std::time::Duration::from_millis(100),
+    };
+    // Unlimited, the chat-folder query alone takes longer than that.
+    let start = std::time::Instant::now();
+    let full = lost_projects::discover_with(
+        &w.codex,
+        &w.home_dir,
+        &[],
+        &LostProjectsAnswered::default(),
+        lost_projects::ProbeLimits {
+            busy: lost_projects::PROBE_BUSY_TIMEOUT,
+            deadline: std::time::Duration::from_secs(600),
+        },
+    );
+    let unlimited = start.elapsed();
+    assert_eq!(full.len(), 1);
+    if unlimited < limits.deadline * 3 {
+        eprintln!("skipped: this machine reads {unlimited:?}, too fast to reach the deadline");
+        return;
+    }
+    let start = std::time::Instant::now();
+    let (got, log) = logged(|| {
+        lost_projects::discover_with(
+            &w.codex,
+            &w.home_dir,
+            &[],
+            &LostProjectsAnswered::default(),
+            limits,
+        )
+    });
+    let took = start.elapsed();
+    assert!(
+        took < limits.deadline + std::time::Duration::from_millis(400),
+        "took {took:?} (unlimited {unlimited:?})"
+    );
+    assert!(log.contains("gave up reading the chat folders"), "{log}");
+    // The project list was read before the deadline.
+    assert_eq!(got.len(), 1, "{log}");
+    assert_eq!(got[0].path, p);
 }

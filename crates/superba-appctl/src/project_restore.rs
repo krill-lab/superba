@@ -10,8 +10,9 @@
 //! id for the project is reused when the app-server still lists it, so the
 //! app's `project/import` (keyed by that id) finds the existing entry.
 //!
-//! The folders already offered are remembered per Codex home in
-//! `<data>/app-state/lost-projects-answered.json`, so the offer comes once.
+//! What was answered is remembered per Codex home in
+//! `<data>/app-state/lost-projects-answered.json`: app-server projects by
+//! their id, folders only seen in chats by path, so the offer comes once.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -21,7 +22,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
-use superba_core::{Error, LostProject, Result, Timestamp};
+use superba_core::{Error, LostProject, LostProjectsAnswered, Result, Timestamp};
 
 use crate::account_state::ACCOUNT_STATE_KEY;
 
@@ -80,9 +81,9 @@ struct PendingFile {
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct AnsweredFile {
-    /// Codex home (comparison key) → folders.
+    /// Codex home (comparison key) → what was answered.
     #[serde(default)]
-    homes: BTreeMap<String, Vec<PathBuf>>,
+    homes: BTreeMap<String, LostProjectsAnswered>,
 }
 
 /// Comparison key of a folder: separators unified, trailing ones dropped,
@@ -242,8 +243,8 @@ pub fn clear_applied(app_state_dir: &Path, codex_home: &Path, done: &[RestoreIte
     })
 }
 
-/// The folders offered before for `codex_home`.
-pub fn answered(app_state_dir: &Path, codex_home: &Path) -> Result<Vec<PathBuf>> {
+/// What was answered before for `codex_home`.
+pub fn answered(app_state_dir: &Path, codex_home: &Path) -> Result<LostProjectsAnswered> {
     let file: AnsweredFile = read_json(&app_state_dir.join(ANSWERED_FILE))?;
     Ok(file
         .homes
@@ -252,15 +253,24 @@ pub fn answered(app_state_dir: &Path, codex_home: &Path) -> Result<Vec<PathBuf>>
         .unwrap_or_default())
 }
 
-/// Remember `paths` as offered for `codex_home`.
-pub fn record_answered(app_state_dir: &Path, codex_home: &Path, paths: &[PathBuf]) -> Result<()> {
+/// Add `answered` to what was answered for `codex_home`.
+pub fn record_answered(
+    app_state_dir: &Path,
+    codex_home: &Path,
+    answered: &LostProjectsAnswered,
+) -> Result<()> {
     locked(app_state_dir, || {
         let path = app_state_dir.join(ANSWERED_FILE);
         let mut file: AnsweredFile = read_json(&path)?;
-        let list = file.homes.entry(path_key(codex_home)).or_default();
-        for p in paths {
-            if !list.iter().any(|q| path_key(q) == path_key(p)) {
-                list.push(p.clone());
+        let entry = file.homes.entry(path_key(codex_home)).or_default();
+        for id in &answered.project_ids {
+            if !entry.project_ids.contains(id) {
+                entry.project_ids.push(id.clone());
+            }
+        }
+        for p in &answered.folders {
+            if !entry.folders.iter().any(|q| path_key(q) == path_key(p)) {
+                entry.folders.push(p.clone());
             }
         }
         write_json(&path, &file)
