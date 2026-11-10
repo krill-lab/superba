@@ -373,6 +373,13 @@ pub struct Settings {
     /// channels live in the key store.
     #[serde(skip_serializing_if = "crate::NotifySettings::is_default")]
     pub notify: crate::NotifySettings,
+    /// One-time migration of user bug 137 ran: `analytics.enabled = false`,
+    /// the old Krill preset, was dropped from Krill profiles
+    /// (`superba-config`'s profile store). A file without the field has not
+    /// been migrated (`false`); a new set needs nothing (`true`). Remove
+    /// after alpha.14+N together with the migration.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub analytics_preset_dropped: bool,
 }
 
 fn default_true() -> bool {
@@ -420,6 +427,7 @@ impl Default for Settings {
             reduce_motion: false,
             open_app_on_start: false,
             notify: crate::NotifySettings::default(),
+            analytics_preset_dropped: true,
         }
     }
 }

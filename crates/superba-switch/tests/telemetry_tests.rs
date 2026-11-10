@@ -3,7 +3,8 @@
 //! the desktop app never caches the remote flag that turns its Chinese UI on);
 //! the profile's toggle writes `analytics.enabled = false`; turning the toggle
 //! off puts back the value from before Superba wrote it at the next switch
-//! (removed, or the user's own `false`). Only app control and network probes
+//! (removed, or the user's own `false`); so does the one-time migration of
+//! profiles saved with the old preset. Only app control and network probes
 //! are faked; every file is private to the temporary home.
 
 mod fakes;
@@ -207,6 +208,41 @@ async fn the_user_s_own_analytics_off_survives_the_toggle_and_the_restore() {
     assert_eq!(rig.analytics(), Some(false));
     rig.set_toggle(false);
     rig.apply("work").await;
+    assert_eq!(rig.analytics(), Some(false), "{}", rig.config());
+    rig.apply("original").await;
+    assert_eq!(rig.config(), USER_OFF);
+}
+
+/// A Krill profile saved by Superba up to alpha.13 (the preset switched
+/// telemetry off) was applied; after the one-time migration the next switch
+/// removes the value Superba wrote and keeps a user's own value. Remove after
+/// alpha.14+N with the migration.
+async fn migrated_old_profile(original: &str) -> Rig {
+    let rig = Rig::new(original);
+    rig.set_toggle(true);
+    rig.apply("work").await;
+    assert_eq!(rig.analytics(), Some(false), "{}", rig.config());
+    let dropped = {
+        let mut set = rig.w.profiles.set.lock().unwrap();
+        superba_config::drop_old_analytics_preset(&mut set)
+    };
+    assert_eq!(dropped, [ProfileId::new("work")]);
+    rig.apply("work").await;
+    rig
+}
+
+#[tokio::test]
+async fn after_the_migration_the_next_switch_removes_the_value_superba_wrote() {
+    let rig = migrated_old_profile(ORIGINAL).await;
+    assert_eq!(rig.analytics(), None, "{}", rig.config());
+    assert!(!rig.config().contains("analytics"), "{}", rig.config());
+    rig.apply("original").await;
+    assert_eq!(rig.config(), ORIGINAL);
+}
+
+#[tokio::test]
+async fn after_the_migration_the_next_switch_keeps_the_user_s_own_value() {
+    let rig = migrated_old_profile(USER_OFF).await;
     assert_eq!(rig.analytics(), Some(false), "{}", rig.config());
     rig.apply("original").await;
     assert_eq!(rig.config(), USER_OFF);

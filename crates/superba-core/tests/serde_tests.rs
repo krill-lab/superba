@@ -463,7 +463,17 @@ fn the_window_choices_persist_and_stay_out_of_a_default_file() {
 #[test]
 fn empty_settings_deserialize_to_defaults_and_partial_settings_preserve_other_defaults() {
     let settings: Settings = serde_json::from_str("{}").unwrap();
-    assert_eq!(settings, Settings::default());
+    // A file without the bug 137 marker has not been migrated yet, while a new
+    // set needs no migration (remove after alpha.14+N).
+    assert!(!settings.analytics_preset_dropped);
+    assert!(Settings::default().analytics_preset_dropped);
+    assert_eq!(
+        settings,
+        Settings {
+            analytics_preset_dropped: false,
+            ..Settings::default()
+        }
+    );
     assert_eq!(settings.countdown_secs, 5);
     assert_eq!(settings.default_auth_mode, AuthMode::Pat);
     assert_eq!(settings.theme, Theme::System);
@@ -481,6 +491,7 @@ fn empty_settings_deserialize_to_defaults_and_partial_settings_preserve_other_de
             locale: Some(Locale::ZhCn),
             safe_mode: true,
             countdown_secs: 0,
+            analytics_preset_dropped: false,
             ..Settings::default()
         }
     );

@@ -64,7 +64,7 @@ pub use env::{
     EnvPlatform, MemoryNativeEnv, NativeEnv, ShellEnvPersister, SystemNativeEnv, snapshots_from,
 };
 pub use keystore::ENV_SUPERBA_SECRET_BACKEND;
-pub use profiles::{JsonProfileStore, PROFILES_SCHEMA};
+pub use profiles::{JsonProfileStore, PROFILES_SCHEMA, drop_old_analytics_preset};
 pub use secrets::KeyringSecretStore;
 
 /// English and Simplified Chinese catalogs for the `config.note.*` and
