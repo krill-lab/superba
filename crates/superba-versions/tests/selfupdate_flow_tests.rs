@@ -825,6 +825,70 @@ async fn cleanup_preserves_a_downgrade_backup_until_the_target_runs() {
     assert!(!backup.exists());
 }
 
+/// Acceptance repro: a Done record without a problem stays behind once the
+/// target runs, and a later run of the version it started from (a manual
+/// downgrade) reads it as "the installer reported success, but this is still …".
+#[tokio::test]
+async fn a_finished_attempt_is_forgotten_once_its_target_runs_and_a_downgrade_shows_nothing() {
+    use superba_versions::selfupdate::{
+        record::{self, Attempt, Stage},
+        state::State,
+    };
+    let f = Fixture::new().await;
+    let path = f.data.path().join("selfupdate.json");
+    let updater = |current: &'static str| {
+        f.updater()
+            .with_preferences(false, None)
+            .with_exe(f.data.path().join("spb"))
+            .with_current(current)
+    };
+    for (stage, problem) in [
+        (Stage::Done, None),
+        (Stage::Installed, None),
+        (
+            Stage::Done,
+            Some(record::router_reason("connection refused")),
+        ),
+        (Stage::Installed, Some(record::restart_pending_reason())),
+    ] {
+        for seen in [false, true] {
+            State {
+                last_attempt: Some(Attempt {
+                    stage,
+                    problem: problem.clone(),
+                    seen,
+                    ..Attempt::new(
+                        "0.1.1-alpha.10",
+                        "0.1.1-alpha.11",
+                        Path::new("selfupdate.log"),
+                        Timestamp::now(),
+                    )
+                }),
+                ..Default::default()
+            }
+            .save(&path)
+            .unwrap();
+            let case = format!("{stage:?}, problem={}, seen={seen}", problem.is_some());
+            let on_target = updater("0.1.1-alpha.11").check(false).await;
+            assert_eq!(on_target.problem.is_some(), problem.is_some(), "{case}");
+            assert_eq!(
+                State::load(&path).last_attempt.is_some(),
+                problem.is_some(),
+                "{case}: only a problem to show keeps the record on the target"
+            );
+            let downgraded = updater("0.1.1-alpha.10").check(false).await;
+            assert!(
+                downgraded.problem.is_none(),
+                "{case}: {:?}",
+                downgraded.problem
+            );
+            assert!(State::load(&path).last_attempt.is_none(), "{case}");
+        }
+    }
+}
+
+/// Every stage on the target, a newer and an older version (all with a
+/// problem): only an installed attempt's problem is kept, and only on the target.
 #[tokio::test]
 async fn cleanup_clears_resolved_and_superseded_attempts_but_keeps_installed_problems() {
     use superba_versions::selfupdate::{

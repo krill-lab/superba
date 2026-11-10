@@ -65,6 +65,10 @@ pub struct Attempt {
     /// it, or the notice at the next start).
     #[serde(default)]
     pub seen: bool,
+    /// The target version has run since (the record is kept only for a
+    /// problem to show there); it says nothing about any other version.
+    #[serde(default)]
+    pub reached: bool,
 }
 
 impl Attempt {
@@ -79,6 +83,7 @@ impl Attempt {
             problem: None,
             log: log.to_owned(),
             seen: false,
+            reached: false,
         }
     }
 
@@ -90,13 +95,20 @@ impl Attempt {
         version::parse_version(&self.to).is_some_and(|v| version::cmp(current, &v).is_eq())
     }
 
+    /// Another version runs than the one that started the attempt and the one
+    /// it installed, or the one it started from runs again after the target
+    /// ran (a manual install or downgrade): the attempt says nothing about it.
+    pub(super) fn superseded(&self, current: &Version) -> bool {
+        !self.is_to(current) && (self.reached || !self.is_from(current))
+    }
+
     /// What to tell the user about this attempt when `current` runs at `now`;
     /// `None` when it went well or is still going.
     pub fn problem(&self, current: &Version, now: Timestamp) -> Option<SelfUpdateProblem> {
         let from = self.is_from(current);
         let to = self.is_to(current);
         // A manual install (including a downgrade) can supersede this attempt.
-        if !from && !to {
+        if self.superseded(current) {
             return None;
         }
         let stale = now

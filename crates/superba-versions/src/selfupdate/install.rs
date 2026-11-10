@@ -60,11 +60,11 @@ impl SelfUpdater {
         let superseded = state
             .last_attempt
             .as_ref()
-            .is_some_and(|a| !a.is_from(&self.current) && !a.is_to(&self.current));
+            .is_some_and(|a| a.superseded(&self.current));
         let old_running = state
             .last_attempt
             .as_ref()
-            .is_some_and(|a| a.is_from(&self.current));
+            .is_some_and(|a| !a.superseded(&self.current) && a.is_from(&self.current));
         let mut changed = false;
         if let Some(c) = state.cleanup.clone() {
             let running = version::parse_version(&c.version).is_some_and(|v| {
@@ -78,15 +78,26 @@ impl SelfUpdater {
                 changed = true;
             }
         }
+        // The target runs: only a problem of an installed attempt is left to
+        // show (on the Updates page, also once seen); the rest is done.
         let resolved = state.last_attempt.as_ref().is_some_and(|a| {
             a.is_to(&self.current)
-                && matches!(
-                    a.stage,
-                    Stage::Failed | Stage::Running | Stage::Handoff | Stage::RestartPending
-                )
+                && (a.problem.is_none()
+                    || matches!(
+                        a.stage,
+                        Stage::Failed | Stage::Running | Stage::Handoff | Stage::RestartPending
+                    ))
         });
         if superseded || resolved {
             state.last_attempt = None;
+            changed = true;
+        } else if let Some(a) = state
+            .last_attempt
+            .as_mut()
+            .filter(|a| a.is_to(&self.current) && !a.reached)
+        {
+            // A later run of `from` (a downgrade) must not read as "not applied".
+            a.reached = true;
             changed = true;
         }
         if changed {
