@@ -52,17 +52,56 @@ impl SelfUpdater {
     }
 
     /// Remove what an earlier update left behind: the macOS backup once the
-    /// new version runs, interrupted `.superba-old` / `.superba-new` files.
+    /// new version runs, interrupted `.superba-old` / `.superba-new` files,
+    /// and attempt records superseded by a manual install.
     pub(super) fn cleanup(&self) {
         let path = self.state_path();
         let mut state = State::load(&path);
+        let superseded = state
+            .last_attempt
+            .as_ref()
+            .is_some_and(|a| a.superseded(&self.current));
+        let old_running = state
+            .last_attempt
+            .as_ref()
+            .is_some_and(|a| !a.superseded(&self.current) && a.is_from(&self.current));
+        let mut changed = false;
         if let Some(c) = state.cleanup.clone() {
-            let running = version::parse_version(&c.version).is_some_and(|v| v == self.current);
-            if !c.path.exists() || running {
-                let _ = std::fs::remove_dir_all(&c.path);
+            let running = version::parse_version(&c.version).is_some_and(|v| {
+                version::cmp(&v, &self.current).is_eq()
+                    || (!old_running && version::is_newer(&self.current, &v))
+            });
+            if !c.path.exists()
+                || ((running || superseded) && std::fs::remove_dir_all(&c.path).is_ok())
+            {
                 state.cleanup = None;
-                let _ = state.save(&path);
+                changed = true;
             }
+        }
+        // The target runs: only a problem of an installed attempt is left to
+        // show (on the Updates page, also once seen); the rest is done.
+        let resolved = state.last_attempt.as_ref().is_some_and(|a| {
+            a.is_to(&self.current)
+                && (a.problem.is_none()
+                    || matches!(
+                        a.stage,
+                        Stage::Failed | Stage::Running | Stage::Handoff | Stage::RestartPending
+                    ))
+        });
+        if superseded || resolved {
+            state.last_attempt = None;
+            changed = true;
+        } else if let Some(a) = state
+            .last_attempt
+            .as_mut()
+            .filter(|a| a.is_to(&self.current) && !a.reached)
+        {
+            // A later run of `from` (a downgrade) must not read as "not applied".
+            a.reached = true;
+            changed = true;
+        }
+        if changed {
+            let _ = state.save(&path);
         }
         prune_downloads_upto(&self.data_dir.selfupdate_downloads_dir(), &self.current);
         if let Some(dir) = self

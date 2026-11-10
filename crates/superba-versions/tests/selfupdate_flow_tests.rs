@@ -719,6 +719,232 @@ async fn cleanup_removes_the_backup_once_the_new_version_runs() {
 }
 
 #[tokio::test]
+async fn cleanup_forgets_a_superseded_attempt_and_its_macos_backup() {
+    use superba_versions::selfupdate::{
+        record::{Attempt, Stage},
+        state::{Cleanup, State},
+    };
+    let f = Fixture::new().await;
+    let path = f.data.path().join("selfupdate.json");
+    let backup = f.data.path().join(".Superba.app.previous");
+    std::fs::create_dir_all(backup.join("Contents")).unwrap();
+    let state = State {
+        skipped: Some("0.1.1-alpha.13".into()),
+        cleanup: Some(Cleanup {
+            path: backup.clone(),
+            version: "0.1.1-alpha.11".into(),
+        }),
+        last_attempt: Some(Attempt {
+            stage: Stage::Failed,
+            ..Attempt::new(
+                "0.1.1-alpha.10",
+                "0.1.1-alpha.11",
+                &f.data.path().join("logs/selfupdate.log"),
+                Timestamp::now(),
+            )
+        }),
+        ..Default::default()
+    };
+    state.save(&path).unwrap();
+    let updater = f
+        .updater()
+        .with_preferences(false, None)
+        .with_exe(f.data.path().join("spb"));
+    updater
+        .clone()
+        .with_current("0.1.1-alpha.10")
+        .check(false)
+        .await;
+    assert!(backup.exists());
+    assert_eq!(
+        State::load(&path),
+        state,
+        "the original version keeps the recovery record"
+    );
+
+    let view = updater.with_current("0.1.1-alpha.12").check(false).await;
+    assert!(view.problem.is_none());
+    let saved = State::load(&path);
+    assert!(saved.last_attempt.is_none());
+    assert!(saved.cleanup.is_none());
+    assert!(!backup.exists());
+    assert_eq!(saved.skipped, state.skipped);
+}
+
+#[tokio::test]
+async fn cleanup_preserves_a_downgrade_backup_until_the_target_runs() {
+    use superba_versions::selfupdate::{
+        record::{Attempt, Stage},
+        state::{Cleanup, State},
+    };
+    let f = Fixture::new().await;
+    let path = f.data.path().join("selfupdate.json");
+    let backup = f.data.path().join(".Superba.app.previous");
+    std::fs::create_dir_all(&backup).unwrap();
+    let state = State {
+        cleanup: Some(Cleanup {
+            path: backup.clone(),
+            version: "0.1.1-alpha.10".into(),
+        }),
+        last_attempt: Some(Attempt {
+            stage: Stage::RestartPending,
+            ..Attempt::new(
+                "0.1.1-alpha.12",
+                "0.1.1-alpha.10",
+                Path::new("selfupdate.log"),
+                Timestamp::now(),
+            )
+        }),
+        ..Default::default()
+    };
+    state.save(&path).unwrap();
+    let updater = f
+        .updater()
+        .with_preferences(false, None)
+        .with_exe(f.data.path().join("spb"));
+    updater
+        .clone()
+        .with_current("0.1.1-alpha.12")
+        .check(false)
+        .await;
+    assert_eq!(State::load(&path), state);
+    assert!(
+        backup.exists(),
+        "being newer than the target does not mean the old process exited"
+    );
+    updater
+        .with_current("0.1.1-alpha.10+local")
+        .check(false)
+        .await;
+    let saved = State::load(&path);
+    assert!(
+        saved.last_attempt.is_none(),
+        "restarting resolves the pending restart"
+    );
+    assert!(saved.cleanup.is_none());
+    assert!(!backup.exists());
+}
+
+/// Acceptance repro: a Done record without a problem stays behind once the
+/// target runs, and a later run of the version it started from (a manual
+/// downgrade) reads it as "the installer reported success, but this is still …".
+#[tokio::test]
+async fn a_finished_attempt_is_forgotten_once_its_target_runs_and_a_downgrade_shows_nothing() {
+    use superba_versions::selfupdate::{
+        record::{self, Attempt, Stage},
+        state::State,
+    };
+    let f = Fixture::new().await;
+    let path = f.data.path().join("selfupdate.json");
+    let updater = |current: &'static str| {
+        f.updater()
+            .with_preferences(false, None)
+            .with_exe(f.data.path().join("spb"))
+            .with_current(current)
+    };
+    for (stage, problem) in [
+        (Stage::Done, None),
+        (Stage::Installed, None),
+        (
+            Stage::Done,
+            Some(record::router_reason("connection refused")),
+        ),
+        (Stage::Installed, Some(record::restart_pending_reason())),
+    ] {
+        for seen in [false, true] {
+            State {
+                last_attempt: Some(Attempt {
+                    stage,
+                    problem: problem.clone(),
+                    seen,
+                    ..Attempt::new(
+                        "0.1.1-alpha.10",
+                        "0.1.1-alpha.11",
+                        Path::new("selfupdate.log"),
+                        Timestamp::now(),
+                    )
+                }),
+                ..Default::default()
+            }
+            .save(&path)
+            .unwrap();
+            let case = format!("{stage:?}, problem={}, seen={seen}", problem.is_some());
+            let on_target = updater("0.1.1-alpha.11").check(false).await;
+            assert_eq!(on_target.problem.is_some(), problem.is_some(), "{case}");
+            assert_eq!(
+                State::load(&path).last_attempt.is_some(),
+                problem.is_some(),
+                "{case}: only a problem to show keeps the record on the target"
+            );
+            let downgraded = updater("0.1.1-alpha.10").check(false).await;
+            assert!(
+                downgraded.problem.is_none(),
+                "{case}: {:?}",
+                downgraded.problem
+            );
+            assert!(State::load(&path).last_attempt.is_none(), "{case}");
+        }
+    }
+}
+
+/// Every stage on the target, a newer and an older version (all with a
+/// problem): only an installed attempt's problem is kept, and only on the target.
+#[tokio::test]
+async fn cleanup_clears_resolved_and_superseded_attempts_but_keeps_installed_problems() {
+    use superba_versions::selfupdate::{
+        record::{self, Attempt, Stage},
+        state::State,
+    };
+    let f = Fixture::new().await;
+    let path = f.data.path().join("selfupdate.json");
+    for stage in [
+        Stage::Failed,
+        Stage::Running,
+        Stage::Handoff,
+        Stage::RestartPending,
+        Stage::Installed,
+        Stage::Done,
+    ] {
+        for current in ["0.1.1-alpha.11", "0.1.1-alpha.12", "0.1.1-alpha.9"] {
+            State {
+                last_attempt: Some(Attempt {
+                    stage,
+                    problem: Some(record::router_reason("connection refused")),
+                    ..Attempt::new(
+                        "0.1.1-alpha.10",
+                        "0.1.1-alpha.11",
+                        Path::new("selfupdate.log"),
+                        Timestamp::now(),
+                    )
+                }),
+                ..Default::default()
+            }
+            .save(&path)
+            .unwrap();
+            let view = f
+                .updater()
+                .with_preferences(false, None)
+                .with_exe(f.data.path().join("spb"))
+                .with_current(current)
+                .check(false)
+                .await;
+            let keep_problem =
+                current == "0.1.1-alpha.11" && matches!(stage, Stage::Installed | Stage::Done);
+            assert_eq!(
+                view.problem.is_some(),
+                keep_problem,
+                "{stage:?} on {current}"
+            );
+            assert_eq!(
+                State::load(&path).last_attempt.is_some(),
+                keep_problem,
+                "{stage:?} on {current}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
 async fn windows_installs_through_the_msi_handoff_and_never_swaps_files() {
     const WINDOWS: Platform = Platform {
         os: Os::Windows,

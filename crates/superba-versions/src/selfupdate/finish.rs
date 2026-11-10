@@ -272,15 +272,28 @@ pub fn run_with(args: &FinishArgs, host: &dyn FinishHost, wait: Duration) -> Res
                 let e = Error::Timeout {
                     what: format!("process {pid} did not exit"),
                 };
-                stage.log(format!(
-                    "FAILED: process {pid} is still running after {} s; nothing was installed",
-                    wait.as_secs()
-                ));
                 let version = stage.target();
-                stage.record(
-                    Stage::Failed,
-                    Some(record::wait_timeout_reason(&version, wait)),
-                );
+                if args.msi.is_some() {
+                    stage.log(format!(
+                        "FAILED: process {pid} is still running after {} s; nothing was installed",
+                        wait.as_secs()
+                    ));
+                    stage.record(
+                        Stage::Failed,
+                        Some(record::wait_timeout_reason(&version, wait)),
+                    );
+                } else {
+                    // macOS / Linux replaced the files before starting us. Do
+                    // not kill the old app or open it again while it still runs.
+                    stage.log(format!(
+                        "the update is installed, but process {pid} is still running after {} s; quit and reopen Superba to use {version}",
+                        wait.as_secs()
+                    ));
+                    stage.record(
+                        Stage::RestartPending,
+                        Some(record::app_restart_pending_reason(&version, wait)),
+                    );
+                }
                 return Err(e);
             }
             host.pause();

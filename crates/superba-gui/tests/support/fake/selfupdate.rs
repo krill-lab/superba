@@ -14,6 +14,7 @@ pub(super) struct State {
     view: SelfUpdateView,
     report: Option<SelfUpdateReport>,
     install_error: Option<Error>,
+    install_gate: Option<std::sync::Arc<tokio::sync::Notify>>,
     installs: Vec<SelfUpdateInstallRequest>,
     checks: Vec<SelfUpdateCheckRequest>,
     skips: Vec<Option<String>>,
@@ -28,6 +29,13 @@ impl FakeService {
     /// What an install returns.
     pub fn set_self_update_report(&self, report: SelfUpdateReport) {
         self.areas.selfupdate.lock().unwrap().report = Some(report);
+    }
+
+    /// Hold the next install until the test releases it with `notify_one`.
+    pub fn hold_self_update_install(&self) -> std::sync::Arc<tokio::sync::Notify> {
+        let gate = std::sync::Arc::new(tokio::sync::Notify::new());
+        self.areas.selfupdate.lock().unwrap().install_gate = Some(gate.clone());
+        gate
     }
 
     /// Make installs fail.
@@ -75,12 +83,20 @@ pub(super) async fn install(
     fake: &FakeService,
     request: SelfUpdateInstallRequest,
 ) -> Result<SelfUpdateReport> {
-    let mut s = fake.areas.selfupdate.lock().unwrap();
-    s.installs.push(request);
-    if let Some(e) = s.install_error.clone() {
-        return Err(e);
+    let (result, gate) = {
+        let mut s = fake.areas.selfupdate.lock().unwrap();
+        s.installs.push(request);
+        let result = match s.install_error.clone() {
+            Some(e) => Err(e),
+            None => s
+                .report
+                .clone()
+                .ok_or_else(|| Error::not_implemented("self update install")),
+        };
+        (result, s.install_gate.take())
+    };
+    if let Some(gate) = gate {
+        gate.notified().await;
     }
-    s.report
-        .clone()
-        .ok_or_else(|| Error::not_implemented("self update install"))
+    result
 }

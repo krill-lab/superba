@@ -30,6 +30,8 @@ pub enum Stage {
     /// macOS / Linux: the files were replaced; the old process still runs
     /// until it quits (a second stage may start the new one).
     Installed,
+    /// The files were replaced, but the old app did not quit for the relaunch.
+    RestartPending,
     /// Windows: the second stage waits for the old process and runs the MSI.
     Handoff,
     /// The second stage finished; the new version should be the one running.
@@ -63,6 +65,10 @@ pub struct Attempt {
     /// it, or the notice at the next start).
     #[serde(default)]
     pub seen: bool,
+    /// The target version has run since (the record is kept only for a
+    /// problem to show there); it says nothing about any other version.
+    #[serde(default)]
+    pub reached: bool,
 }
 
 impl Attempt {
@@ -77,28 +83,39 @@ impl Attempt {
             problem: None,
             log: log.to_owned(),
             seen: false,
+            reached: false,
         }
+    }
+
+    pub(super) fn is_from(&self, current: &Version) -> bool {
+        version::parse_version(&self.from).is_some_and(|v| version::cmp(current, &v).is_eq())
+    }
+
+    pub(super) fn is_to(&self, current: &Version) -> bool {
+        version::parse_version(&self.to).is_some_and(|v| version::cmp(current, &v).is_eq())
+    }
+
+    /// Another version runs than the one that started the attempt and the one
+    /// it installed, or the one it started from runs again after the target
+    /// ran (a manual install or downgrade): the attempt says nothing about it.
+    pub(super) fn superseded(&self, current: &Version) -> bool {
+        !self.is_to(current) && (self.reached || !self.is_from(current))
     }
 
     /// What to tell the user about this attempt when `current` runs at `now`;
     /// `None` when it went well or is still going.
     pub fn problem(&self, current: &Version, now: Timestamp) -> Option<SelfUpdateProblem> {
+        let from = self.is_from(current);
+        let to = self.is_to(current);
+        // A manual install (including a downgrade) can supersede this attempt.
+        if self.superseded(current) {
+            return None;
+        }
         let stale = now
             .duration_since(self.updated_at)
             .is_some_and(|age| age >= STALE);
-        let to = version::parse_version(&self.to);
-        let from = version::parse_version(&self.from);
-        // An update is not applied while the running version is older than its
-        // target; a chosen older version while the one it started from runs.
-        let not_applied = match (&to, &from) {
-            (Some(to), Some(from)) if version::is_newer(from, to) => {
-                version::cmp(current, from) == std::cmp::Ordering::Equal
-            }
-            (Some(to), _) => version::is_newer(to, current),
-            _ => false,
-        };
         let (installed, reason) = match self.stage {
-            Stage::Failed => (
+            Stage::Failed if from => (
                 false,
                 self.problem.clone().unwrap_or_else(|| {
                     LocalizedText::new(
@@ -108,7 +125,7 @@ impl Attempt {
                     .arg("version", &self.to)
                 }),
             ),
-            Stage::Done if not_applied => (
+            Stage::Done if from && !to => (
                 false,
                 LocalizedText::new(
                     "selfupdate.problem.not_applied",
@@ -116,7 +133,7 @@ impl Attempt {
                 )
                 .arg("current", current),
             ),
-            Stage::Running | Stage::Handoff if stale => (
+            Stage::Running | Stage::Handoff if stale && from => (
                 false,
                 LocalizedText::new(
                     "selfupdate.problem.unfinished",
@@ -124,6 +141,7 @@ impl Attempt {
                 )
                 .arg("version", &self.to),
             ),
+            Stage::RestartPending if from => (true, self.problem.clone()?),
             Stage::Done | Stage::Installed => (true, self.problem.clone()?),
             _ => return None,
         };
@@ -176,6 +194,16 @@ pub fn wait_timeout_reason(version: &str, waited: Duration) -> LocalizedText {
     )
     .arg("secs", waited.as_secs())
     .arg("version", version)
+}
+
+/// Files are installed, but the old app must quit before the new one can run.
+pub fn app_restart_pending_reason(version: &str, waited: Duration) -> LocalizedText {
+    LocalizedText::new(
+        "selfupdate.problem.app_restart_pending",
+        "Superba {version} was installed, but the old app did not quit within {secs} s. Quit Superba and open it again to use the new version.",
+    )
+    .arg("version", version)
+    .arg("secs", waited.as_secs())
 }
 
 /// `msiexec` could not be started.

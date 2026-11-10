@@ -2245,8 +2245,8 @@ impl eframe::App for SuperbaApp {
 
     /// Runs before every `ui` and alone while the window is hidden or
     /// minimised (eframe calls no `ui` then): the backend's answers keep being
-    /// handled and the router watchdog keeps ticking; nothing else is read and
-    /// the window is not woken up for anything else.
+    /// handled, self-update can quit the old process, and the router watchdog
+    /// keeps ticking.
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.fonts.poll(ctx);
         let visible = ctx.input(|i| i.viewport().visible()).unwrap_or(true);
@@ -2256,6 +2256,19 @@ impl eframe::App for SuperbaApp {
         }
         self.handle_instance_requests();
         self.handle_replies(ctx);
+        // Installation can finish after the window was hidden/minimized.
+        // ReadTask has no wake-up of its own; keep polling until its result
+        // (and, in particular, QuitApp) has been handled without drawing a UI.
+        let mut actions = Vec::new();
+        if let Some((status, text)) = self.pages.updates.superba.poll(&self.tr, &mut actions) {
+            actions.push(Action::Toast { status, text });
+        }
+        for action in actions {
+            self.handle_action(ctx, action);
+        }
+        if self.pages.updates.superba.busy() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        }
         self.tray_tick(ctx);
         // A switch chosen in the tray while the window hides: nobody sees a
         // countdown to cancel, so it starts at once (questions bring the
