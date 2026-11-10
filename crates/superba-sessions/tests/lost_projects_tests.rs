@@ -310,8 +310,8 @@ fn logged<R>(f: impl FnOnce() -> R) -> (R, String) {
 
 /// Codex keeps the state database in rollback-journal mode on network file
 /// systems: a writer then blocks readers. The probe waits at most
-/// [`lost_projects::PROBE_BUSY_TIMEOUT`] in all for a database (one read
-/// transaction), skips it and says so.
+/// [`lost_projects::PROBE_BUSY_TIMEOUT`] of wall-clock time for the
+/// database's first read, skips it and says so.
 #[test]
 fn a_busy_database_is_skipped_quickly_and_logged() {
     let w = World::new();
@@ -346,6 +346,38 @@ fn a_busy_database_is_skipped_quickly_and_logged() {
     assert!(!log.contains("skipped a database"), "{log}");
 }
 
+/// Coarse sleeps (macOS timer coalescing, a loaded runner) must not
+/// stretch the wait: SQLite's own busy timeout counts the sleeps it asks
+/// for, so with 50 ms of timer slack 500 ms of them took 1.1-1.3 s here
+/// (1.5 s on a macOS runner); the probe's wait ends by the wall clock.
+#[cfg(target_os = "linux")]
+#[test]
+fn coarse_sleeps_do_not_stretch_the_wait_for_a_busy_database() {
+    std::thread::spawn(|| {
+        rustix::thread::set_current_timer_slack(std::num::NonZeroU64::new(50_000_000)).unwrap();
+        let w = World::new();
+        let p = w.dir("work/proj");
+        {
+            let conn = w.db();
+            conn.pragma_update(None, "journal_mode", "delete").unwrap();
+        }
+        w.project("s-p", "proj", &[&p], 1, None);
+        let writer = Connection::open(w.codex.state_db()).unwrap();
+        writer.execute_batch("BEGIN EXCLUSIVE;").unwrap();
+        let start = std::time::Instant::now();
+        let got = w.discover(&[], &[]);
+        let took = start.elapsed();
+        writer.execute_batch("ROLLBACK").unwrap();
+        assert!(got.is_empty());
+        assert!(
+            took < lost_projects::PROBE_BUSY_TIMEOUT + std::time::Duration::from_millis(400),
+            "took {took:?}"
+        );
+    })
+    .join()
+    .unwrap();
+}
+
 #[test]
 fn a_folder_two_projects_share_stays_with_the_first_and_the_second_keeps_the_rest() {
     let w = World::new();
@@ -373,7 +405,13 @@ fn the_databases_of_a_configured_sqlite_home_are_read() {
     let elsewhere = w.dir("state-elsewhere");
     fs::write(
         w.codex.config_toml(),
-        format!("sqlite_home = \"{}\"\n", elsewhere.display()),
+        // A TOML string, escaped: a Windows path's backslashes written raw
+        // into a basic string are invalid TOML (`\U`, `\a` ...), which Codex
+        // rejects as much as Superba.
+        format!(
+            "sqlite_home = {}\n",
+            toml::Value::String(elsewhere.display().to_string())
+        ),
     )
     .unwrap();
     assert!(lost_projects::database_dirs(&w.codex, &w.home_dir).contains(&elsewhere));

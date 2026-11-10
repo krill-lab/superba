@@ -33,8 +33,9 @@ tracing-subscriber.workspace = true
 tokio.workspace = true
 
 [target.'cfg(unix)'.dev-dependencies]
-# setrlimit in the open-file limit tests
-rustix.workspace = true
+# setrlimit in the open-file limit tests; timer slack (coarse sleeps, as on
+# macOS runners) in the lost-projects probe test
+rustix = { workspace = true, features = ["thread"] }
 
 [lints]
 workspace = true
