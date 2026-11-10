@@ -5,6 +5,14 @@ All notable changes to Superba are documented here. The format follows
 [Semantic Versioning](https://semver.org/): later releases increment the patch
 number; the minor number changes only for breaking changes.
 
+## [0.1.1-alpha.15] - 2026-11-10
+
+### Added
+- Custom API-key providers may use a plain-HTTP Base URL on a trusted network (user bug 133, GH#24). Superba asks for an explicit confirmation that the key and conversations cross the network unencrypted, shows a persistent "plain http" badge, sends nothing to an unconfirmed plain-HTTP line, never sends plain HTTP through a proxy, and takes a site out of the running router before saving a withdrawn confirmation. PAT and built-in sites stay HTTPS-only.
+
+### Fixed
+- Looking for dropped projects stops waiting for a busy Codex database after 0.5 s of real time on macOS too, and an unreadable `config.toml` is logged instead of ignored.
+
 ## [0.1.1-alpha.14] - 2026-11-10
 
 ### Added
