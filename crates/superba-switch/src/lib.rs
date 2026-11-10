@@ -24,6 +24,7 @@
 //! pass fakes through [`SwitcherDeps`] directly.
 
 mod account;
+mod analytics_reapply;
 pub mod ciphers;
 pub mod claude;
 mod claude_router;
@@ -1223,6 +1224,16 @@ impl SwitchService for Switcher {
     async fn recover(&self) -> Result<RecoveryReport> {
         self.refuse_elevated()?;
         self.recover_impl().await
+    }
+
+    async fn analytics_reapply(&self) -> Result<Vec<superba_core::Notice>> {
+        self.refuse_elevated()?;
+        Ok(self.analytics_reapply_impl().await)
+    }
+
+    async fn analytics_reapply_delivered(&self) -> Result<()> {
+        self.refuse_elevated()?;
+        self.analytics_reapply_delivered_impl().await
     }
 
     async fn plan(&self, request: SwitchRequest) -> Result<SwitchPlan> {

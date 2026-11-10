@@ -339,6 +339,7 @@ impl ConfigEngine for FakeConfig {
             notes: Vec::new(),
             desired: Some(desired.clone()),
             releases_ownership: false,
+            keep_history: false,
         })
     }
 

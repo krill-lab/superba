@@ -4,7 +4,8 @@
 //! editable inline), the automatic authentication decision with the manual
 //! choice under Advanced, the key (masked, where it is stored, check on all
 //! lines, replace), and summaries of the provider's models and Codex settings
-//! with links to the Models and Settings pages.
+//! with links to the Models and Settings pages; the settings row carries
+//! "Disable OpenAI telemetry" (user bug 137).
 
 use egui::{Align, Layout, RichText, Sense, TextEdit, Ui, vec2};
 use superba_core::{
@@ -18,10 +19,12 @@ use crate::design::icons::{self, Icon};
 use crate::design::tokens::text;
 use crate::design::widgets::{
     Button, KeyInput as KeyField, Latency, LatencyBadge, Segmented, Status, StatusDot, Text,
-    link_button,
+    Toggle, link_button,
 };
 use crate::pages::shared::providers::{Provider, ProviderKind};
-use crate::pages::shared::{auto_facts, decision_with, new_profile, ordered_lines};
+use crate::pages::shared::{
+    auto_facts, decision_with, new_profile, ordered_lines, telemetry_actions,
+};
 use crate::pages::{Action, Cx, Page, divider, elided, error_text, key_access_status};
 
 /// Width of the labels of the summary rows.
@@ -603,19 +606,37 @@ fn models(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, profile: &Profile, out: &
     );
 }
 
-/// "27 Codex settings are written with this provider  Open settings →".
+/// "27 Codex settings are written with this provider   Disable OpenAI
+/// telemetry [ ]   Open settings →". The toggle (user bug 137) is off by
+/// default; its tooltip says what switching telemetry off costs (the app no
+/// longer caches its remote flags, so without a connection to OpenAI its
+/// interface may be in English), and while it is on a warning under the row
+/// says it again. It shares the row so the tab still fits at 1280×800. Not
+/// shown for the official login (Superba writes no settings for it).
 fn settings(ui: &mut Ui, cx: &Cx<'_>, profile: &Profile, out: &mut Vec<Action>) {
     let n = profile.codex_settings.len();
+    let telemetry = !profile.is_builtin();
+    let was_off = profile.codex_settings.openai_telemetry_off();
+    let mut off = was_off;
+    let mut open = false;
     row_split(
         ui,
         cx,
         &cx.tr.t("providers.row.settings"),
         |ui| {
-            if link_button(ui, &cx.tr.t("providers.settings.open"), false).clicked() {
-                out.push(Action::PageCommand {
-                    page: Page::Settings,
-                    command: format!("profile:{}", profile.id),
-                });
+            open = link_button(ui, &cx.tr.t("providers.settings.open"), false).clicked();
+            if telemetry {
+                ui.add_space(8.0);
+                let name = cx.tr.t("providers.telemetry.toggle");
+                let tip = cx.tr.t("providers.telemetry.tip");
+                ui.add(Toggle::new(&mut off, name.clone()).enabled(!cx.busy))
+                    .on_hover_text(tip.clone());
+                // The label flips the toggle too.
+                let label = egui::Label::new(Text::small(name, cx.pal).color(cx.pal.text))
+                    .sense(Sense::click());
+                if ui.add(label).on_hover_text(tip).clicked() && !cx.busy {
+                    off = !off;
+                }
             }
         },
         |ui| {
@@ -626,4 +647,16 @@ fn settings(ui: &mut Ui, cx: &Cx<'_>, profile: &Profile, out: &mut Vec<Action>) 
             );
         },
     );
+    if telemetry && was_off {
+        crate::pages::note(ui, cx, Status::Warn, cx.tr.t("providers.telemetry.cost"));
+    }
+    if open {
+        out.push(Action::PageCommand {
+            page: Page::Settings,
+            command: format!("profile:{}", profile.id),
+        });
+    }
+    if off != was_off {
+        out.extend(telemetry_actions(cx.data, profile, off));
+    }
 }

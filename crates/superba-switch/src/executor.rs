@@ -384,7 +384,9 @@ impl Run<'_> {
         }
         self.entry.status = status;
         self.save_journal();
-        let _ = self.journal.prune();
+        if !self.pc.keep_history {
+            let _ = self.journal.prune();
+        }
     }
 
     fn cancelled(&self, restart: RestartKind) -> LocalResult {

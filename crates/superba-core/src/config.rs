@@ -364,6 +364,11 @@ pub struct ApplyPlan {
     /// even when no file changes, so Superba stops managing them (GH#5).
     #[serde(default)]
     pub releases_ownership: bool,
+    /// Keep every older switch backup of the home (no pruning to the newest
+    /// generations). Set only by the one-time re-apply of user bug 137, which
+    /// must not delete anything (remove after alpha.14+N).
+    #[serde(skip)]
+    pub keep_history: bool,
 }
 
 impl ApplyPlan {

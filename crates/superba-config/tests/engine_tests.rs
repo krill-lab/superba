@@ -80,6 +80,13 @@ async fn legacy_takeover_pat_apikey_and_byte_exact_original_restore() {
     assert!(cfg.contains("model_provider = \"openai\""));
     assert!(cfg.contains("openai_base_url = \"https://api.kbsfdxc.net/backend-api/codex\""));
     assert!(cfg.contains("chatgpt_base_url = \"https://api.kbsfdxc.net/backend-api/\""));
+    // OpenAI telemetry stays on unless the user switches it off (user bug 137).
+    assert!(
+        plan.key_changes
+            .iter()
+            .all(|c| c.path != "analytics.enabled")
+    );
+    assert!(!cfg.contains("[analytics]"), "{cfg}");
     // Everything else is untouched.
     for line in [
         "# Codex 配置（Krill 教程）",
@@ -118,7 +125,7 @@ async fn legacy_takeover_pat_apikey_and_byte_exact_original_restore() {
     // --- API key on the CDN line (/codex/v1): PAT-only keys go back to baseline.
     let plan = e.plan(&env.home, &apikey(CDN)).await.unwrap();
     assert_eq!(key_change(&plan, k::CHATGPT_BASE_URL).after, None);
-    assert_eq!(key_change(&plan, "analytics.enabled").after, None);
+    assert_eq!(key_change(&plan, "features.fast_mode").after, None);
     e.apply(&plan).await.unwrap();
     let cfg = env.config();
     assert!(cfg.contains("openai_base_url = \"https://api.kbsfdxc.com/codex/v1\""));

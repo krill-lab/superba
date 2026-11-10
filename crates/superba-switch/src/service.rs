@@ -291,6 +291,9 @@ impl Switcher {
         // through `notify_save_channel` / `notify_delete_channel`: a stale
         // copy of the preferences never drops or revives a channel.
         settings.notify.channels = std::mem::take(&mut set.settings.notify.channels);
+        // The bug 137 migration stays recorded (remove after alpha.14+N).
+        settings.analytics_preset_dropped |= set.settings.analytics_preset_dropped;
+        settings.analytics_reapply = set.settings.analytics_reapply.take();
         set.settings = settings;
         let persist = set.settings.app_codex.persist_env;
         if was_persisted == persist {

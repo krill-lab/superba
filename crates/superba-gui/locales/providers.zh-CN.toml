@@ -246,6 +246,12 @@ tip = "Codex 会请服务商压缩长对话（compaction_trigger 请求），并
 tip_check = "上次检测 {when}，模型 {model}：{result}"
 unsupported_note = "这个服务商无法压缩 Codex 对话。Codex 没有让 Superba 所配置的服务商改用本地压缩的设置，所以对话占满上下文窗口时，压缩会在这里失败：到时请新开对话，或在路由模式下搭配一个支持压缩的服务商（路由会把压缩请求发给它，对话也会留在它那里）。"
 
+# 连接页：「关闭 OpenAI 遥测」（user bug 137）。
+[providers.telemetry]
+toggle = "关闭 OpenAI 遥测"
+cost = "关闭遥测后 App 不缓存远程开关，不开代理（连不上 OpenAI）时界面可能是英文。"
+tip = "默认不开启。开启后，Superba 切换到此服务商时在 config.toml 写入 analytics.enabled = false：Codex 和 App 不再向 OpenAI 发送使用统计，但 App 也不再缓存远程开关，不开代理（连不上 OpenAI）时界面可能是英文。再关掉，下次切换时恢复成原来的值。"
+
 [import_dialog]
 button = "导入 {n} 个"
 current = "当前使用"

@@ -105,6 +105,13 @@ pub mod config_keys {
     /// `service_tier`: `"default"` (explicit Standard), `"fast"` or `"ultrafast"`
     /// ([`crate::SpeedTier::config_value`]).
     pub const SERVICE_TIER: &str = "service_tier";
+    /// `analytics.enabled`: `false` switches OpenAI telemetry off. Not one of
+    /// [`super::PAT_RECOMMENDED_KEYS`] (user bug 137): with it the desktop app
+    /// builds its remote-flag client without storage, so flags fetched once
+    /// (such as the one that turns the Chinese UI on) are never cached. A
+    /// profile writes it only when the user asks
+    /// ([`crate::CodexSettings::set_openai_telemetry_off`]).
+    pub const ANALYTICS_ENABLED: &str = "analytics.enabled";
 }
 
 /// A literal TOML value in a static key table.
@@ -132,7 +139,6 @@ pub const PAT_RECOMMENDED_KEYS: &[(&str, TomlLiteral)] = &[
         "features.token_budget.use_history_notes_extension",
         TomlLiteral::Bool(true),
     ),
-    ("analytics.enabled", TomlLiteral::Bool(false)),
 ];
 
 /// `auth.json` field names.

@@ -437,8 +437,9 @@ def s1(run):
     removed = [l for l in diff.splitlines() if l.startswith("-") and not l.startswith("---")]
     c.ok(removed == ['-model_provider = "krill"'], f"the only removed line is the provider line: {removed}")
     c.ok(auth_shape(run) == ["OPENAI_API_KEY", "personal_access_token"], f"Automatic resolved to PAT on the https line: auth.json is PAT shaped {auth_shape(run)}")
-    rec = {"web_search": "live", "features.fast_mode": True, "analytics.enabled": False}
+    rec = {"web_search": "live", "features.fast_mode": True}
     c.ok(all(fa.get(k) == v for k, v in rec.items()), f"Krill recommended settings written as profile settings: { {k: fa.get(k) for k in rec} }")
+    c.ok("analytics.enabled" not in fa, "OpenAI telemetry left on: no analytics.enabled written (user bug 137)")
     c.ok(fa.get("features.collab") is False, "legacy [features] collab left as it was (migration is only offered, s11)")
     blocks = rc_blocks(run)
     c.ok(blocks.get(".bashrc") == run.line_url("a") and blocks.get(".profile") == run.line_url("a"),

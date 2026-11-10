@@ -74,6 +74,9 @@ pub(crate) struct PlanContext {
     pub pin: Option<crate::versions::PinPlan>,
     /// Model catalog file written before `config.toml` names it.
     pub catalog: Option<crate::models::CatalogWrite>,
+    /// Keep the switch journal's older entries (no pruning): the one-time
+    /// re-apply of user bug 137 deletes nothing (remove after alpha.14+N).
+    pub keep_history: bool,
     /// The local home's catalog record after a successful switch (`Some(None)`
     /// = no catalog any more; `None` = untouched).
     pub catalog_record: Option<Option<crate::models::CatalogRecord>>,
@@ -138,6 +141,7 @@ impl PlanContext {
             host_sync: None,
             pin: None,
             catalog: None,
+            keep_history: false,
             catalog_record: None,
             pin_config: None,
             kept_foreign_auth: false,
@@ -1391,6 +1395,7 @@ impl Switcher {
                 host_sync: None,
                 pin: None,
                 catalog: dest.catalog,
+                keep_history: false,
                 catalog_record: dest.catalog_record,
                 pin_config: None,
                 kept_foreign_auth,

@@ -43,6 +43,21 @@ impl JsonProfileStore {
         validate(&set)?;
         let mut set = set;
         normalize_builtins(&mut set);
+        if !set.settings.analytics_preset_dropped {
+            let changed = drop_old_analytics_preset(&mut set);
+            set.settings.analytics_preset_dropped = true;
+            // The switch service writes the applied one again at start.
+            if !changed.is_empty() {
+                set.settings.analytics_reapply = Some(superba_core::AnalyticsReapply {
+                    profiles: changed,
+                    ..Default::default()
+                });
+            }
+            if let Err(e) = fsx::write_json(&path, &set) {
+                // Runs again at the next load; this one already has it.
+                tracing::warn!("profiles.json: could not record the bug 137 migration: {e}");
+            }
+        }
         Ok(set)
     }
 
@@ -52,6 +67,25 @@ impl JsonProfileStore {
         normalize_builtins(&mut set);
         fsx::write_json(&self.ctx.data_dir.profiles_json(), &set)
     }
+}
+
+/// One-time migration, user bug 137 (approved exception to the no-migration
+/// rule; remove after alpha.14+N with [`superba_core::Settings::analytics_preset_dropped`]):
+/// Superba up to alpha.13 put `analytics.enabled = false` into every new Krill
+/// profile, which keeps the desktop app from caching the remote flag of its
+/// Chinese UI. Drop exactly that value from profiles of the built-in Krill
+/// site; `true`, removals and other sites' profiles are the user's. The next
+/// switch then restores the key to its baseline (the user's own value, or
+/// none). Returns the ids of the profiles it changed.
+pub fn drop_old_analytics_preset(set: &mut ProfileSet) -> Vec<superba_core::ProfileId> {
+    let mut changed = Vec::new();
+    for p in &mut set.profiles {
+        if p.site_id.as_str() == catalog::KRILL_SITE_ID && p.codex_settings.openai_telemetry_off() {
+            p.codex_settings.set_openai_telemetry_off(false);
+            changed.push(p.id.clone());
+        }
+    }
+    changed
 }
 
 /// Built-in profiles always come from the catalog (first, in catalog order);
