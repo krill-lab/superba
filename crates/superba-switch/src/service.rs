@@ -293,6 +293,7 @@ impl Switcher {
         settings.notify.channels = std::mem::take(&mut set.settings.notify.channels);
         // The bug 137 migration stays recorded (remove after alpha.14+N).
         settings.analytics_preset_dropped |= set.settings.analytics_preset_dropped;
+        settings.analytics_reapply = set.settings.analytics_reapply.take();
         set.settings = settings;
         let persist = set.settings.app_codex.persist_env;
         if was_persisted == persist {
@@ -1048,6 +1049,8 @@ impl Switcher {
         // After the lock is released: a model catalog file made for another
         // Codex version is checked (and the configuration repaired) here.
         report.notices.extend(self.catalog_startup_check().await);
+        // User bug 137: write the applied profile once more after the migration.
+        report.notices.extend(self.analytics_reapply().await);
         Ok(report)
     }
 

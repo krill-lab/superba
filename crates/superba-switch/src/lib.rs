@@ -24,6 +24,7 @@
 //! pass fakes through [`SwitcherDeps`] directly.
 
 mod account;
+mod bug137;
 pub mod ciphers;
 pub mod claude;
 mod claude_router;

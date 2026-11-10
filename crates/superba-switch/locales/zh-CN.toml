@@ -318,6 +318,13 @@ nothing_to_sync = "{host} 已有本机可同步的全部设置。"
 version_unknown = "{host} 上的 Codex 版本未知，不会为它过滤任何设置。"
 not_ssh = "{host} 是{kind}：ChatGPT app 不通过 SSH 连接它，Superba 无法切换它，已跳过。"
 
+# User bug 137：迁移后把当前档案再写一次（alpha.14+N 之后删除）。
+[switch.analytics]
+reapplied = "Superba 已重新应用 {profile}，不再关闭 OpenAI 遥测（只改配置，没有重启任何程序）。ChatGPT 联网启动一次后，不开代理也会保持你的界面语言。"
+reapply_retry = "Superba 未能重新应用 {profile} 来取消关闭 OpenAI 遥测：{reason} 下次启动时会再试一次；手动切换到这个供应商也能解决。"
+reapply_given_up = "Superba 未能重新应用 {profile} 来取消关闭 OpenAI 遥测：{reason} 不会再自动尝试，请手动切换到这个供应商一次。"
+question = "这次切换需要你回答问题。"
+
 [switch.models]
 service_tier_old_codex = "{consumer} 的 Codex 版本为 {version}，只认 service_tier = \"fast\" 或 \"flex\"；为了让它仍能读取 config.toml，Superba 不写入 service_tier = \"{tier}\"。"
 catalog_unrepaired = "Codex {now} 不接受模型目录文件 {file}，Superba 也无法改写配置（{reason}）。修复前 Codex 无法启动：请重新切换到这个供应商一次，或从 {config} 中删除 model_catalog_json 这一行。"

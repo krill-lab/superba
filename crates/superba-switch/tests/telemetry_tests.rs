@@ -290,6 +290,7 @@ async fn saving_settings_without_the_marker_keeps_the_migration_recorded() {
     // Preferences saved from a copy without the marker.
     let stale = Settings {
         analytics_preset_dropped: false,
+        analytics_reapply: None,
         countdown_secs: 3,
         ..set.settings.clone()
     };
@@ -299,6 +300,15 @@ async fn saving_settings_without_the_marker_keeps_the_migration_recorded() {
     let set = JsonProfileStore::new(w.ctx.clone()).load().await.unwrap();
     assert_eq!(set.settings.countdown_secs, 3, "the settings were saved");
     assert!(set.settings.analytics_preset_dropped);
+    // The re-apply still owed (it runs at start-up recovery) is kept too.
+    assert_eq!(
+        set.settings
+            .analytics_reapply
+            .as_ref()
+            .map(|r| r.profiles.clone())
+            .unwrap_or_default(),
+        [ProfileId::new("work")]
+    );
     assert!(
         set.profile(&ProfileId::new("work"))
             .unwrap()

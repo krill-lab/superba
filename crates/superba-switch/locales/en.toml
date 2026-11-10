@@ -319,6 +319,14 @@ nothing_to_sync = "{host} already has every setting this computer can sync."
 version_unknown = "The Codex version on {host} is unknown: nothing is filtered out for it."
 not_ssh = "{host} ({kind}): the ChatGPT app does not reach it over SSH, so Superba cannot switch it; skipped."
 
+# User bug 137: the applied profile written once more after the migration
+# (remove after alpha.14+N).
+[switch.analytics]
+reapplied = "Superba applied {profile} again so it no longer switches OpenAI telemetry off (configuration only, nothing was restarted). After ChatGPT starts once with a connection to OpenAI, its interface keeps your language without a proxy."
+reapply_retry = "Superba could not apply {profile} again to stop switching OpenAI telemetry off: {reason} It tries once more at the next start; switching to the provider also fixes it."
+reapply_given_up = "Superba could not apply {profile} again to stop switching OpenAI telemetry off: {reason} It will not try again: switch to the provider once to fix it."
+question = "The switch needs an answer."
+
 [switch.models]
 service_tier_old_codex = "{consumer} runs Codex {version}, which reads only service_tier = \"fast\" or \"flex\"; Superba leaves out service_tier = \"{tier}\" so that this Codex can still load config.toml."
 catalog_unrepaired = "Codex {now} refuses the model catalog file {file}, and Superba could not rewrite the configuration ({reason}). Codex will not start until this is fixed: switch to this provider again, or delete the model_catalog_json line from {config}."

@@ -99,6 +99,14 @@ async fn only_krill_profiles_with_the_old_preset_lose_it_and_the_run_is_recorded
         Some(SettingEntry::Set(SettingValue::Bool(false)))
     );
     assert!(set.settings.analytics_preset_dropped);
+    // The switch service owes a re-apply for the changed profile only.
+    assert_eq!(
+        set.settings.analytics_reapply,
+        Some(superba_core::AnalyticsReapply {
+            profiles: vec![ProfileId::new("krill-old")],
+            failed_once: false,
+        })
+    );
     // Recorded on disk at once.
     let on_disk = fs::read_to_string(ctx.data_dir.profiles_json()).unwrap();
     assert!(
@@ -145,6 +153,7 @@ async fn a_new_profile_set_needs_no_migration() {
     // No file yet: nothing to migrate, and nothing is written by a load.
     let mut set = store.load().await.unwrap();
     assert!(set.settings.analytics_preset_dropped);
+    assert_eq!(set.settings.analytics_reapply, None);
     assert!(!ctx.data_dir.profiles_json().exists());
     let mut p = profile("krill", catalog::KRILL_SITE_ID, None);
     p.codex_settings.set_openai_telemetry_off(true);

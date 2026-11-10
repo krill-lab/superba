@@ -380,6 +380,25 @@ pub struct Settings {
     /// after alpha.14+N together with the migration.
     #[serde(default, skip_serializing_if = "is_false")]
     pub analytics_preset_dropped: bool,
+    /// Re-apply still owed after that migration (user bug 137): the applied
+    /// profile is written once more, write-only, so the `analytics.enabled =
+    /// false` Superba wrote leaves `config.toml` without a manual switch. Set
+    /// by the profile store, used and cleared by the switch service at start;
+    /// other writers keep the stored value. Remove after alpha.14+N.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub analytics_reapply: Option<AnalyticsReapply>,
+}
+
+/// The re-apply owed after the user bug 137 migration
+/// ([`Settings::analytics_reapply`]). Remove after alpha.14+N.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AnalyticsReapply {
+    /// Profiles the migration changed; only the applied one is written again.
+    #[serde(default)]
+    pub profiles: Vec<ProfileId>,
+    /// A re-apply failed once already: the next failure gives up.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub failed_once: bool,
 }
 
 fn default_true() -> bool {
@@ -428,6 +447,7 @@ impl Default for Settings {
             open_app_on_start: false,
             notify: crate::NotifySettings::default(),
             analytics_preset_dropped: true,
+            analytics_reapply: None,
         }
     }
 }

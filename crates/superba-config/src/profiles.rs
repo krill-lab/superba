@@ -44,8 +44,15 @@ impl JsonProfileStore {
         let mut set = set;
         normalize_builtins(&mut set);
         if !set.settings.analytics_preset_dropped {
-            drop_old_analytics_preset(&mut set);
+            let changed = drop_old_analytics_preset(&mut set);
             set.settings.analytics_preset_dropped = true;
+            // The switch service writes the applied one again at start.
+            if !changed.is_empty() {
+                set.settings.analytics_reapply = Some(superba_core::AnalyticsReapply {
+                    profiles: changed,
+                    failed_once: false,
+                });
+            }
             if let Err(e) = fsx::write_json(&path, &set) {
                 // Runs again at the next load; this one already has it.
                 tracing::warn!("profiles.json: could not record the bug 137 migration: {e}");
