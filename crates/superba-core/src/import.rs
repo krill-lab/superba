@@ -30,6 +30,12 @@ pub enum ImportSource {
     /// AI Toolbox (`coulsontl/ai-toolbox`).
     #[serde(rename = "ai-toolbox")]
     AiToolbox,
+    /// A `superba://import` link from the Krill website (feature 140). Not a
+    /// tool that is scanned: never in [`ImportSource::ALL`], and
+    /// [`ImportSource::parse`] does not name it, so only
+    /// [`crate::SwitchService::import_link`] imports from it.
+    #[serde(rename = "krill-link")]
+    KrillLink,
 }
 
 impl ImportSource {
@@ -41,6 +47,7 @@ impl ImportSource {
         match self {
             ImportSource::Ccs => "ccs",
             ImportSource::AiToolbox => "ai-toolbox",
+            ImportSource::KrillLink => "krill-link",
         }
     }
 
@@ -49,6 +56,7 @@ impl ImportSource {
         match self {
             ImportSource::Ccs => "CC Switch",
             ImportSource::AiToolbox => "AI Toolbox",
+            ImportSource::KrillLink => "Krill link",
         }
     }
 
@@ -519,6 +527,53 @@ impl ImportReport {
     pub fn first_profile(&self) -> Option<&ProfileId> {
         self.items.iter().find_map(|i| i.outcome.profile())
     }
+}
+
+/// Import the API key of a `superba://import` link into the Krill provider
+/// (feature 140): [`crate::SwitchService::import_link`]. Not serializable: the
+/// link holds the key and only ever travels inside this process.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LinkImportRequest {
+    /// The link (its key, its optional provider name).
+    pub link: crate::deeplink::ImportLink,
+    /// A new provider's line: the one the GUI picked like the setup wizard
+    /// does (the fastest reachable line probed, else the site's default line).
+    /// `None` takes the default line. An update keeps the provider's lines.
+    pub line: Option<LineId>,
+    /// With an existing Krill provider: update its key ([`ConflictAction::Update`],
+    /// the default) or add a new provider next to it ([`ConflictAction::Rename`]).
+    /// [`ConflictAction::Skip`] imports nothing.
+    pub on_conflict: ConflictAction,
+    /// Plan only: report what would happen, write nothing (the confirmation
+    /// dialog's preview).
+    pub dry_run: bool,
+}
+
+impl LinkImportRequest {
+    /// A preview of `link` (dry run, update an existing Krill provider).
+    pub fn preview(link: crate::deeplink::ImportLink) -> Self {
+        Self {
+            link,
+            line: None,
+            on_conflict: ConflictAction::Update,
+            dry_run: true,
+        }
+    }
+}
+
+/// What [`LinkImportRequest`] did (or, as a dry run, would do).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LinkImportReport {
+    /// The existing Krill provider the link updates when asked to (the
+    /// applied one, else the last selected one, else the first).
+    pub existing: Option<ImportConflict>,
+    /// The new or updated provider, or why nothing was imported.
+    pub item: ImportItem,
+    /// The resulting provider's first line (`None`: none saved, the site's
+    /// default line is used).
+    pub line: Option<LineId>,
+    /// `••••abcd` of the link's key.
+    pub masked_key: String,
 }
 
 // ---------------------------------------------------------------------------

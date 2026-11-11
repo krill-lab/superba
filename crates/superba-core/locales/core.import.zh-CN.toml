@@ -50,3 +50,15 @@ unreadable = "无法读取：{error}。请关闭 {tool} 后重试。"
 [import.usage]
 none = "其中没有 Codex 的用量记录。"
 unknown_layout = "其请求表结构未知，未读取请求记录。"
+
+# 来自 Krill 网站的 superba://import/v1 链接（功能 140）。
+[import.link]
+duplicate_parameter = "导入链接里「{name}」出现了不止一次，未打开。"
+invalid_key = "导入链接里的 API Key 无效。"
+invalid_name = "导入链接里的供应商名称无效。"
+malformed = "这不是有效的 Superba 导入链接。"
+missing_parameter = "导入链接缺少「{name}」。"
+too_long = "导入链接太长，未打开。"
+unknown_action = "Superba 不认识链接操作「{action}」。"
+unknown_parameter = "导入链接里有未知参数「{name}」，未打开。"
+unsupported_version = "导入链接的格式是「{version}」，当前 Superba 不支持。请更新 Superba 后重试。"

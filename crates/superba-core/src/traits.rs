@@ -1314,6 +1314,20 @@ pub trait SwitchService: Send + Sync {
         Err(crate::Error::not_implemented("provider import"))
     }
 
+    /// Import the API key of a `superba://import` link from the Krill website
+    /// into the Krill provider (feature 140): update the existing Krill
+    /// provider's key (its lines stay) or add a new Krill provider on
+    /// `request.line`, always with API-key auth. Goes through the provider
+    /// import's mapping and saves; nothing is written to Codex and nothing
+    /// restarts; with `dry_run` nothing is written at all.
+    async fn import_link(
+        &self,
+        request: crate::LinkImportRequest,
+    ) -> Result<crate::LinkImportReport> {
+        let _ = request;
+        Err(crate::Error::not_implemented("import link"))
+    }
+
     /// Import (or with `dry_run` preview, or with `remove` take out again) the
     /// usage history another tool (cc-switch, AI Toolbox) recorded for Codex
     /// into Superba's own store (`<data dir>/imported-usage.sqlite3`): its

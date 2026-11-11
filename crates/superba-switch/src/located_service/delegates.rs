@@ -230,6 +230,14 @@ impl SwitchService for LocatedService {
         service.import_apply(request).await
     }
 
+    async fn import_link(
+        &self,
+        request: superba_core::LinkImportRequest,
+    ) -> Result<superba_core::LinkImportReport> {
+        let (service, _lock) = self.read().await?;
+        service.import_link(request).await
+    }
+
     async fn import_usage(
         &self,
         request: superba_core::UsageImportRequest,

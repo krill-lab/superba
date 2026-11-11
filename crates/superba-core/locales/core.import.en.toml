@@ -52,3 +52,15 @@ unreadable = "It could not be read: {error}. Close {tool} and try again."
 [import.usage]
 none = "It holds no usage history for Codex."
 unknown_layout = "Its request table has an unknown layout; requests were not read."
+
+# superba://import/v1 links from the Krill website (feature 140).
+[import.link]
+duplicate_parameter = "The import link gives \"{name}\" more than once; it was not opened."
+invalid_key = "The API key in the import link is not valid."
+invalid_name = "The provider name in the import link is not valid."
+malformed = "This is not a valid Superba import link."
+missing_parameter = "The import link has no \"{name}\"."
+too_long = "The import link is too long; it was not opened."
+unknown_action = "Superba does not know the link action \"{action}\"."
+unknown_parameter = "The import link has an unknown parameter \"{name}\"; it was not opened."
+unsupported_version = "The import link has format \"{version}\", which this Superba does not support. Update Superba and try again."

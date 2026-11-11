@@ -840,6 +840,13 @@ impl SwitchService for Switcher {
         self.import_apply_impl(request).await
     }
 
+    async fn import_link(
+        &self,
+        request: superba_core::LinkImportRequest,
+    ) -> Result<superba_core::LinkImportReport> {
+        self.import_link_impl(request).await
+    }
+
     async fn account(&self, request: AccountRequest) -> Result<AccountReport> {
         self.account_impl(request).await
     }
