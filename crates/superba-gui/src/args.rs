@@ -54,7 +54,9 @@ pub struct GuiArgs {
 /// `refused:<reason>`.
 pub const ENV_PENDING_LINK: &str = "SUPERBA_PENDING_LINK";
 
-/// The value of [`ENV_PENDING_LINK`] for `link`.
+/// The value of [`ENV_PENDING_LINK`] for `link` (Unix only hands links over
+/// this way).
+#[cfg_attr(not(unix), allow(dead_code))]
 fn pending_value(link: &Result<ImportLink, LinkError>) -> String {
     match link {
         Ok(l) => l.to_url(),
