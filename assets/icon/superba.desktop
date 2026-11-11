@@ -2,12 +2,13 @@
 Type=Application
 Name=Superba
 Comment=Switch Codex between model providers
-Exec=superba
+Exec=superba %u
 Icon=superba
 Terminal=false
 Categories=Development;Utility;
 StartupWMClass=superba
 Actions=launch-chatgpt;
+MimeType=x-scheme-handler/superba;
 
 [Desktop Action launch-chatgpt]
 Name=Open ChatGPT with Superba

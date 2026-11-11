@@ -242,7 +242,7 @@ pub fn entry_path(ctx: &LocalContext, platform: Platform) -> PathBuf {
     }
 }
 
-fn gui_executable(current: &Path, ctx: &LocalContext) -> Result<PathBuf> {
+pub(crate) fn gui_executable(current: &Path, ctx: &LocalContext) -> Result<PathBuf> {
     #[cfg(target_os = "macos")]
     {
         crate::installation::macos_executable(
@@ -299,23 +299,7 @@ pub fn render(platform: Platform, executable: &Path) -> Result<String> {
     match platform {
         Platform::Windows => superba_core::autostart::windows_command(executable),
         Platform::Linux => {
-            if text.contains('=') {
-                return Err(Error::invalid(
-                    "XDG Exec executable paths cannot contain '='",
-                ));
-            }
-            let mut quoted = String::from("\"");
-            for c in text.chars() {
-                if matches!(c, '"' | '`' | '$' | '\\') {
-                    quoted.push('\\');
-                }
-                quoted.push(c);
-                if c == '%' {
-                    quoted.push('%');
-                }
-            }
-            quoted.push('"');
-            let exec = quoted.replace('\\', "\\\\");
+            let exec = desktop_exec(text)?;
             Ok(format!(
                 "[Desktop Entry]\nType=Application\nName=Superba\nExec={exec} --autostart\nTerminal=false\nX-GNOME-Autostart-enabled=true\n"
             ))
@@ -334,6 +318,29 @@ pub fn render(platform: Platform, executable: &Path) -> Result<String> {
         }
     }
 }
+/// `text` (an executable path without control characters) quoted for a
+/// desktop entry's `Exec` key: the desktop entry spec's argument quoting, `%`
+/// doubled, then the string-value escaping of backslashes.
+pub(crate) fn desktop_exec(text: &str) -> Result<String> {
+    if text.contains('=') {
+        return Err(Error::invalid(
+            "XDG Exec executable paths cannot contain '='",
+        ));
+    }
+    let mut quoted = String::from("\"");
+    for c in text.chars() {
+        if matches!(c, '"' | '`' | '$' | '\\') {
+            quoted.push('\\');
+        }
+        quoted.push(c);
+        if c == '%' {
+            quoted.push('%');
+        }
+    }
+    quoted.push('"');
+    Ok(quoted.replace('\\', "\\\\"))
+}
+
 fn xml(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")

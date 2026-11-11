@@ -63,7 +63,11 @@ is `superba-<ver>-linux-<arch>/`; the musl directory is
 `spb-<ver>-linux-x86_64-musl/`. The GNU tarball also holds `superba.desktop` and
 `icons/hicolor/<N>x<N>/apps/superba.png` (16 to 512 px): copy `icons/` to
 `~/.local/share/icons/` and the desktop file to `~/.local/share/applications/`
-(its action "Open ChatGPT with Superba" runs `superba --launch-chatgpt`).
+(its action "Open ChatGPT with Superba" runs `superba --launch-chatgpt`; it
+also handles `superba://` import links, and the Superba window registers its own
+hidden handler entry at every start, see [docs/deeplink.md](../../docs/deeplink.md)).
+The MSI registers `superba://` under `HKCU\Software\Classes\superba` and the app
+bundle's `Info.plist` declares it (`CFBundleURLTypes`).
 
 App icon: two masters with the same artwork. `assets/icon/superba.svg` (the tile
 fills 928 of 1024 px, as Windows and Linux icons do) gives `assets/icon/png/superba-<N>.png`

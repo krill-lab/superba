@@ -487,7 +487,11 @@ impl SuperbaApp {
         let queue = Arc::clone(&self.instance_requests);
         let repaint = ctx.clone();
         #[cfg(target_os = "macos")]
-        crate::macos::install_reopen(Arc::clone(&queue), repaint.clone());
+        {
+            crate::macos::install_reopen(Arc::clone(&queue), repaint.clone());
+            crate::macos::wake_on_links(repaint.clone());
+            crate::macos::install_url_handler();
+        }
         match crate::instance::listen(&dir, move |request| {
             queue
                 .lock()
@@ -504,12 +508,16 @@ impl SuperbaApp {
 
     /// Handle what later starts handed over ([`crate::instance::Request`]).
     fn handle_instance_requests(&mut self) {
-        let requests = std::mem::take(
+        #[allow(unused_mut)]
+        let mut requests = std::mem::take(
             &mut *self
                 .instance_requests
                 .lock()
                 .unwrap_or_else(|p| p.into_inner()),
         );
+        // Feature 140: links macOS delivered as Apple events.
+        #[cfg(target_os = "macos")]
+        requests.extend(crate::macos::take_links());
         for request in requests {
             match request {
                 crate::instance::Request::LaunchChatGpt => {

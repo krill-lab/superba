@@ -412,14 +412,20 @@ fn body(ui: &mut Ui, cx: &Cx<'_>, d: &mut LinkImportDialog) -> LinkImportOutcome
             let ready = matches!(d.preview, Some(Ok(_)))
                 && d.preview_task.is_none()
                 && d.preview_for == d.choice;
+            // Enter imports when no control has the keyboard (a focused
+            // checkbox or segment keeps Enter for itself).
+            let enter = ui.input(|i| i.key_pressed(egui::Key::Enter))
+                && ui.ctx().memory(|m| m.focused().is_none());
             if ui
                 .add(
                     Button::primary(cx.tr.t("link_import.confirm"))
                         .icon(Icon::Key)
+                        .kbd("Enter")
                         .loading(importing)
                         .enabled(ready && !importing),
                 )
                 .clicked()
+                || (enter && ready && !importing)
             {
                 d.start_import(cx);
             }

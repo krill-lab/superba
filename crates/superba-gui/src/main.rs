@@ -117,6 +117,20 @@ fn main() -> ExitCode {
             report.note(&format!("could not refresh login startup: {e}"));
         }
     }
+    // Feature 140: on Linux the window registers itself as the superba://
+    // handler (the installers do it on Windows and macOS). Off the start-up
+    // path: the desktop tools may be slow.
+    #[cfg(target_os = "linux")]
+    {
+        let context = context.clone();
+        let _ = std::thread::Builder::new()
+            .name("superba-url-handler".into())
+            .spawn(move || {
+                if let Err(e) = superba_config::url_handler::register(&context) {
+                    tracing::warn!(error = %e, "could not register the superba:// handler");
+                }
+            });
+    }
     match superba_gui::run(gui_args, &report) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {

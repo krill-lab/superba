@@ -316,6 +316,31 @@ async fn import_updates_the_krill_provider_then_switches_to_it() {
 }
 
 #[tokio::test]
+async fn enter_imports_like_the_button() {
+    let service = fake();
+    let mut s = Scene::new(&service, Locale::En).await;
+    s.open(ImportLink::parse(SAMPLE));
+    s.until(|s, _| {
+        s.dialog
+            .as_ref()
+            .is_some_and(|d| d.preview.is_some() && !d.busy())
+    });
+    s.run(vec![egui::Event::Key {
+        key: egui::Key::Enter,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: Default::default(),
+    }]);
+    s.until(|s, _| s.dialog.is_none());
+    assert_eq!(service.link_writes().len(), 1);
+    assert!(matches!(
+        s.outcome,
+        LinkImportOutcome::Done { switch: true, .. }
+    ));
+}
+
+#[tokio::test]
 async fn add_as_new_without_switching_offers_the_switch() {
     let service = fake();
     service.set_link_existing(Some(existing_work()));

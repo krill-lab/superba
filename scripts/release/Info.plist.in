@@ -24,6 +24,18 @@
     <string>11.0</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <!-- Feature 140: superba:// links (one-click import from the Krill website). -->
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>@BUNDLE_ID@.import</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>superba</string>
+            </array>
+        </dict>
+    </array>
     @ICON_ENTRY@
 </dict>
 </plist>

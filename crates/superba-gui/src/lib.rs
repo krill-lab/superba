@@ -72,7 +72,11 @@ pub fn service() -> anyhow::Result<Arc<dyn SwitchService>> {
 /// any retry in [its GUI log](startup::Reporter::gui_log).
 pub fn run(args: GuiArgs, report: &startup::Reporter) -> anyhow::Result<()> {
     #[cfg(target_os = "macos")]
-    macos::set_application_name();
+    {
+        macos::set_application_name();
+        // Feature 140: macOS hands superba:// links over as Apple events.
+        macos::install_url_handler();
+    }
     let service = service()?;
     // Item 70: the window choices are needed before the window opens (start
     // hidden; on Wayland, a window that must hide opens through XWayland).

@@ -27,6 +27,7 @@ fn defaults_leave_all_overrides_disabled() {
         start_in_tray: false,
         autostart: false,
         command: None,
+        link: None,
     };
     assert_eq!(GuiArgs::default(), expected);
     assert_eq!(parse(&[]).unwrap(), expected);
@@ -219,6 +220,7 @@ fn flags_compose_and_later_values_override_earlier_ones() {
             start_in_tray: false,
             autostart: false,
             command: None,
+            link: None,
         }
     );
 }
