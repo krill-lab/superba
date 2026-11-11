@@ -74,6 +74,7 @@ secret = "Key storage error: {detail}"
 cancelled = "Cancelled"
 timeout = "Timed out: {detail}"
 other = "{detail}"
+packaged_codex = "Windows does not let other programs run the Codex inside the ChatGPT app package ({detail}), and no identical copy was found in %LOCALAPPDATA%\\OpenAI\\Codex\\bin. Open the ChatGPT app once so that it extracts its Codex there, then try again."
 
 [error_io]
 too_many_open_files = "Too many open files (system limit {limit}): cannot open {path}. Quit programs you do not need and try again; if it keeps happening, restart Superba. ({message})"

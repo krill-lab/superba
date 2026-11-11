@@ -478,6 +478,12 @@ fn every_error_code_has_complete_translations_and_detail_argument() {
             "timeout",
         ),
         (
+            Error::PackagedCodex {
+                path: "/fixtures/WindowsApps/OpenAI.Codex/app/resources/codex.exe".into(),
+            },
+            "packaged_codex",
+        ),
+        (
             Error::Other {
                 message: "unexpected state".into(),
             },

@@ -319,7 +319,9 @@ pub async fn codex_binaries(
     let mut binaries = find_codex_binaries(env, home_dir, installs);
     let mut probes = JoinSet::new();
     for (index, binary) in binaries.iter().enumerate() {
-        if binary.version.is_none() {
+        // The MSIX app's packaged Codex is never started (Windows refuses it);
+        // its version comes from the install ([`crate::install::bundled_codex_version`]).
+        if binary.version.is_none() && !crate::runnable::is_packaged(&binary.path) {
             let path = binary.path.clone();
             probes.spawn(async move { (index, codex_version(&path).await) });
         }

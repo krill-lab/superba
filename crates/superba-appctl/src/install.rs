@@ -1209,27 +1209,27 @@ fn version_key(
 }
 
 /// The version of an app's bundled Codex: its `--version`. A binary inside an
-/// MSIX package (`WindowsApps`) that does not answer from outside the package
-/// is asked through the app's own relocated copy
-/// ([`crate::appx::relocated_codex_candidates`]) of the same size, else its
-/// version is read from the binary ([`crate::codexbin::scanned_version`],
-/// nothing is run).
+/// MSIX package (`WindowsApps`), which Windows does not let Superba start, is
+/// never run: its version is asked from the app's extracted copy with the same
+/// SHA-256 ([`crate::runnable::runnable_codex`], user bug 143), else read from
+/// the binary ([`crate::codexbin::scanned_version`], nothing is run).
 pub async fn bundled_codex_version(binary: &Path, env: &dyn EnvSource) -> Option<CodexVersion> {
-    if let Some(version) = codex_version(binary).await {
+    if !crate::runnable::is_packaged(binary) {
+        return codex_version(binary).await;
+    }
+    let local = crate::runnable::local_app_data(env);
+    let path = binary.to_path_buf();
+    let copy = tokio::task::spawn_blocking(move || {
+        crate::runnable::resolve_packaged(&path, local.as_deref()).ok()
+    })
+    .await
+    .ok()
+    .flatten();
+    if let Some(copy) = copy
+        && let Some(version) = codex_version(&copy).await
+    {
+        tracing::debug!(copy = %copy.display(), "bundled Codex version from the app's copy");
         return Some(version);
-    }
-    if !crate::appx::in_windows_apps(binary) {
-        return None;
-    }
-    if let (Some(local), Ok(packaged)) = (env_path(env, "LOCALAPPDATA"), fs::metadata(binary)) {
-        for copy in crate::appx::relocated_codex_candidates(&local) {
-            if fs::metadata(&copy).is_ok_and(|m| m.len() == packaged.len())
-                && let Some(version) = codex_version(&copy).await
-            {
-                tracing::debug!(copy = %copy.display(), "bundled Codex version from the app's copy");
-                return Some(version);
-            }
-        }
     }
     let path = binary.to_path_buf();
     let version = tokio::task::spawn_blocking(move || crate::codexbin::scanned_version(&path))

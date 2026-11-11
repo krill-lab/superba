@@ -607,7 +607,18 @@ impl Switcher {
     async fn untrusted_codex_hooks(&self) -> Result<Vec<(String, String)>> {
         let mut codexes = self.local_codexes().await;
         codexes.sort_by(|a, b| b.1.cmp(&a.1));
-        let Some((codex, _)) = codexes.into_iter().next() else {
+        // The newest Codex that can be run: the MSIX app's packaged one runs as
+        // its extracted copy, and is skipped without one (user bug 143).
+        let env = self.deps.ctx.env.clone();
+        let picked = tokio::task::spawn_blocking(move || {
+            codexes.into_iter().find_map(|(path, _)| {
+                superba_appctl::runnable::runnable_codex(&path, env.as_ref()).ok()
+            })
+        })
+        .await
+        .ok()
+        .flatten();
+        let Some(codex) = picked else {
             return Err(Error::NotFound {
                 what: "a Codex program to ask about its hooks".into(),
             });

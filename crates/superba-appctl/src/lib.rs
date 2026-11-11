@@ -42,6 +42,7 @@ pub mod procs;
 pub mod project_restore;
 pub mod quit;
 pub mod renderer;
+pub mod runnable;
 pub mod stop;
 pub mod store;
 pub mod watch;
@@ -1364,21 +1365,27 @@ impl AppController for DesktopAppController {
 
     async fn codex_debug_models(&self, binary: &Path, catalog: Option<&Path>) -> Result<String> {
         let caches = self.caches.clone();
+        let env = self.ctx.env.clone();
         let (bin, cat) = (binary.to_path_buf(), catalog.map(Path::to_path_buf));
-        let key = tokio::task::spawn_blocking(move || -> Result<(String, String)> {
-            let bin_sha = caches.binary_sha(&bin)?;
-            let cat_sha = match &cat {
-                Some(c) => codexbin::sha256_file(c)?,
-                None => "bundled".to_owned(),
-            };
-            Ok((bin_sha, cat_sha))
-        })
-        .await
-        .map_err(blocking_err)??;
+        // The app's Codex inside an MSIX package is run through its extracted
+        // copy (user bug 143, GH#32).
+        let (runnable, key) =
+            tokio::task::spawn_blocking(move || -> Result<(PathBuf, (String, String))> {
+                let runnable = runnable::runnable_codex(&bin, env.as_ref())?;
+                let bin_sha = caches.binary_sha(&runnable)?;
+                let cat_sha = match &cat {
+                    Some(c) => codexbin::sha256_file(c)?,
+                    None => "bundled".to_owned(),
+                };
+                Ok((runnable, (bin_sha, cat_sha)))
+            })
+            .await
+            .map_err(blocking_err)??;
         if let Some(out) = self.caches.debug_models(&key) {
             return Ok(out);
         }
-        let out = codexbin::debug_models(binary, catalog, codexbin::DEBUG_MODELS_TIMEOUT).await?;
+        let out =
+            codexbin::debug_models(&runnable, catalog, codexbin::DEBUG_MODELS_TIMEOUT).await?;
         self.caches.put_debug_models(key, out.clone());
         Ok(out)
     }
