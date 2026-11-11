@@ -152,11 +152,20 @@ jobs:
         with:
           name: third-party-notices
           path: ${{ runner.temp }}/notices
+      # The apt helper comes from the commit that runs this workflow, so a release
+      # dispatched again for an older tag still gets it.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        if: matrix.platform == 'linux' || matrix.platform == 'musl'
+        with:
+          ref: ${{ github.sha }}
+          path: .ci-tools
+          sparse-checkout: scripts/release/apt-install.sh
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
       - name: Install Linux GUI dependencies
         if: matrix.platform == 'linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libxkbcommon-dev libwayland-dev \
+          .ci-tools/scripts/release/apt-install.sh libxkbcommon-dev libwayland-dev \
             libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
             libgl1-mesa-dev pkg-config
       - name: Build GNU Linux or Windows binaries
@@ -174,8 +183,7 @@ jobs:
       - name: Build the static musl binaries
         if: matrix.platform == 'musl'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y musl-tools
+          .ci-tools/scripts/release/apt-install.sh musl-tools
           scripts/release/build-musl.sh --helper-out wsl-helper
       - name: Package GNU Linux binaries
         if: matrix.platform == 'linux'
