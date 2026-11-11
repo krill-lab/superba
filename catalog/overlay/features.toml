@@ -478,6 +478,11 @@ zh_name = "Fast 模式"
 zh = '允许使用 Fast 服务档位：配置中的 `service_tier = "fast"`（请求中发送 `priority`）只有开启时才生效，终端界面也会提供切换 Fast 模式的选项和快捷键。关闭后 Fast 档位设置会被忽略；Ultra Fast 档位由 `ultrafast_mode` 单独控制。默认开启。'
 zh_basis = ""
 
+["feature:gateway_setup_wizard"]
+en = ""
+en_hash = ""
+zh = ""
+
 ["feature:gcp_setup_wizard"]
 en = ""
 en_hash = ""
@@ -702,6 +707,11 @@ zh_name = "增量工具定义"
 zh = "在世界状态中跟踪顶层工具定义，工具变化时只向模型发送增量的上下文更新，而不是整份工具列表。只对使用 Responses Lite 格式的模型生效。0.164 起为稳定功能并默认开启。"
 zh_basis = ""
 
+["feature:incremental_tools_legacy"]
+en = ""
+en_hash = ""
+zh = ""
+
 ["feature:instant_interrupt"]
 en = ""
 en_hash = ""
@@ -773,6 +783,11 @@ en_hash = ""
 zh_name = "共享 MCP 连接"
 zh = "自动探测本地 stdio MCP 服务器支持的协议版本，并让多个会话共享符合条件的连接，而不是每个会话各启动一份。`codex_apps` 以及使用运行时凭据或企业托管授权（EMA）的服务器除外。开发中，默认关闭。"
 zh_basis = ""
+
+["feature:mcp_lazy_stdio_startup"]
+en = ""
+en_hash = ""
+zh = ""
 
 ["feature:mcp_oauth_refresh_coordination"]
 en = ""
@@ -1033,7 +1048,7 @@ zh_basis = ""
 ["feature:respect_system_proxy"]
 en_name = "System proxy"
 en = "Use macOS or Windows system proxy settings for Codex requests."
-en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/features/src/lib.rs (experimental menu text)"
+en_source = "openai/codex rust-v0.167.0: codex-rs/features/src/lib.rs (experimental menu text)"
 en_hash = "e03822c873fa5d7d"
 zh_name = "遵循系统代理"
 zh = "依据源码推断，让 Codex 网络请求优先使用 macOS 或 Windows 的系统代理决定，包括系统明确要求的直连；只有无法取得系统决定时才回退到环境变量代理，再无代理则直连。其他系统使用环境变量回退；关闭时采用网络库默认代理行为。实验性，默认关闭。"

@@ -1,15 +1,15 @@
 {
   "catalog_format": 1,
-  "codex_version": "0.168.0-alpha.4",
+  "codex_version": "0.167.0",
   "source": {
     "repo": "openai/codex",
-    "tag": "rust-v0.168.0-alpha.4",
-    "commit": "c2d5399587b96f45585f3aeac08fc5050365bc7c",
-    "prerelease": true,
+    "tag": "rust-v0.167.0",
+    "commit": "086ccc833bc9cf01024ad2dd6af7dbd421b6bf9a",
+    "prerelease": false,
     "files": {
-      "codex-rs/core/config.schema.json": "1ccd781ebff8974f553a252eb449ba826bca08ba",
+      "codex-rs/core/config.schema.json": "f5149c6efdf7ab9f1550aa0639dd5f2401205f25",
       "codex-rs/features/src/legacy.rs": "3e6df58ed1852665c58c3173550d18dbe43f2d06",
-      "codex-rs/features/src/lib.rs": "e572498eeb92fdd4e90b479f68eda8120d710427"
+      "codex-rs/features/src/lib.rs": "8a9a0975edee02d4fa4e2aeee0d69b2d849e7a97"
     }
   },
   "config_keys": [
@@ -207,7 +207,7 @@
       "types": [
         "boolean"
       ],
-      "description": "Whether to allow sandbox escalation approval requests, including inline `with_additional_permissions` and `require_escalated` requests. Dangerous commands can still request approval within existing permissions."
+      "description": "Whether to allow shell command approval requests, including inline `with_additional_permissions` and `require_escalated` requests."
     },
     {
       "path": "approval_policy.granular.skill_approval",
@@ -633,14 +633,6 @@
         "string"
       ],
       "description": "Experimental replacement for the history-retrieval instructions when history tools and Apps are enabled. Omitted or blank values use the built-in prompt."
-    },
-    {
-      "path": "auto_review.experimental_denial_reconsideration_prompt",
-      "kind": "string",
-      "types": [
-        "string"
-      ],
-      "description": "Developer message used when `features.guardian_denial_reconsideration` is enabled. Omitted or blank values use the built-in prompt. Maximum 1,000 UTF-8 bytes."
     },
     {
       "path": "auto_review.experimental_policy_template",
@@ -1174,13 +1166,6 @@
       ]
     },
     {
-      "path": "features.agent_message_board_mcp",
-      "kind": "boolean",
-      "types": [
-        "boolean"
-      ]
-    },
-    {
       "path": "features.analytics_plan_history",
       "kind": "boolean",
       "types": [
@@ -1293,13 +1278,6 @@
       "description": "Percentage of the model's full context window that starts background compaction. Defaults to 65; valid values are 1–100, including when disabled."
     },
     {
-      "path": "features.async_compaction_root_only",
-      "kind": "boolean",
-      "types": [
-        "boolean"
-      ]
-    },
-    {
       "path": "features.auth_elicitation",
       "kind": "boolean",
       "types": [
@@ -1357,13 +1335,6 @@
     },
     {
       "path": "features.cli_daybreak",
-      "kind": "boolean",
-      "types": [
-        "boolean"
-      ]
-    },
-    {
-      "path": "features.cli_resume_account_check",
       "kind": "boolean",
       "types": [
         "boolean"
@@ -1548,13 +1519,6 @@
     },
     {
       "path": "features.collaboration_modes",
-      "kind": "boolean",
-      "types": [
-        "boolean"
-      ]
-    },
-    {
-      "path": "features.command_sessions_world_state",
       "kind": "boolean",
       "types": [
         "boolean"
@@ -1862,13 +1826,6 @@
       ]
     },
     {
-      "path": "features.guardian_denial_reconsideration",
-      "kind": "boolean",
-      "types": [
-        "boolean"
-      ]
-    },
-    {
       "path": "features.guardian_enhanced_node_repl_transcripts",
       "kind": "boolean",
       "types": [
@@ -1877,13 +1834,6 @@
     },
     {
       "path": "features.guardian_ext",
-      "kind": "boolean",
-      "types": [
-        "boolean"
-      ]
-    },
-    {
-      "path": "features.guardian_include_additional_context",
       "kind": "boolean",
       "types": [
         "boolean"
@@ -2089,62 +2039,6 @@
       "maximum": 1.0
     },
     {
-      "path": "features.guardianv2.sync_elastic_budgeting",
-      "kind": "boolean",
-      "types": [
-        "boolean"
-      ],
-      "description": "Enable elastic allocation for synchronous Guardian requests. Defaults to false."
-    },
-    {
-      "path": "features.guardianv2.sync_elastic_sections",
-      "kind": "map",
-      "types": [
-        "object"
-      ],
-      "description": "Named section limits, decoded and validated by Guardian when the switch is enabled."
-    },
-    {
-      "path": "features.guardianv2.sync_elastic_sections.<name>",
-      "kind": "table",
-      "types": [
-        "object"
-      ],
-      "definition": "GuardianElasticSectionConfigToml",
-      "under_map": true
-    },
-    {
-      "path": "features.guardianv2.sync_elastic_sections.<name>.max_section_entry_tokens",
-      "kind": "integer",
-      "types": [
-        "integer"
-      ],
-      "format": "uint",
-      "minimum": 0.0,
-      "under_map": true
-    },
-    {
-      "path": "features.guardianv2.sync_elastic_sections.<name>.max_total_section_tokens",
-      "kind": "integer",
-      "types": [
-        "integer"
-      ],
-      "format": "uint",
-      "minimum": 0.0,
-      "description": "Upper bound for the section's allocation. Omit to use the global request budget as the upper bound.",
-      "under_map": true
-    },
-    {
-      "path": "features.guardianv2.sync_elastic_sections.<name>.min_total_section_tokens",
-      "kind": "integer",
-      "types": [
-        "integer"
-      ],
-      "format": "uint",
-      "minimum": 0.0,
-      "under_map": true
-    },
-    {
       "path": "features.guardianv2.thread_context",
       "kind": "boolean",
       "types": [
@@ -2276,13 +2170,6 @@
       ]
     },
     {
-      "path": "features.hosted_search_policy",
-      "kind": "boolean",
-      "types": [
-        "boolean"
-      ]
-    },
-    {
       "path": "features.image_detail_original",
       "kind": "boolean",
       "types": [
@@ -2291,13 +2178,6 @@
     },
     {
       "path": "features.image_generation",
-      "kind": "boolean",
-      "types": [
-        "boolean"
-      ]
-    },
-    {
-      "path": "features.image_generation_animation",
       "kind": "boolean",
       "types": [
         "boolean"
@@ -3645,13 +3525,6 @@
     },
     {
       "path": "features.tui_multi_backend",
-      "kind": "boolean",
-      "types": [
-        "boolean"
-      ]
-    },
-    {
-      "path": "features.tui_workspace",
       "kind": "boolean",
       "types": [
         "boolean"
@@ -7873,23 +7746,6 @@
       "definition": "ToolsToml"
     },
     {
-      "path": "tools.client_search_provider",
-      "kind": "enum",
-      "types": [
-        "string"
-      ],
-      "enum_values": [
-        {
-          "value": "standalone"
-        },
-        {
-          "value": "search_mcp"
-        }
-      ],
-      "description": "Client provider preference when the model does not select a provider.",
-      "definition": "WebSearchProvider"
-    },
-    {
       "path": "tools.experimental_request_user_input",
       "kind": "table",
       "types": [
@@ -8107,31 +7963,6 @@
       "description": "Deselect read-only transcript or footer text after Copy on select confirms delivery. Editable composer selections remain visible. Defaults to `false` and has no effect when Copy on select is off."
     },
     {
-      "path": "tui.default_hosts",
-      "kind": "map",
-      "types": [
-        "object"
-      ],
-      "schema_default": {},
-      "description": "Preferred hosts for new conversations, indexed by project and local user identity. Read from the user configuration only; values are never endpoints or credentials."
-    },
-    {
-      "path": "tui.default_hosts.<name>",
-      "kind": "map",
-      "types": [
-        "object"
-      ],
-      "under_map": true
-    },
-    {
-      "path": "tui.default_hosts.<name>.<name>",
-      "kind": "string",
-      "types": [
-        "string"
-      ],
-      "under_map": true
-    },
-    {
       "path": "tui.disable_paste_burst",
       "kind": "boolean",
       "types": [
@@ -8298,31 +8129,18 @@
           "yank": null
         },
         "global": {
-          "change_host": null,
           "clear_terminal": null,
           "copy": null,
-          "equalize_pane_widths": null,
           "find_transcript": null,
           "focus_activity": null,
-          "focus_main_composer": null,
-          "focus_pane_left": null,
-          "focus_pane_right": null,
-          "focus_sidebar_content": null,
-          "hide_pane": null,
           "leader": null,
-          "maximize_pane_width": null,
-          "minimize_pane_width": null,
-          "move_divider_left": null,
-          "move_divider_right": null,
           "open_agents": null,
           "open_external_editor": null,
           "open_transcript": null,
           "queue": null,
-          "resize_panes": null,
           "select_transcript": null,
           "submit": null,
           "toggle_fast_mode": null,
-          "toggle_pane_zoom": null,
           "toggle_raw_output": null,
           "toggle_shortcuts": null,
           "toggle_side_conversation": null,
@@ -9074,47 +8892,24 @@
         "object"
       ],
       "schema_default": {
-        "change_host": null,
         "clear_terminal": null,
         "copy": null,
-        "equalize_pane_widths": null,
         "find_transcript": null,
         "focus_activity": null,
-        "focus_main_composer": null,
-        "focus_pane_left": null,
-        "focus_pane_right": null,
-        "focus_sidebar_content": null,
-        "hide_pane": null,
         "leader": null,
-        "maximize_pane_width": null,
-        "minimize_pane_width": null,
-        "move_divider_left": null,
-        "move_divider_right": null,
         "open_agents": null,
         "open_external_editor": null,
         "open_transcript": null,
         "queue": null,
-        "resize_panes": null,
         "select_transcript": null,
         "submit": null,
         "toggle_fast_mode": null,
-        "toggle_pane_zoom": null,
         "toggle_raw_output": null,
         "toggle_shortcuts": null,
         "toggle_side_conversation": null,
         "toggle_vim_mode": null
       },
       "definition": "TuiGlobalKeymap"
-    },
-    {
-      "path": "tui.keymap.global.change_host",
-      "kind": "union",
-      "types": [
-        "string",
-        "array"
-      ],
-      "description": "Change where a new conversation runs.",
-      "definition": "KeybindingsSpec"
     },
     {
       "path": "tui.keymap.global.clear_terminal",
@@ -9134,16 +8929,6 @@
         "array"
       ],
       "description": "Copy the last agent response to the clipboard.",
-      "definition": "KeybindingsSpec"
-    },
-    {
-      "path": "tui.keymap.global.equalize_pane_widths",
-      "kind": "union",
-      "types": [
-        "string",
-        "array"
-      ],
-      "description": "Equalize visible pane widths.",
       "definition": "KeybindingsSpec"
     },
     {
@@ -9167,56 +8952,6 @@
       "definition": "KeybindingsSpec"
     },
     {
-      "path": "tui.keymap.global.focus_main_composer",
-      "kind": "union",
-      "types": [
-        "string",
-        "array"
-      ],
-      "description": "Focus the main conversation composer.",
-      "definition": "KeybindingsSpec"
-    },
-    {
-      "path": "tui.keymap.global.focus_pane_left",
-      "kind": "union",
-      "types": [
-        "string",
-        "array"
-      ],
-      "description": "Focus the parent conversation.",
-      "definition": "KeybindingsSpec"
-    },
-    {
-      "path": "tui.keymap.global.focus_pane_right",
-      "kind": "union",
-      "types": [
-        "string",
-        "array"
-      ],
-      "description": "Focus the open side conversation.",
-      "definition": "KeybindingsSpec"
-    },
-    {
-      "path": "tui.keymap.global.focus_sidebar_content",
-      "kind": "union",
-      "types": [
-        "string",
-        "array"
-      ],
-      "description": "Focus the side conversation, or hide it when already focused.",
-      "definition": "KeybindingsSpec"
-    },
-    {
-      "path": "tui.keymap.global.hide_pane",
-      "kind": "union",
-      "types": [
-        "string",
-        "array"
-      ],
-      "description": "Hide the focused sidebar pane.",
-      "definition": "KeybindingsSpec"
-    },
-    {
       "path": "tui.keymap.global.leader",
       "kind": "union",
       "types": [
@@ -9224,46 +8959,6 @@
         "array"
       ],
       "description": "Prefix for persistent, context-aware shortcut menus.",
-      "definition": "KeybindingsSpec"
-    },
-    {
-      "path": "tui.keymap.global.maximize_pane_width",
-      "kind": "union",
-      "types": [
-        "string",
-        "array"
-      ],
-      "description": "Maximize the focused pane width.",
-      "definition": "KeybindingsSpec"
-    },
-    {
-      "path": "tui.keymap.global.minimize_pane_width",
-      "kind": "union",
-      "types": [
-        "string",
-        "array"
-      ],
-      "description": "Minimize the focused pane width.",
-      "definition": "KeybindingsSpec"
-    },
-    {
-      "path": "tui.keymap.global.move_divider_left",
-      "kind": "union",
-      "types": [
-        "string",
-        "array"
-      ],
-      "description": "Move the divider left when the side pane has focus.",
-      "definition": "KeybindingsSpec"
-    },
-    {
-      "path": "tui.keymap.global.move_divider_right",
-      "kind": "union",
-      "types": [
-        "string",
-        "array"
-      ],
-      "description": "Move the divider right when the side pane has focus.",
       "definition": "KeybindingsSpec"
     },
     {
@@ -9307,16 +9002,6 @@
       "definition": "KeybindingsSpec"
     },
     {
-      "path": "tui.keymap.global.resize_panes",
-      "kind": "union",
-      "types": [
-        "string",
-        "array"
-      ],
-      "description": "Enter keyboard resize mode for visible dividers.",
-      "definition": "KeybindingsSpec"
-    },
-    {
       "path": "tui.keymap.global.select_transcript",
       "kind": "union",
       "types": [
@@ -9344,16 +9029,6 @@
         "array"
       ],
       "description": "Toggle Fast mode.",
-      "definition": "KeybindingsSpec"
-    },
-    {
-      "path": "tui.keymap.global.toggle_pane_zoom",
-      "kind": "union",
-      "types": [
-        "string",
-        "array"
-      ],
-      "description": "Zoom or restore the focused pane.",
       "definition": "KeybindingsSpec"
     },
     {
@@ -10511,9 +10186,6 @@
           "value": "osc9"
         },
         {
-          "value": "osc777"
-        },
-        {
           "value": "bel"
         }
       ],
@@ -10768,18 +10440,6 @@
       "description": "Show startup tooltips in the TUI welcome screen. Defaults to `true`."
     },
     {
-      "path": "tui.sidebar_width_percent",
-      "kind": "integer",
-      "types": [
-        "integer"
-      ],
-      "format": "uint8",
-      "minimum": 1.0,
-      "maximum": 99.0,
-      "schema_default": null,
-      "description": "Preferred docked sidebar width as a percentage of the terminal. Defaults to one third."
-    },
-    {
       "path": "tui.status_line",
       "kind": "array",
       "types": [
@@ -10910,14 +10570,6 @@
       "rustdoc": "Enable shared discussion tools for an agent tree."
     },
     {
-      "key": "agent_message_board_mcp",
-      "config_path": "features.agent_message_board_mcp",
-      "variant": "AgentMessageBoardMcp",
-      "stage": "under_development",
-      "default_enabled": false,
-      "rustdoc": "Expose a tree-scoped in-memory message board through HTTP MCP."
-    },
-    {
       "key": "analytics_plan_history",
       "config_path": "features.analytics_plan_history",
       "variant": "AnalyticsPlanHistory",
@@ -11019,14 +10671,6 @@
       "rustdoc": "Prepare remote compaction in the background before the foreground limit is reached."
     },
     {
-      "key": "async_compaction_root_only",
-      "config_path": "features.async_compaction_root_only",
-      "variant": "AsyncCompactionRootOnly",
-      "stage": "under_development",
-      "default_enabled": false,
-      "rustdoc": "Restrict background compaction to the root session."
-    },
-    {
       "key": "auth_elicitation",
       "config_path": "features.auth_elicitation",
       "variant": "AuthElicitation",
@@ -11097,14 +10741,6 @@
       "stage": "stable",
       "default_enabled": true,
       "rustdoc": "Enable Daybreak controls and automatic access-program selection in CLI clients."
-    },
-    {
-      "key": "cli_resume_account_check",
-      "config_path": "features.cli_resume_account_check",
-      "variant": "CliResumeAccountCheck",
-      "stage": "under_development",
-      "default_enabled": false,
-      "rustdoc": "Restrict CLI resume of attributed local threads to their creator."
     },
     {
       "key": "code_mode",
@@ -11217,14 +10853,6 @@
       "stage": "removed",
       "default_enabled": true,
       "rustdoc": "Enable collaboration modes (Plan, Default). Kept for config backward compatibility; behavior is always collaboration-modes-enabled."
-    },
-    {
-      "key": "command_sessions_world_state",
-      "config_path": "features.command_sessions_world_state",
-      "variant": "CommandSessionsWorldState",
-      "stage": "under_development",
-      "default_enabled": false,
-      "rustdoc": "Publish retained command sessions through incremental world state."
     },
     {
       "key": "compaction_image_budget",
@@ -11467,14 +11095,6 @@
       "rustdoc": "Give Guardian access to the root conversation's message history tools."
     },
     {
-      "key": "guardian_denial_reconsideration",
-      "config_path": "features.guardian_denial_reconsideration",
-      "variant": "GuardianDenialReconsideration",
-      "stage": "under_development",
-      "default_enabled": false,
-      "rustdoc": "Reconsider a synchronous Guardian denial once before publishing it."
-    },
-    {
       "key": "guardian_enhanced_node_repl_transcripts",
       "config_path": "features.guardian_enhanced_node_repl_transcripts",
       "variant": "GuardianEnhancedNodeReplTranscripts",
@@ -11489,14 +11109,6 @@
       "stage": "removed",
       "default_enabled": false,
       "rustdoc": "Removed compatibility flag for the unused Guardian extension prototype."
-    },
-    {
-      "key": "guardian_include_additional_context",
-      "config_path": "features.guardian_include_additional_context",
-      "variant": "GuardianIncludeAdditionalContext",
-      "stage": "stable",
-      "default_enabled": true,
-      "rustdoc": "Include standalone additional-context tool outputs in Guardian review history."
     },
     {
       "key": "guardian_native_multi_agent_history",
@@ -11587,14 +11199,6 @@
       "rustdoc": "Enable Claude-style lifecycle hooks loaded from hooks.json files."
     },
     {
-      "key": "hosted_search_policy",
-      "config_path": "features.hosted_search_policy",
-      "variant": "HostedSearchPolicy",
-      "stage": "under_development",
-      "default_enabled": false,
-      "rustdoc": "Let the host authorize MCP search independently of native search through per-turn policy."
-    },
-    {
       "key": "image_detail_original",
       "config_path": "features.image_detail_original",
       "variant": "ImageDetailOriginal",
@@ -11609,14 +11213,6 @@
       "stage": "stable",
       "default_enabled": true,
       "rustdoc": "Enable extension-backed image generation."
-    },
-    {
-      "key": "image_generation_animation",
-      "config_path": "features.image_generation_animation",
-      "variant": "ImageGenerationAnimation",
-      "stage": "under_development",
-      "default_enabled": false,
-      "rustdoc": "Allow the image-generation tool to request a backend-assembled GIF."
     },
     {
       "key": "image_resize_notice",
@@ -11818,7 +11414,7 @@
       "key": "multi_agent",
       "config_path": "features.multi_agent",
       "variant": "Collab",
-      "stage": "deprecated",
+      "stage": "stable",
       "default_enabled": true,
       "rustdoc": "Enable collab tools."
     },
@@ -12112,8 +11708,8 @@
       "key": "retain_client_tool_outputs",
       "config_path": "features.retain_client_tool_outputs",
       "variant": "RetainClientToolOutputs",
-      "stage": "stable",
-      "default_enabled": true,
+      "stage": "under_development",
+      "default_enabled": false,
       "rustdoc": "Honor client-requested tool-output retention across context windows."
     },
     {
@@ -12426,14 +12022,6 @@
       "rustdoc": "Allow the TUI to discover and select among multiple conversation backends."
     },
     {
-      "key": "tui_workspace",
-      "config_path": "features.tui_workspace",
-      "variant": "TuiWorkspace",
-      "stage": "under_development",
-      "default_enabled": false,
-      "rustdoc": "Enable workspace behavior for side conversations in the owned TUI."
-    },
-    {
       "key": "ultrafast_mode",
       "config_path": "features.ultrafast_mode",
       "variant": "UltrafastMode",
@@ -12493,8 +12081,8 @@
       "key": "unified_image_budget",
       "config_path": "features.unified_image_budget",
       "variant": "UnifiedImageBudget",
-      "stage": "stable",
-      "default_enabled": true,
+      "stage": "under_development",
+      "default_enabled": false,
       "rustdoc": "Apply one shared pixel and token budget to every image, regardless of legacy detail hints."
     },
     {
@@ -12771,7 +12359,6 @@
     "TuiVimSearchKeymap": "Search motions shared by Vim normal and operator-pending input.",
     "TuiVimTextObjectKeymap": "Vim text-object keybindings for modal editing inside text areas.",
     "Verbosity": "Controls output length/detail on GPT-5 models via the Responses API. Serialized with lowercase values to match the OpenAI API.",
-    "WebSearchProvider": "Provider preference selected by the resolved model catalog entry.",
     "WireApi": "Wire protocol that the provider speaks."
   }
 }
