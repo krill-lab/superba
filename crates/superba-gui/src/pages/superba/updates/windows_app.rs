@@ -19,7 +19,7 @@ use superba_core::{
 use super::panels::command_row;
 use super::panels::kv;
 use crate::design::icons::Icon;
-use crate::design::widgets::{Button, FormRow, Status, Text, link_button};
+use crate::design::widgets::{Button, FormRow, Status, Text, link_button, progress};
 use crate::pages::{Action, Cx, Page, callout, error_text};
 use crate::runtime::ReadTask;
 
@@ -179,18 +179,24 @@ pub fn progress_line(cx: &Cx<'_>, p: &DownloadProgress) -> String {
     }
 }
 
-/// A thin neutral progress bar.
+/// A thin neutral progress bar: eased between reports, the shuttle while the
+/// size is unknown (resolving, verifying).
 fn bar(ui: &mut Ui, cx: &Cx<'_>, fraction: Option<f32>) {
     let h = 6.0;
     let w = ui.available_width().min(420.0);
-    let (rect, _) = ui.allocate_exact_size(vec2(w, h), Sense::hover());
-    let r = (h / 2.0) as u8;
-    ui.painter().rect_filled(rect, r, cx.pal.active);
-    if let Some(f) = fraction {
-        let mut fill = rect;
-        fill.set_width((rect.width() * f.clamp(0.0, 1.0)).max(h));
-        ui.painter().rect_filled(fill, r, cx.pal.primary);
-    }
+    let (rect, response) = ui.allocate_exact_size(vec2(w, h), Sense::hover());
+    progress::paint_bar(
+        ui,
+        response.id,
+        rect,
+        fraction,
+        progress::BarLook {
+            track: cx.pal.active,
+            fill: cx.pal.primary,
+            radius: (h / 2.0) as u8,
+            min_fill: h,
+        },
+    );
 }
 
 fn file_name(path: &std::path::Path) -> String {

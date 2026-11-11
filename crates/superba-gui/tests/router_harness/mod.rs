@@ -45,6 +45,8 @@ pub struct Frame {
     pub elided: Vec<String>,
     /// Bounding rectangles of the meshes drawn (gradients such as edge fades).
     pub meshes: Vec<Rect>,
+    /// When the frame asked for the next one.
+    pub repaint_delay: std::time::Duration,
 }
 
 impl Default for Frame {
@@ -61,6 +63,7 @@ impl Default for Frame {
             outlines: Vec::new(),
             elided: Vec::new(),
             meshes: Vec::new(),
+            repaint_delay: std::time::Duration::MAX,
         }
     }
 }
@@ -97,7 +100,8 @@ impl Frame {
 
 /// The harness.
 pub struct Harness {
-    ctx: egui::Context,
+    /// The egui context the frames run in.
+    pub ctx: egui::Context,
     tr: Tr,
     fonts: fonts::FontReport,
     /// The service pages read through.
@@ -348,6 +352,7 @@ impl Harness {
         frame.scroll_areas = self
             .ctx
             .data(|d| d.count::<egui::containers::scroll_area::State>());
+        frame.repaint_delay = output.viewport_output[&egui::ViewportId::ROOT].repaint_delay;
         output.drop_without_applying_deltas();
         frame
     }

@@ -867,6 +867,7 @@ impl SuperbaApp {
             self.applied_theme = Some(theme);
         }
         backdrop::set(ctx, self.settings.background);
+        crate::design::motion::set_reduced(ctx, self.settings.reduce_motion);
     }
 
     // -------------------------------------------------------------------

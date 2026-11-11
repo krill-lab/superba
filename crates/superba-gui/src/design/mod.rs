@@ -8,6 +8,7 @@ pub mod fonts;
 pub mod icons;
 pub mod installed_icon;
 pub mod layout;
+pub mod motion;
 pub mod style;
 pub mod tokens;
 pub mod tool_icons;

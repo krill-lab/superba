@@ -866,3 +866,36 @@ fn expanded_state() -> State {
     state.expanded.insert(updates::UpdateItem::Superba);
     state
 }
+
+/// User bug 138: the bar under a running update slides every frame (about
+/// 60 a second), not on the page's 100 ms poll; "Reduce motion" keeps it
+/// still and asks for no animation frames.
+#[test]
+fn a_running_update_animates_its_bar_every_frame() {
+    let service = fake();
+    let mut h = harness(
+        service.clone(),
+        Locale::En,
+        view(SelfUpdateStatus::Available, Some(release("0.2.0"))),
+    );
+    let mut state = expanded_state();
+    let f = page(&mut h, &mut state, "Update now");
+    let gate = service.hold_self_update_install();
+    service.set_self_update_report(report(SelfInstallOutcome::Installed));
+    h.click_text(&f, "Update now");
+    page(&mut h, &mut state, "Downloading and verifying…");
+    // Past the hover fades the click started (they ask for every pass).
+    let f = h.frames(30, |ui, cx, out| updates::show(ui, cx, &mut state, out));
+    assert!(f.has("Downloading and verifying…"));
+    assert_eq!(f.repaint_delay, superba_gui::design::motion::FRAME);
+    superba_gui::design::motion::set_reduced(&h.ctx, true);
+    let f = h.frames(30, |ui, cx, out| updates::show(ui, cx, &mut state, out));
+    assert!(f.has("Downloading and verifying…"));
+    assert!(
+        f.repaint_delay > superba_gui::design::motion::FRAME,
+        "{:?}",
+        f.repaint_delay
+    );
+    gate.notify_one();
+    page(&mut h, &mut state, "Superba 0.2.0 is installed");
+}

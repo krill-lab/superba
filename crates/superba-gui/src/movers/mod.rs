@@ -28,7 +28,7 @@ use std::time::Duration;
 
 /// Frame interval while animating (about 60 frames a second, also on faster
 /// displays).
-pub const FRAME: Duration = Duration::from_millis(15);
+pub const FRAME: Duration = crate::design::motion::FRAME;
 
 /// Interval of the elapsed-time clock when nothing moves.
 pub const CLOCK_TICK: Duration = Duration::from_secs(1);
