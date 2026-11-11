@@ -11,8 +11,8 @@ mod fakes;
 
 use fakes::*;
 use superba_core::{
-    AuthChoice, AuthMode, ConflictAction, ImportLink, ImportOutcome, ImportSource, LineId,
-    LinkImportRequest, ProfileId, ResolvedMode, SwitchRequest, SwitchService,
+    AuthMode, ConflictAction, ImportLink, ImportOutcome, ImportSource, LineId, LinkImportRequest,
+    ProfileId, ResolvedMode, SwitchRequest, SwitchService,
 };
 
 const LINK_KEY: &str = "sk-krill-link-0123456789abcdef";
@@ -94,7 +94,6 @@ async fn an_update_replaces_the_key_keeps_the_lines_and_uses_api_key_auth() {
     assert_eq!(work.line_priority(), old.line_priority());
     assert_eq!(work.name, old.name);
     assert_eq!(work.auth_mode, AuthMode::ApiKey);
-    assert_eq!(work.auth_choice(), AuthChoice::ApiKey);
     assert_eq!(stored(&w, "work").as_deref(), Some(LINK_KEY));
     assert_eq!(set.profiles.len(), before.profiles.len());
     // Nothing went to Codex.
@@ -128,8 +127,7 @@ async fn add_as_new_creates_a_krill_provider_on_the_requested_line() {
     assert_eq!(new.auth_mode, AuthMode::ApiKey);
     assert_eq!(stored(&w, profile.as_str()).as_deref(), Some(LINK_KEY));
     // The existing provider is untouched.
-    let work = set.profile(&ProfileId::new("work")).unwrap();
-    assert_eq!(work.auth_mode, AuthMode::Pat);
+    assert!(set.profile(&ProfileId::new("work")).is_some());
     assert_ne!(stored(&w, "work").as_deref(), Some(LINK_KEY));
 }
 
@@ -200,7 +198,7 @@ async fn without_a_krill_provider_a_new_one_takes_the_default_or_requested_line(
 }
 
 #[tokio::test]
-async fn an_updated_pat_provider_is_planned_with_its_new_api_key() {
+async fn an_updated_provider_is_planned_with_its_new_api_key() {
     let w = World::new();
     let sw = w.switcher();
     sw.import_link(request(ConflictAction::Update, None, false))

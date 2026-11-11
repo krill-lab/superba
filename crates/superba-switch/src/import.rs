@@ -17,10 +17,9 @@
 
 use superba_core::catalog::KRILL_SITE_ID;
 use superba_core::{
-    ActiveState, AuthChoice, AuthMode, ConflictAction, Error, ForeignApp, ImportApplyRequest,
-    ImportConflict, ImportItem, ImportOutcome, ImportReport, ImportScan, ImportScanRequest,
-    ImportSelection, ImportSource, LinkImportReport, LinkImportRequest, Profile, ProfileSet,
-    Result, Site,
+    ActiveState, AuthMode, ConflictAction, Error, ForeignApp, ImportApplyRequest, ImportConflict,
+    ImportItem, ImportOutcome, ImportReport, ImportScan, ImportScanRequest, ImportSelection,
+    ImportSource, LinkImportReport, LinkImportRequest, Profile, ProfileSet, Result, Site,
 };
 use superba_import::{ForeignKey, ForeignProvider, Os, PlannedAction, ScanEnv, SourceRead};
 
@@ -357,9 +356,7 @@ fn existing_krill<'a>(set: &'a ProfileSet, active: Option<&ActiveState>) -> Opti
         })
 }
 
-/// A link's key is an API key: the provider uses API-key auth (never PAT, also
-/// when it was a PAT provider before).
+/// A link's key is an API key: the provider uses API-key auth.
 fn use_api_key(profile: &mut Profile) {
     profile.auth_mode = AuthMode::ApiKey;
-    profile.set_auth(AuthChoice::ApiKey);
 }
