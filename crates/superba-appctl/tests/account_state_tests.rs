@@ -10,7 +10,8 @@ use std::path::Path;
 use pretty_assertions::assert_eq;
 use serde_json::{Value, json};
 use superba_appctl::account_state::{
-    ACCOUNT_STATE_KEY, LoginKind, Outcome, flatten, login_kind, prepare,
+    ACCOUNT_STATE_KEY, LoginKind, OWNER_KEY, Outcome, SIGNED_OUT_OWNER, flatten, login_kind,
+    name_signed_out_owner, prepare, prepare_launch,
 };
 use superba_core::{CodexHome, Timestamp};
 
@@ -316,7 +317,10 @@ fn prepare_folds_the_state_for_a_token_login_and_keeps_a_backup() {
             serde_json::from_slice(&fs::read(h.home.global_state_json()).unwrap()).unwrap();
         let mut expected = broken_state();
         flatten(&mut expected);
+        // App 26.1106 (user bug 139): the folded atoms get the signed-out owner.
+        assert!(name_signed_out_owner(&mut expected));
         assert_eq!(state, expected);
+        assert_eq!(state[OWNER_KEY], SIGNED_OUT_OWNER);
         assert_eq!(fs::read(bak(&h.home)).unwrap(), b"app backup");
         #[cfg(unix)]
         {
@@ -557,4 +561,42 @@ fn backups_are_owner_only() {
         .permissions()
         .mode();
     assert_eq!(mode & 0o777, 0o644);
+}
+
+#[test]
+fn a_token_launch_names_the_signed_out_owner_of_atoms_without_one() {
+    // User bug 139: without an owner, app 26.1106's first API-key start
+    // drops every persisted atom that is not global.
+    let state = serde_json::json!({
+        "electron-persisted-atom-state": {"last_completed_onboarding": 1, "sidebar": {"open": true}},
+        "local-projects": {"p": {"name": "p"}},
+    });
+    let original = serde_json::to_vec(&state).unwrap();
+    for auth in [PAT, API_KEY] {
+        let h = home(Some(auth), Some(&original));
+        let done = prepare_launch(&h.home, &h.backups, None, Timestamp::from_millis(5)).unwrap();
+        assert!(done.owner_named);
+        assert_eq!(done.stashes, None);
+        assert_eq!(fs::read(done.backup.unwrap()).unwrap(), original);
+        let now: Value =
+            serde_json::from_slice(&fs::read(h.home.global_state_json()).unwrap()).unwrap();
+        let mut expected = state.clone();
+        expected[OWNER_KEY] = SIGNED_OUT_OWNER.into();
+        assert_eq!(now, expected);
+        // An owner is never replaced.
+        let again = prepare_launch(&h.home, &h.backups, None, Timestamp::from_millis(6)).unwrap();
+        assert!(!again.owner_named && again.backup.is_none());
+    }
+    // A ChatGPT login, a file without atoms, or one with an owner: untouched.
+    let h = home(Some(CHATGPT), Some(&original));
+    assert!(!prepare_launch(&h.home, &h.backups, None, Timestamp::now()).unwrap().owner_named);
+    assert_eq!(fs::read(h.home.global_state_json()).unwrap(), original);
+    for other in [
+        serde_json::json!({"local-projects": {}}),
+        serde_json::json!({"electron-persisted-atom-state": {}, OWNER_KEY: "abc"}),
+    ] {
+        let mut v = other.clone();
+        assert!(!name_signed_out_owner(&mut v));
+        assert_eq!(v, other);
+    }
 }
