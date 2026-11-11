@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "serial": 9,
+  "serial": 10,
   "generated": "2026-11-11",
   "files": [
     {
@@ -10,8 +10,8 @@
     },
     {
       "path": "codex-versions.json",
-      "size": 46606,
-      "sha256": "4e9efe848eb8621973302c920be5055aa88adaaf1f7d37fd37742a3f138ed6f6"
+      "size": 47247,
+      "sha256": "beecb25b8178669dbe43124ca7fb5e95ecff2bcba1a64968433ff2aaaad12c19"
     },
     {
       "path": "models.json",
@@ -35,8 +35,8 @@
     },
     {
       "path": "prompts.json",
-      "size": 2358,
-      "sha256": "16294718b63eff8e6c930a6a710fe12abd72e1f86226ed210459cebe7fa3dc21"
+      "size": 2406,
+      "sha256": "0e2f459b687bc0224c4b947dc1c750d805bfad605d893e2f3acdb5589efdaf82"
     }
   ]
 }

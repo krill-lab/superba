@@ -1,7 +1,7 @@
 {
   "index_format": 1,
   "catalog_format": 1,
-  "serial": 19,
+  "serial": 20,
   "generated": "2026-11-11",
   "repo": "openai/codex",
   "latest": "0.167.1",
@@ -199,6 +199,14 @@
       "changes": "dist/changes/codex-0.166.0.md"
     },
     {
+      "version": "0.167.0-alpha.4.1",
+      "tag": "rust-v0.167.0-alpha.4.1",
+      "commit": "d2c035639366e0bf2c316aa2065c24aabc12bcdc",
+      "prerelease": true,
+      "path": "dist/codex-0.167.0-alpha.4.1.json",
+      "changes": "dist/changes/codex-0.167.0-alpha.4.1.md"
+    },
+    {
       "version": "0.167.0",
       "tag": "rust-v0.167.0",
       "commit": "086ccc833bc9cf01024ad2dd6af7dbd421b6bf9a",
@@ -350,6 +358,11 @@
       "size": 326004
     },
     {
+      "path": "dist/codex-0.167.0-alpha.4.1.json",
+      "sha256": "b05d5e504af786c83a35e631b71c1a9c58f3ecbd23fb2894b2632e33919468fe",
+      "size": 339052
+    },
+    {
       "path": "dist/codex-0.167.0.json",
       "sha256": "5eac44d729be804c715dbfa035c2ba4bf7a0ae2eefdf3d2d96f22042f3a30c80",
       "size": 336359
@@ -376,8 +389,8 @@
     },
     {
       "path": "overlay/config-apps.toml",
-      "sha256": "6f006f64f91f323df509fcaa1fcf3889a5b391794b2a5944adb47ef28fb4f334",
-      "size": 32036
+      "sha256": "24cd10c72e473ef164d8060d72a655963b998c0aacdce7174d812c7e7c11f4bc",
+      "size": 32176
     },
     {
       "path": "overlay/config-context.toml",
@@ -391,8 +404,8 @@
     },
     {
       "path": "overlay/config-interface.toml",
-      "sha256": "4ba2d32470920c1145d0294f16f11b6cb64dbb56b65a4e4de74817f770d251d0",
-      "size": 112432
+      "sha256": "fa92eb3be023c2a96f3e407ff284138ba4adfb00d17c80928a47856c9c5c2805",
+      "size": 112434
     },
     {
       "path": "overlay/config-mcp.toml",
@@ -411,8 +424,8 @@
     },
     {
       "path": "overlay/config-provider.toml",
-      "sha256": "eac4045dff0cf98d64daa1954a499519985fc82ce72df5539b07f5932a1120e4",
-      "size": 37469
+      "sha256": "834986e08778bc4d9925aa8ed2f72dc799738bf6795f10fc5771d2b0e357a0f3",
+      "size": 37509
     },
     {
       "path": "overlay/config-realtime.toml",
@@ -426,8 +439,8 @@
     },
     {
       "path": "overlay/config-telemetry.toml",
-      "sha256": "ebc3053242dc054703d6ef941aa651b3c9ac1f6ff7293d9ce4dbb91c4582041d",
-      "size": 25699
+      "sha256": "5848c4c9a32a229d3be75375013c0c7f64517bf71fe3fde7f07766a54b53e2b7",
+      "size": 25709
     },
     {
       "path": "overlay/config-tools.toml",
@@ -436,8 +449,8 @@
     },
     {
       "path": "overlay/features.toml",
-      "sha256": "e93ba8404c602fda15fed4856891eecb0859ea3b188c21c2ae7dedbd80ad0872",
-      "size": 69125
+      "sha256": "8ce5044a103d03c4fc58027d2f30ad6c1e137c74dd34eb503a7dfbb5e3323064",
+      "size": 69135
     }
   ]
 }

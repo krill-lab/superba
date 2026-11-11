@@ -13,6 +13,7 @@ latest_prerelease = true
 # 0.163.0-alpha.10.2: desktop app 26.1013 (26.1013.31256, 26.1013.40934).
 # 0.164.0-alpha.11.1: desktop app 26.1021 (26.1021.22027).
 # 0.166.0-alpha.6: desktop app 26.1029.61003 (catalog/feeds/app-versions.json).
-extra_versions = ["0.162.0-alpha.17.2", "0.163.0-alpha.10.2", "0.164.0-alpha.11.1", "0.166.0-alpha.6"]
+# 0.167.0-alpha.4.1: desktop app 26.1106.51428 (catalog/feeds/app-versions.json).
+extra_versions = ["0.162.0-alpha.17.2", "0.163.0-alpha.10.2", "0.164.0-alpha.11.1", "0.166.0-alpha.6", "0.167.0-alpha.4.1"]
 # Versions never included.
 exclude_versions = []

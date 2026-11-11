@@ -36,7 +36,15 @@
       "prerelease": true,
       "bundled_by": [
         "26.1106.51428"
-      ]
+      ],
+      "sha256": {
+        "aarch64-apple-darwin": "6e769677fd2bf7394566f926448691a40f229179ed66e7d7a7a0162a37dc1608",
+        "aarch64-pc-windows-msvc": "c36d2bbf4b674ce7df7b42c10ac00871415c5ce956bfc56045c57d67c5acefe6",
+        "aarch64-unknown-linux-musl": "3ae3c19997b867916cca62e107dba95fafaad54f143bd34ee607cd2bba64a34c",
+        "x86_64-apple-darwin": "ef55b7cac330981fb2b414431c702897e8318a429885c8a2714e4a03d721d49e",
+        "x86_64-pc-windows-msvc": "204f6b6e5ed0c3584e83d26a26003130ca7ecae86cdbd44a92d165f3e9fe7203",
+        "x86_64-unknown-linux-musl": "ced3b7e102b302fe2f6aacfcd1076d6f6931a503d6eb47cd2c1c8847b9932e02"
+      }
     },
     {
       "version": "0.166.0",

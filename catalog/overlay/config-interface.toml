@@ -334,7 +334,7 @@ zh_basis = "e269114b1ce608f6"
 
 ["config:tui.default_hosts"]
 en = "Preferred hosts for new conversations, indexed by project and local user identity. Read from the user configuration only; values are never endpoints or credentials."
-en_source = "openai/codex rust-v0.169.0-alpha.10: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.167.0-alpha.4.1: codex-rs/core/config.schema.json"
 en_hash = "b97d068da11e60e9"
 zh_name = "项目默认运行主机"
 zh = "依据源码推断，保存新会话按项目和本地用户身份选择的默认运行主机，仅从用户配置读取。内容是已发现主机的标识，不是连接地址或凭据；切换新会话的运行主机会更新对应记录。"
@@ -905,7 +905,7 @@ zh_basis = ""
 
 ["config:tui.keymap.global.change_host"]
 en = "Change where a new conversation runs."
-en_source = "openai/codex rust-v0.169.0-alpha.10: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.167.0-alpha.4.1: codex-rs/core/config.schema.json"
 en_hash = "939152b8e04e338b"
 zh_name = "切换运行主机键"
 zh = "依据源码推断，自定义切换新会话运行主机的快捷键；只有界面显示新会话主机选择控件时才响应。它在可用主机间切换新会话的后端。"
