@@ -108,7 +108,7 @@ pub fn reexec_without_link(args: &[OsString], link: &Result<ImportLink, LinkErro
             Err(e) => return e.to_string(),
         };
         let rest = without_links(args);
-        let mut command = std::process::Command::new(exe);
+        let mut command = superba_core::process::command(exe);
         if let Some(argv0) = rest.first() {
             command.arg0(argv0);
         }
