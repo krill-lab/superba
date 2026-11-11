@@ -137,8 +137,6 @@ fn round_trip(original_url: bool, custom_provider: bool, repeated: bool) {
             id,
             "--site",
             id,
-            "--auth",
-            "apikey",
             "--key-env",
             "RESTORE_TEST_KEY",
         ]);

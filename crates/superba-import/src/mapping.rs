@@ -7,10 +7,10 @@ use std::collections::BTreeMap;
 
 use superba_core::catalog::{self, KRILL_SITE_ID};
 use superba_core::{
-    AuthChoice, AuthMode, CandidateStatus, CodexSettings, ConflictAction, ForeignApp,
-    ImportCandidate, ImportConflict, ImportKey, ImportLine, ImportScan, ImportSelection,
-    ImportTarget, Line, LineId, LineSource, LocalizedText, ModelDefaults, Origin, Profile,
-    ProfileId, ProfileSet, Secret, Site, SiteId, SiteKind, SourceScan,
+    AuthMode, CandidateStatus, CodexSettings, ConflictAction, ForeignApp, ImportCandidate,
+    ImportConflict, ImportKey, ImportLine, ImportScan, ImportSelection, ImportTarget, Line, LineId,
+    LineSource, LocalizedText, ModelDefaults, Origin, Profile, ProfileId, ProfileSet, Secret, Site,
+    SiteId, SiteKind, SourceScan,
 };
 use url::Url;
 
@@ -603,7 +603,7 @@ pub type MakeSite<'a> = &'a dyn Fn(SiteId, &str, &Url) -> superba_core::Result<S
 
 fn new_key_profile(site: &Site, id: ProfileId, name: String) -> Profile {
     let krill = site.kind == SiteKind::Krill;
-    let mut p = Profile {
+    Profile {
         id,
         name,
         builtin: None,
@@ -612,7 +612,6 @@ fn new_key_profile(site: &Site, id: ProfileId, name: String) -> Profile {
         backup_lines: Vec::new(),
         disabled_lines: Default::default(),
         auth_mode: AuthMode::ApiKey,
-        auth: AuthChoice::ApiKey,
         key_ref: None,
         base_url_override: None,
         model: ModelDefaults::default(),
@@ -626,14 +625,7 @@ fn new_key_profile(site: &Site, id: ProfileId, name: String) -> Profile {
         compaction: Default::default(),
         anthropic: None,
         model_source: None,
-    };
-    // Like the Add dialog and the wizard: Automatic where the site offers PAT,
-    // else a plain API key.
-    if site.supports(AuthMode::Pat) {
-        p.auth_mode = AuthMode::Pat;
-        p.set_auth(AuthChoice::Auto);
     }
-    p
 }
 
 fn apply_model(profile: &mut Profile, t: &ImportTarget) {

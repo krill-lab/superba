@@ -4,10 +4,9 @@ use std::path::Path;
 
 use pretty_assertions::assert_eq;
 use superba_core::{
-    AuthApiHealth, AuthFamily, AuthMode, BlockReason, CheckResult, CodexProcessKind, CodexVersion,
-    ConsumerKind, ConsumerRestart, EnvObservation, FullRestartReason, Line, LineId, LineSource,
-    LocalizedText, Origin, ProcessInfo, RestartKind, SiteKind, TargetId, Timestamp, Verification,
-    catalog, codex::VersionCapability,
+    AuthFamily, AuthMode, BlockReason, CheckResult, CodexProcessKind, CodexVersion, ConsumerKind,
+    ConsumerRestart, EnvObservation, FullRestartReason, ProcessInfo, RestartKind, SiteKind,
+    TargetId, Timestamp, Verification, catalog, codex::VersionCapability,
 };
 use superba_switch::rules::{
     self, AppFacts, ConsumerRole, LocalFacts, VersionGate, VersionedConsumer,
@@ -24,18 +23,8 @@ fn full(reason: FullRestartReason) -> RestartKind {
     RestartKind::FullAppRestart { reason }
 }
 
-fn running(
-    cdp: bool,
-    bridge_ready: bool,
-    env: EnvObservation,
-    health: Option<AuthApiHealth>,
-) -> AppFacts {
-    AppFacts::Running {
-        cdp,
-        bridge_ready,
-        authapi_env: env,
-        authapi_health: health,
-    }
+fn running(cdp: bool, bridge_ready: bool) -> AppFacts {
+    AppFacts::Running { cdp, bridge_ready }
 }
 
 fn ready_facts() -> LocalFacts {
@@ -44,35 +33,9 @@ fn ready_facts() -> LocalFacts {
         migration: false,
         current_family: Some(AuthFamily::Token),
         target_family: Some(AuthFamily::Token),
-        target_needs_authapi: true,
-        app: running(true, true, valid_env(), Some(AuthApiHealth::Healthy)),
+        app: running(true, true),
         hot_supported: true,
     }
-}
-
-fn valid_env() -> EnvObservation {
-    EnvObservation::Present("https://relay.example".into())
-}
-
-fn environments() -> [EnvObservation; 6] {
-    [
-        EnvObservation::Absent,
-        EnvObservation::Unknown,
-        EnvObservation::Present(String::new()),
-        EnvObservation::Present(" \t\n".into()),
-        EnvObservation::Present("\u{2003}".into()),
-        valid_env(),
-    ]
-}
-
-fn health_states() -> [Option<AuthApiHealth>; 3] {
-    [
-        None,
-        Some(AuthApiHealth::Unhealthy {
-            reason: "whoami timed out".into(),
-        }),
-        Some(AuthApiHealth::Healthy),
-    ]
 }
 
 #[test]
@@ -152,7 +115,7 @@ fn rule_3_cross_family_precedes_every_hot_prerequisite() {
         let facts = LocalFacts {
             current_family: Some(AuthFamily::ChatGpt),
             hot_supported,
-            app: running(false, false, EnvObservation::Absent, None),
+            app: running(false, false),
             ..ready_facts()
         };
         assert_eq!(
@@ -163,7 +126,7 @@ fn rule_3_cross_family_precedes_every_hot_prerequisite() {
 }
 
 #[test]
-fn rule_4_stopped_app_ignores_platform_and_authapi_requirements() {
+fn rule_4_stopped_app_ignores_platform_requirements() {
     // Plan 7.1 rules 4/5: with no migration or blocks, a stopped app needs no restart.
     let facts = LocalFacts {
         app: AppFacts::NotRunning,
@@ -176,108 +139,28 @@ fn rule_4_stopped_app_ignores_platform_and_authapi_requirements() {
 }
 
 #[test]
-fn rule_5_checks_platform_then_cdp_then_bridge_before_authapi() {
-    // Plan 7.1 rules 5/6: each prerequisite beats the next, including missing PAT env.
-    for (hot_supported, cdp, bridge, reason) in [
-        (false, false, false, FullRestartReason::PlatformNoHot),
-        (true, false, false, FullRestartReason::NoCdp),
-        (true, true, false, FullRestartReason::NoBridge),
-        (true, true, true, FullRestartReason::AuthApiMissing),
+fn rule_5_checks_platform_then_cdp_then_bridge() {
+    // Plan 7.1 rule 5: each prerequisite beats the next.
+    for (hot_supported, cdp, bridge, expected) in [
+        (false, false, false, full(FullRestartReason::PlatformNoHot)),
+        (true, false, false, full(FullRestartReason::NoCdp)),
+        (true, true, false, full(FullRestartReason::NoBridge)),
+        (true, true, true, hot()),
     ] {
         let facts = LocalFacts {
             hot_supported,
-            app: running(cdp, bridge, EnvObservation::Absent, None),
+            app: running(cdp, bridge),
             ..ready_facts()
         };
-        assert_eq!(rules::decide_local(&facts), full(reason), "{facts:?}");
-    }
-}
-
-#[test]
-fn rule_6_rejects_absent_unknown_empty_and_whitespace_env_before_health() {
-    // Plan 7.1 rules 6/7: a healthy probe cannot compensate for an unusable app env.
-    for env in environments().into_iter().take(5) {
-        for health in health_states() {
-            let facts = LocalFacts {
-                app: running(true, true, env.clone(), health),
-                ..ready_facts()
-            };
-            assert_eq!(
-                rules::decide_local(&facts),
-                full(FullRestartReason::AuthApiMissing),
-                "{facts:?}"
-            );
-        }
-    }
-}
-
-#[test]
-fn rule_7_requires_an_explicitly_healthy_authapi() {
-    // Plan 7.1 rules 7/8: unchecked and unhealthy are full restarts; healthy permits hot.
-    for (health, expected) in [
-        (None, full(FullRestartReason::AuthApiUnhealthy)),
-        (
-            Some(AuthApiHealth::Unhealthy {
-                reason: "timeout".into(),
-            }),
-            full(FullRestartReason::AuthApiUnhealthy),
-        ),
-        (Some(AuthApiHealth::Healthy), hot()),
-    ] {
-        let facts = LocalFacts {
-            app: running(true, true, valid_env(), health),
-            ..ready_facts()
-        };
-        assert_eq!(rules::decide_local(&facts), expected);
-    }
-}
-
-#[test]
-fn rule_8_accepts_nonblank_env_and_sets_exact_local_ipc_flags() {
-    // Plan 7.1 rule 8: whitespace around a nonempty value does not make the env missing.
-    let facts = LocalFacts {
-        app: running(
-            true,
-            true,
-            EnvObservation::Present(" https://relay.example \t".into()),
-            Some(AuthApiHealth::Healthy),
-        ),
-        ..ready_facts()
-    };
-    assert_eq!(rules::decide_local(&facts), hot());
-}
-
-#[test]
-fn rules_6_and_7_do_not_apply_to_destinations_without_authapi() {
-    // Plan 7.1: API-key destinations bypass both PAT checks, for every observation.
-    for env in environments() {
-        for health in health_states() {
-            let facts = LocalFacts {
-                target_needs_authapi: false,
-                app: running(true, true, env.clone(), health),
-                ..ready_facts()
-            };
-            assert_eq!(rules::decide_local(&facts), hot(), "{facts:?}");
-        }
+        assert_eq!(rules::decide_local(&facts), expected, "{facts:?}");
     }
 }
 
 fn documented_decision(facts: &LocalFacts) -> RestartKind {
     // Independent declarative oracle: rank applicable rules, without calling planner helpers.
-    let (is_running, cdp, bridge, env_present, healthy) = match &facts.app {
-        AppFacts::NotRunning => (false, false, false, false, false),
-        AppFacts::Running {
-            cdp,
-            bridge_ready,
-            authapi_env,
-            authapi_health,
-        } => (
-            true,
-            *cdp,
-            *bridge_ready,
-            matches!(authapi_env, EnvObservation::Present(value) if value.chars().any(|c| !c.is_whitespace())),
-            matches!(authapi_health, Some(AuthApiHealth::Healthy)),
-        ),
+    let (is_running, cdp, bridge) = match &facts.app {
+        AppFacts::NotRunning => (false, false, false),
+        AppFacts::Running { cdp, bridge_ready } => (true, *cdp, *bridge_ready),
     };
     let cross_family = matches!(
         (facts.current_family, facts.target_family),
@@ -310,65 +193,50 @@ fn documented_decision(facts: &LocalFacts) -> RestartKind {
         ),
         (51, !cdp, full(FullRestartReason::NoCdp)),
         (52, !bridge, full(FullRestartReason::NoBridge)),
-        (
-            60,
-            facts.target_needs_authapi && !env_present,
-            full(FullRestartReason::AuthApiMissing),
-        ),
-        (
-            70,
-            facts.target_needs_authapi && !healthy,
-            full(FullRestartReason::AuthApiUnhealthy),
-        ),
-        (80, true, hot()),
+        (60, true, hot()),
     ]
     .into_iter()
     .filter(|(_, applies, _)| *applies)
     .min_by_key(|(rank, _, _)| *rank)
-    .expect("rule 8 always applies")
+    .expect("rule 6 always applies")
     .2
 }
 
 #[test]
 fn all_local_fact_combinations_follow_the_documented_first_match_order() {
-    // Plan 7.1 rules 1-8: 20,736 combinations also exercise non-adjacent precedence.
+    // Plan 7.1 rules 1-6: every combination also exercises non-adjacent precedence.
     let families = [None, Some(AuthFamily::Token), Some(AuthFamily::ChatGpt)];
     let mut checked = 0;
-    for mask in 0..128 {
+    for mask in 0..64 {
         let flag = |bit| mask & (1 << bit) != 0;
         for current_family in families {
             for target_family in families {
-                for env in environments() {
-                    for health in health_states() {
-                        let facts = LocalFacts {
-                            blocks: if flag(0) {
-                                vec![BlockReason::MissingKey]
-                            } else {
-                                vec![]
-                            },
-                            migration: flag(1),
-                            app: if flag(2) {
-                                running(flag(4), flag(5), env.clone(), health)
-                            } else {
-                                AppFacts::NotRunning
-                            },
-                            hot_supported: flag(3),
-                            target_needs_authapi: flag(6),
-                            current_family,
-                            target_family,
-                        };
-                        assert_eq!(
-                            rules::decide_local(&facts),
-                            documented_decision(&facts),
-                            "{facts:?}"
-                        );
-                        checked += 1;
-                    }
-                }
+                let facts = LocalFacts {
+                    blocks: if flag(0) {
+                        vec![BlockReason::MissingKey]
+                    } else {
+                        vec![]
+                    },
+                    migration: flag(1),
+                    app: if flag(2) {
+                        running(flag(4), flag(5))
+                    } else {
+                        AppFacts::NotRunning
+                    },
+                    hot_supported: flag(3),
+                    current_family,
+                    target_family,
+                };
+                assert_eq!(
+                    rules::decide_local(&facts),
+                    documented_decision(&facts),
+                    "{facts:?}"
+                );
+                checked += 1;
             }
         }
     }
-    assert_eq!(checked, 20_736);
+    assert_eq!(checked, 576);
 }
 
 #[test]
@@ -425,22 +293,12 @@ fn remote_hot_requires_a_nonblank_host_and_preserves_its_id() {
 }
 
 #[test]
-fn version_table_and_lookup_pin_all_three_capability_thresholds() {
-    // Plan 9.8: base URL starts at 0.149; PAT and accounts-check start at 0.160.
-    let expected = [
-        (
-            VersionCapability::TopLevelOpenaiBaseUrl,
-            CodexVersion::new(0, 149, 0),
-        ),
-        (
-            VersionCapability::PersonalAccessToken,
-            CodexVersion::new(0, 160, 0),
-        ),
-        (
-            VersionCapability::WhamAccountsCheck,
-            CodexVersion::new(0, 160, 0),
-        ),
-    ];
+fn version_table_and_lookup_pin_the_capability_threshold() {
+    // Plan 9.8: top-level openai_base_url starts at 0.149.
+    let expected = [(
+        VersionCapability::TopLevelOpenaiBaseUrl,
+        CodexVersion::new(0, 149, 0),
+    )];
     assert_eq!(rules::VERSION_TABLE, expected.as_slice());
     for (capability, version) in expected {
         assert_eq!(rules::min_version(capability), version);
@@ -460,18 +318,12 @@ fn required_capabilities_cover_every_site_and_auth_combination() {
             None,
             Some(AuthMode::OfficialChatGpt),
             Some(AuthMode::ApiKey),
-            Some(AuthMode::Pat),
         ] {
             let expected = match (site, auth) {
                 (Some(SiteKind::Official), _) | (_, None | Some(AuthMode::OfficialChatGpt)) => {
                     vec![]
                 }
                 (_, Some(AuthMode::ApiKey)) => vec![VersionCapability::TopLevelOpenaiBaseUrl],
-                (_, Some(AuthMode::Pat)) => vec![
-                    VersionCapability::TopLevelOpenaiBaseUrl,
-                    VersionCapability::PersonalAccessToken,
-                    VersionCapability::WhamAccountsCheck,
-                ],
                 _ => unreachable!("all current variants are listed"),
             };
             assert_eq!(
@@ -517,7 +369,7 @@ fn no_capabilities_means_no_gates_even_for_old_or_unknown_consumers() {
         VersionGate::default()
     );
     assert_eq!(
-        rules::gate_versions(&[], &[VersionCapability::PersonalAccessToken]),
+        rules::gate_versions(&[], &[VersionCapability::TopLevelOpenaiBaseUrl]),
         VersionGate::default()
     );
 }
@@ -531,10 +383,7 @@ fn unknown_versions_are_deduplicated_by_label_in_first_seen_order() {
         versioned("second", ConsumerRole::Cli, None),
         versioned("first", ConsumerRole::Remote, None),
     ];
-    let caps = [
-        VersionCapability::PersonalAccessToken,
-        VersionCapability::WhamAccountsCheck,
-    ];
+    let caps = [VersionCapability::TopLevelOpenaiBaseUrl];
     assert_eq!(
         rules::gate_versions(&consumers, &caps),
         VersionGate {
@@ -574,62 +423,35 @@ fn version_gates_separate_cli_from_app_and_remote_and_preserve_order() {
 }
 
 #[test]
-fn each_consumer_reports_only_a_strictest_failing_capability() {
-    // Plan 9.8: cap order and duplicates do not produce multiple reasons per consumer.
+fn each_consumer_reports_one_reason_even_for_repeated_capabilities() {
+    // Plan 9.8: duplicates do not produce multiple reasons per consumer.
     let found = CodexVersion::new(0, 148, 9);
-    for caps in [
-        vec![
-            VersionCapability::PersonalAccessToken,
-            VersionCapability::TopLevelOpenaiBaseUrl,
-        ],
-        vec![
-            VersionCapability::TopLevelOpenaiBaseUrl,
-            VersionCapability::PersonalAccessToken,
-        ],
-        vec![
-            VersionCapability::PersonalAccessToken,
-            VersionCapability::PersonalAccessToken,
-        ],
-    ] {
-        let consumers = [versioned("app", ConsumerRole::App, Some(found.clone()))];
-        assert_eq!(
-            rules::gate_versions(&consumers, &caps),
-            VersionGate {
-                blocks: vec![too_old(
-                    "app",
-                    found.clone(),
-                    VersionCapability::PersonalAccessToken,
-                    CodexVersion::new(0, 160, 0)
-                )],
-                ..VersionGate::default()
-            }
-        );
-    }
-    let consumers = [versioned("app", ConsumerRole::App, Some(found))];
+    let consumers = [versioned("app", ConsumerRole::App, Some(found.clone()))];
     let gate = rules::gate_versions(
         &consumers,
         &[
             VersionCapability::TopLevelOpenaiBaseUrl,
-            VersionCapability::PersonalAccessToken,
-            VersionCapability::WhamAccountsCheck,
+            VersionCapability::TopLevelOpenaiBaseUrl,
         ],
     );
-    assert_eq!(gate.blocks.len(), 1);
-    assert!(
-        matches!(&gate.blocks[0], BlockReason::VersionTooOld { capability: VersionCapability::PersonalAccessToken | VersionCapability::WhamAccountsCheck, required, .. } if *required == CodexVersion::new(0, 160, 0))
+    assert_eq!(
+        gate,
+        VersionGate {
+            blocks: vec![too_old(
+                "app",
+                found,
+                VersionCapability::TopLevelOpenaiBaseUrl,
+                CodexVersion::new(0, 149, 0)
+            )],
+            ..VersionGate::default()
+        }
     );
-    assert!(gate.cli_too_old.is_empty());
-    assert!(gate.unknown.is_empty());
 }
 
 #[test]
 fn version_gate_boundaries_ignore_prereleases_but_not_lower_release_triples() {
     // Plan 9.8: exact minima and bundled prereleases pass; the preceding minor fails.
-    for (capability, minimum) in [
-        (VersionCapability::TopLevelOpenaiBaseUrl, 149),
-        (VersionCapability::PersonalAccessToken, 160),
-        (VersionCapability::WhamAccountsCheck, 160),
-    ] {
+    for (capability, minimum) in [(VersionCapability::TopLevelOpenaiBaseUrl, 149)] {
         for role in [ConsumerRole::App, ConsumerRole::Remote, ConsumerRole::Cli] {
             for (version, passes) in [
                 (CodexVersion::new(0, minimum - 1, 999), false),
@@ -971,106 +793,6 @@ fn line_lookup_rejects_unknown_origins_and_invalid_urls() {
 }
 
 #[test]
-fn launch_authapi_origin_prefers_krill_destination_then_krill_active_then_default() {
-    // Plan 7.1 launch note: destination > active Krill origin > the configured Krill default.
-    let site = catalog::krill_site();
-    let destination = &site.lines[0];
-    let active = &site.lines[2];
-    let foreign = Line {
-        id: LineId::new("foreign"),
-        name: LocalizedText::new("test.foreign", "Foreign"),
-        origin: Origin::parse("https://foreign.example").unwrap(),
-        source: LineSource::Test,
-    };
-    for (dest, is_krill, current, expected) in [
-        (Some(destination), true, Some(active), &destination.origin),
-        (Some(destination), true, None, &destination.origin),
-        (Some(&foreign), false, Some(active), &active.origin),
-        (None, true, Some(active), &active.origin),
-        (Some(&foreign), false, Some(&foreign), &site.lines[1].origin),
-        (None, false, None, &site.lines[1].origin),
-    ] {
-        assert_eq!(
-            rules::launch_authapi_origin(&site, dest, is_krill, current),
-            Some(expected.clone())
-        );
-    }
-    let alias = Line {
-        id: LineId::new("alias"),
-        ..active.clone()
-    };
-    assert_eq!(
-        rules::launch_authapi_origin(&site, None, false, Some(&alias)),
-        Some(active.origin.clone())
-    );
-}
-
-#[test]
-fn active_krill_site_follows_the_applied_krill_kind_site_including_test_sites() {
-    // Found by the e2e harness: `spb launch` with a profile on an e2e test site
-    // (Krill kind, loopback lines) injected the built-in Krill default line.
-    let krill = catalog::krill_site();
-    let mut test = catalog::krill_site();
-    test.id = superba_core::SiteId::new("krill-e2e");
-    test.lines = vec![Line {
-        id: LineId::new("a"),
-        name: LocalizedText::new("", "Line A"),
-        origin: Origin::parse("https://127.0.0.1:18001").unwrap(),
-        source: LineSource::Test,
-    }];
-    let mut compat = catalog::krill_site();
-    compat.id = superba_core::SiteId::new("compat");
-    compat.kind = SiteKind::Compatible;
-    let sites = vec![krill.clone(), test.clone(), compat.clone()];
-    let a = LineId::new("a");
-
-    let (site, line) = rules::active_krill_site(&sites, Some(&test.id), Some(&a));
-    assert_eq!(site.id, test.id);
-    assert_eq!(
-        rules::launch_authapi_origin(&site, None, false, line.as_ref()),
-        Some(test.lines[0].origin.clone())
-    );
-    // The built-in Krill site's own lines keep working.
-    let overseas = &krill.lines[1];
-    let (site, line) = rules::active_krill_site(&sites, Some(&krill.id), Some(&overseas.id));
-    assert_eq!(line.as_ref(), Some(overseas));
-    assert_eq!(site.id, krill.id);
-    // Non-Krill sites, unknown lines and no applied profile fall back to the
-    // built-in Krill site without an active line (its default line).
-    for (s, l) in [
-        (Some(&compat.id), Some(&compat.lines[0].id)),
-        (Some(&test.id), Some(&LineId::new("missing"))),
-        (None, None),
-    ] {
-        let (site, line) = rules::active_krill_site(&sites, s, l);
-        assert_eq!(site.id, krill.id);
-        assert_eq!(line, None);
-        assert_eq!(
-            rules::launch_authapi_origin(&site, None, false, None),
-            krill.default_line().map(|l| l.origin.clone())
-        );
-    }
-    // Without the built-in site in the list the catalog's is used.
-    let (site, _) = rules::active_krill_site(&[], None, None);
-    assert_eq!(site.id, krill.id);
-}
-
-#[test]
-fn launch_authapi_origin_uses_first_line_if_default_is_missing_and_none_for_empty_site() {
-    // Plan 7.1 launch note: default fallback remains defined without a configured default id.
-    let mut site = catalog::krill_site();
-    for default_line in [None, Some(LineId::new("missing"))] {
-        site.default_line = default_line;
-        assert_eq!(
-            rules::launch_authapi_origin(&site, None, false, None),
-            Some(site.lines[0].origin.clone())
-        );
-    }
-    site.lines.clear();
-    assert_eq!(rules::launch_authapi_origin(&site, None, false, None), None);
-}
-
-#[test]
 fn verification_summary_lists_failed_and_pending_checks_in_verification_order() {
     // Plan 7.2 Verifying -> Recovery: diagnostics retain process/files/auth/line/renderer order.
     let verification = Verification {
@@ -1151,33 +873,6 @@ fn retry_ipc_only_helps_a_failed_process_check() {
 fn linux_supports_hot_switching() {
     // Plan 7.1 rule 5: Linux has the verified hot restart implementation.
     assert!(rules::platform_hot_supported());
-}
-
-#[test]
-fn pat_version_ok_needs_every_known_local_codex_to_support_pat() {
-    let v = |minor| Some(CodexVersion::new(0, minor, 0));
-    let app = |version| versioned("app", ConsumerRole::App, version);
-    let cli = |version| versioned("cli", ConsumerRole::Cli, version);
-    assert_eq!(rules::pat_version_ok(&[]), None);
-    assert_eq!(
-        rules::pat_version_ok(&[app(v(162)), cli(v(160))]),
-        Some(true)
-    );
-    // Old enough for openai_base_url (API key) but not for PAT.
-    assert_eq!(
-        rules::pat_version_ok(&[app(v(150)), cli(v(162))]),
-        Some(false)
-    );
-    assert_eq!(
-        rules::pat_version_ok(&[app(v(162)), cli(v(159))]),
-        Some(false)
-    );
-    // A known too-old version decides even when another one is unknown.
-    assert_eq!(
-        rules::pat_version_ok(&[app(None), cli(v(150))]),
-        Some(false)
-    );
-    assert_eq!(rules::pat_version_ok(&[app(v(162)), cli(None)]), None);
 }
 
 #[test]

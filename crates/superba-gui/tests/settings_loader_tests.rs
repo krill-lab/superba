@@ -5,7 +5,7 @@
 //! managed settings, value conversion and the runtime `codex features list`.
 
 use pretty_assertions::assert_eq;
-use superba_core::settings::{AuthChoice, CodexSettings, SettingEntry, SettingValue};
+use superba_core::settings::{CodexSettings, SettingEntry, SettingValue};
 use superba_core::{
     AuthMode, KeyRef, ModelDefaults, Profile, ProfileId, ProfileSet, SiteId, catalog,
 };
@@ -27,7 +27,6 @@ fn profile(id: &str, site: &str) -> Profile {
         backup_lines: Vec::new(),
         disabled_lines: Default::default(),
         auth_mode: AuthMode::ApiKey,
-        auth: AuthChoice::Auto,
         key_ref: Some(KeyRef::Keyring {
             service: "superba-test".into(),
             account: id.into(),

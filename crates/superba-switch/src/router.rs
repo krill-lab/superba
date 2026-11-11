@@ -1782,34 +1782,6 @@ impl Switcher {
     }
 }
 
-impl Switcher {
-    /// Preserve custom roots before replacing their environment variable with
-    /// the router bundle. The environment persister owns restoration of the
-    /// original values and shell lines.
-    pub(crate) async fn prepare_router_certificate(&self) -> Result<()> {
-        let paths = superba_router::RouterPaths::new(&self.deps.ctx.data_dir);
-        let target = paths.client_certificate_pem();
-        let report = self.deps.env.inspect(superba_router::tls::CERT_ENV).await?;
-        let mut sources = Vec::new();
-        for value in report
-            .persisted
-            .iter()
-            .filter_map(|p| p.value.as_deref())
-            .chain(report.foreign_lines.iter().map(|l| l.value.as_str()))
-            .chain(report.process_value.value())
-        {
-            if !value.is_empty() && std::path::Path::new(value) != target {
-                sources.push(PathBuf::from(value));
-            }
-        }
-        let extend = report
-            .superba_value
-            .as_deref()
-            .is_some_and(|v| std::path::Path::new(v) == target);
-        superba_router::tls::prepare_client_bundle(&paths, &sources, extend)
-    }
-}
-
 /// Whether one of `members` is a provider of `site` that sends its key to one
 /// of the site's plain-http origins off this machine.
 pub(crate) fn plain_http_members(site: &Site, set: &ProfileSet, members: &[RoutedMember]) -> bool {

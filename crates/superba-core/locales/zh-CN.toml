@@ -12,7 +12,6 @@ overseas = "海外线路"
 cdn = "三网优化 CDN"
 
 [auth_mode]
-pat = "PAT（个人访问令牌）"
 apikey = "API Key"
 chatgpt = "官方 ChatGPT 登录"
 mixed = "官方 ChatGPT 登录 + 本地路由（混合登录）"
@@ -31,8 +30,6 @@ unknown = "意外的响应（{status}）：{message}"
 certificate_trust_changed = "需要重启 ChatGPT，才能使用更新后的本机路由证书设置。"
 no_cdp = "ChatGPT 不是从 Superba 打开的，无法热切。"
 no_bridge = "当前 ChatGPT 版本没有提供重启接口。"
-authapi_missing = "ChatGPT 启动时没有认证地址，热切后会失去登录状态。"
-authapi_unhealthy = "ChatGPT 启动时所用线路的认证地址不可用，热切后会失去登录状态。"
 cross_auth_family = "要在官方登录和 API Key 之间切换。"
 session_migration = "需要先迁移旧会话，迁移时要关闭所有 Codex 进程。"
 platform_no_hot = "此平台暂不支持热切。"
@@ -92,20 +89,15 @@ poor = "较慢"
 unknown = "无响应"
 
 [probe]
-pat_needs_https = "PAT 需要 https 线路：Codex 不接受明文 http 的 ChatGPT 后端地址。API Key 仍可使用。"
 ok = "体检全部通过。"
 unreachable = "线路不可达：{detail}"
 no_codex_path = "这条线路上没有可用的 Codex 路径：{detail}"
-pat_edge_blocked = "这条线路暂不支持 PAT：线路边缘节点拦截了 {endpoint}。API Key 仍可使用。"
-pat_unavailable = "这条线路暂不支持 PAT：{endpoint} 返回了 {status}。"
 codex_v1_fallback = "这条线路拦截了 /backend-api/codex，API Key 模式改用 /codex/v1。"
 
 [remote.warn]
 no_host_id = "ChatGPT 中没有 {host} 的主机 ID：需要在 ChatGPT 里断开并重新连接这台主机，改动才会生效。"
 pkill = "ChatGPT 重启 {host} 上的内核时，会结束这台主机上所有的 `codex app-server --listen` 进程，包括你自己启动的。"
 login_shell = "无法在 {host} 上运行登录 shell；CODEX_HOME 和环境变量是从普通 shell 读取的，可能和 ChatGPT 看到的不一致。"
-codex_missing = "在 {host} 登录 shell 的 PATH 中没有找到 codex。"
-version_unknown = "无法确定 {host} 上的 Codex 版本；PAT 需要较新的 Codex。"
 shared_home = "{host} 上的 Codex 目录最近一次是由另一台机器（{other}）写入的，可能是共享目录（例如 NFS）；这次改动会影响所有使用它的机器。"
 legacy_provider = "{host} 使用的是旧的 \"krill\" provider；迁移之前，它已有的会话在 ChatGPT 中不会显示。"
 foreign_env = "{path} 第 {line} 行把 CODEX_AUTHAPI_BASE_URL 设为 {value}，可能会覆盖 Superba 写入的值。"
@@ -125,27 +117,9 @@ rate_limited_retry = "站点限制了用量查询频率，当前显示的是已�
 rate_limited = "站点限制了用量查询频率，当前显示的是已保存的数据。"
 refresh_failed = "刷新失败（{reason}），当前显示的是已保存的数据。"
 
-[auth_choice]
-auto = "自动"
-pat = "个人访问令牌（PAT）"
-apikey = "API Key"
-
 [auth_reason]
-decision = "{mode}：{reason}"
-manual = "手动选择。"
-pat_available = "这条线路支持 PAT。"
-not_probed = "线路尚未检测，先尝试 PAT。"
-site_apikey_only = "这个站点使用 API Key。"
-custom_base_url = "已设置自定义 Base URL；PAT 需要使用站点自己的线路。"
-router_mode = "流量经过 Superba 本地路由，由它把你的 Key 当作 API Key 发送。"
-codex_too_old = "读取这份配置的 Codex 版本过旧，不支持 PAT。"
-pat_needs_https = "PAT 需要 https 线路。"
-pat_edge_blocked = "线路边缘节点拦截了 PAT 登录。"
-pat_unavailable = "这条线路不支持 PAT。"
 line_unavailable = "线路不可用。"
 no_key_mode = "这个站点不使用密钥。"
-manual_unavailable_detail = "这里无法使用{mode}：{detail}"
-manual_unavailable = "这里无法使用{mode}。"
 
 [feature_stage]
 under_development = "开发中"

@@ -375,7 +375,6 @@ impl ConfigEngine for FakeConfig {
                 _ => "1111".into(),
             };
             st.auth = match m {
-                AuthMode::Pat => AuthShape::Pat { key_last4: last4 },
                 AuthMode::ApiKey => AuthShape::ApiKey { key_last4: last4 },
                 _ => AuthShape::ChatGpt {
                     email: None,
@@ -715,7 +714,6 @@ pub fn krill_profile(id: &str, line: Option<&str>, auth: AuthMode) -> Profile {
         }),
         base_url_override: None,
         model: Default::default(),
-        auth: superba_core::AuthChoice::from_mode(auth),
         backup_lines: Vec::new(),
         disabled_lines: Default::default(),
         codex_settings: Default::default(),
@@ -732,11 +730,7 @@ pub struct FakeProber {
     /// Caps per line id (default: everything works).
     pub caps: Mutex<BTreeMap<String, LineCaps>>,
     pub probe_error: Mutex<Option<Error>>,
-    pub authapi: Mutex<BTreeMap<String, AuthApiHealth>>,
     pub models: Mutex<std::result::Result<Vec<String>, Error>>,
-    pub authapi_checks: Mutex<Vec<String>>,
-    /// Use the real origin guard and HTTP whoami for router verification tests.
-    pub http_authapi: Mutex<Option<superba_net::HttpLineProber>>,
     /// `model_list` answers (`None` = not implemented).
     pub model_list: Mutex<Option<std::result::Result<superba_core::ModelList, Error>>>,
     /// Base URLs `model_list` was called with.
@@ -754,7 +748,6 @@ pub fn good_caps(site: &str, line: &str) -> LineCaps {
         checked_at: Timestamp(T0),
         reachable: true,
         latency_ms: Some(80),
-        pat_ok: true,
         apikey_ok: true,
         codex_path: Some(CodexPath::BackendApiCodex),
         blocked_by_edge: false,
@@ -809,26 +802,6 @@ impl LineProber for FakeProber {
             access: KeyAccess::Ok,
             codex_path: Some(CodexPath::BackendApiCodex),
         })
-    }
-
-    async fn check_authapi(
-        &self,
-        site: &Site,
-        origin: &superba_core::Origin,
-        key: &Secret,
-    ) -> Result<AuthApiHealth> {
-        self.authapi_checks.lock().unwrap().push(origin.as_str());
-        let http = self.http_authapi.lock().unwrap().clone();
-        if let Some(http) = http {
-            return http.check_authapi(site, origin, key).await;
-        }
-        Ok(self
-            .authapi
-            .lock()
-            .unwrap()
-            .get(&origin.as_str())
-            .cloned()
-            .unwrap_or(AuthApiHealth::Healthy))
     }
 
     async fn list_models(&self, url: &Url, _key: &Secret) -> Result<Vec<ModelInfo>> {
@@ -2041,7 +2014,7 @@ impl FakeRemote {
                 owned.push("model".into());
             }
             *self.auth.lock().unwrap() = Some(match auth {
-                AuthMode::Pat => AuthShape::Pat {
+                AuthMode::ApiKey => AuthShape::ApiKey {
                     key_last4: key.last4(),
                 },
                 _ => AuthShape::ApiKey {
@@ -2247,18 +2220,9 @@ impl RemoteHosts for FakeRemote {
         {
             self.mirror_apply(desired);
         }
-        if !*self.preserve_authapi.lock().unwrap()
-            && let Some(ResolvedProfile {
-                mode:
-                    superba_core::ResolvedMode::Token {
-                        auth, endpoints, ..
-                    },
-                ..
-            }) = &plan.desired
-            && (auth.needs_authapi_env() || host.kind == superba_core::HostKind::Wsl)
-            && let Some(origin) = &endpoints.authapi_origin
-        {
-            *self.authapi_env.lock().unwrap() = EnvObservation::Present(origin.as_str());
+        if !*self.preserve_authapi.lock().unwrap() && plan.env.is_some() {
+            // An API key needs no auth address: the old export goes.
+            *self.authapi_env.lock().unwrap() = EnvObservation::Absent;
         }
         Ok(RemoteApplyReport {
             target_id: host.target_id.clone(),
@@ -2580,7 +2544,7 @@ impl World {
         let clock = Arc::new(ManualClock::new(Timestamp(T0)));
         let mut set = ProfileSet::default();
         set.profiles
-            .push(krill_profile("work", Some("overseas"), AuthMode::Pat));
+            .push(krill_profile("work", Some("overseas"), AuthMode::ApiKey));
         let secrets = FakeSecrets::default();
         secrets
             .map
@@ -2686,10 +2650,7 @@ impl World {
                 log: log.clone(),
                 caps: Mutex::new(BTreeMap::new()),
                 probe_error: Mutex::new(None),
-                authapi: Mutex::new(BTreeMap::new()),
                 models: Mutex::new(Ok(Vec::new())),
-                authapi_checks: Mutex::new(Vec::new()),
-                http_authapi: Mutex::new(None),
                 model_list: Mutex::new(None),
                 model_list_calls: Mutex::new(Vec::new()),
                 model_list_versions: Mutex::new(Vec::new()),
@@ -2872,4 +2833,46 @@ impl World {
         };
         aitoolbox::default_dir(&env).join(aitoolbox::DB_FILE)
     }
+}
+
+/// Turn the API-key `auth.json` the real config engine wrote into the form
+/// alpha.15 wrote for a personal access token (same key), as if Superba had
+/// written it: `state.json` records the new bytes (no drift). For the one-off
+/// alpha.16 PAT→API-key migration and the model-keep rules of such homes.
+pub fn make_pat_era(ctx: &superba_core::LocalContext) {
+    use sha2::{Digest, Sha256};
+    let home = ctx.codex_home();
+    let path = home.root().join("auth.json");
+    let old = std::fs::read(&path).unwrap();
+    let key = serde_json::from_slice::<serde_json::Value>(&old).unwrap()["OPENAI_API_KEY"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let new =
+        format!("{{\n  \"personal_access_token\": \"{key}\",\n  \"OPENAI_API_KEY\": \"{key}\"\n}}");
+    std::fs::write(&path, &new).unwrap();
+    let hex = |b: &[u8]| hex::encode(Sha256::digest(b));
+    let (old_sha, new_sha) = (hex(&old), hex(new.as_bytes()));
+    let state_path = ctx.data_dir.state_json();
+    let mut state: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&state_path).unwrap()).unwrap();
+    fn walk(v: &mut serde_json::Value, old: &str, new: &str) {
+        match v {
+            serde_json::Value::Object(m) => {
+                if m.get("auth_sha256").and_then(|s| s.as_str()) == Some(old) {
+                    m.insert("auth_sha256".into(), new.into());
+                    if m.contains_key("auth_snapshot") {
+                        m.insert("auth_snapshot".into(), serde_json::Value::Null);
+                    }
+                }
+                for x in m.values_mut() {
+                    walk(x, old, new);
+                }
+            }
+            serde_json::Value::Array(a) => a.iter_mut().for_each(|x| walk(x, old, new)),
+            _ => {}
+        }
+    }
+    walk(&mut state, &old_sha, &new_sha);
+    std::fs::write(&state_path, serde_json::to_vec_pretty(&state).unwrap()).unwrap();
 }

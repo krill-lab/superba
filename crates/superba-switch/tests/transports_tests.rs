@@ -12,10 +12,10 @@ use async_trait::async_trait;
 use fakes::*;
 use pretty_assertions::assert_eq;
 use superba_core::{
-    AccountSummary, AuthApiHealth, AuthMode, Clock, Error, KeyCheck, Line, LineCaps, LineProber,
-    LineTransportsRequest, ModelInfo, ModelList, ModelListRequest, Origin, ProfileId,
-    ResolvedEndpoints, ResponsesProbe, Result, RouterInstallRequest, Secret, Site, SwitchService,
-    TransportCheck, TransportProbe, TransportRefresh, TransportSupport, UsageQuery, UsageReport,
+    AccountSummary, AuthMode, Clock, Error, KeyCheck, Line, LineCaps, LineProber,
+    LineTransportsRequest, ModelInfo, ModelList, ModelListRequest, ProfileId, ResolvedEndpoints,
+    ResponsesProbe, Result, RouterInstallRequest, Secret, Site, SwitchService, TransportCheck,
+    TransportProbe, TransportRefresh, TransportSupport, UsageQuery, UsageReport,
 };
 use superba_router::config::RouterConfig;
 use superba_router::watchdog::Liveness;
@@ -42,9 +42,6 @@ impl LineProber for TransportProber {
     }
     async fn check_key(&self, _: &Site, _: &Line, _: AuthMode, _: &Secret) -> Result<KeyCheck> {
         Err(Error::not_implemented("check_key"))
-    }
-    async fn check_authapi(&self, _: &Site, _: &Origin, _: &Secret) -> Result<AuthApiHealth> {
-        Err(Error::not_implemented("check_authapi"))
     }
     async fn list_models(&self, _: &Url, _: &Secret) -> Result<Vec<ModelInfo>> {
         Err(Error::not_implemented("list_models"))

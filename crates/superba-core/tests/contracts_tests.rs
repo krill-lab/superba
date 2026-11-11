@@ -122,7 +122,7 @@ fn switch_plan(primary: RestartKind) -> SwitchPlan {
             profile_id: Some("work".into()),
             site_id: Some("krill".into()),
             line_id: Some("overseas".into()),
-            auth_mode: Some(AuthMode::Pat),
+            auth_mode: Some(AuthMode::ApiKey),
             label: LocalizedText::new("test.destination", "Work"),
         },
         primary,
@@ -311,15 +311,13 @@ fn line_capabilities_require_reachability_a_path_and_the_requested_auth_support(
             Some(CodexPath::CodexV1),
             Some(CodexPath::AsIs),
         ] {
-            for (pat_ok, apikey_ok) in [(false, false), (true, false), (false, true), (true, true)]
-            {
+            for apikey_ok in [false, true] {
                 let caps = LineCaps {
                     site_id: "krill".into(),
                     line_id: "overseas".into(),
                     checked_at: Timestamp::EPOCH,
                     reachable,
                     latency_ms: None,
-                    pat_ok,
                     apikey_ok,
                     codex_path: path,
                     blocked_by_edge: false,
@@ -327,11 +325,6 @@ fn line_capabilities_require_reachability_a_path_and_the_requested_auth_support(
                     checks: vec![],
                     detail: None,
                 };
-                assert_eq!(
-                    caps.allows(AuthMode::Pat),
-                    reachable && path == Some(CodexPath::BackendApiCodex) && pat_ok,
-                    "{caps:?}"
-                );
                 assert_eq!(
                     caps.allows(AuthMode::ApiKey),
                     reachable && path.is_some() && apikey_ok,
@@ -537,15 +530,12 @@ fn target_ids_distinguish_local_and_remote_and_local_consumers_share_a_home() {
 
 #[test]
 fn auth_mode_and_shape_helpers_agree_on_token_and_chatgpt_families() {
-    for (mode, family, key, authapi) in [
-        (AuthMode::Pat, AuthFamily::Token, true, true),
-        (AuthMode::ApiKey, AuthFamily::Token, true, false),
-        (AuthMode::OfficialChatGpt, AuthFamily::ChatGpt, false, false),
+    for (mode, family, key) in [
+        (AuthMode::ApiKey, AuthFamily::Token, true),
+        (AuthMode::OfficialChatGpt, AuthFamily::ChatGpt, false),
     ] {
         assert_eq!(mode.family(), family);
         assert_eq!(mode.uses_key(), key);
-        assert_eq!(mode.needs_authapi_env(), authapi);
-        assert_eq!(mode.writes_chatgpt_base_url(), authapi);
     }
     for (shape, mode) in [
         (AuthShape::Missing, None),
@@ -559,7 +549,7 @@ fn auth_mode_and_shape_helpers_agree_on_token_and_chatgpt_families() {
             AuthShape::Pat {
                 key_last4: "abcd".into(),
             },
-            Some(AuthMode::Pat),
+            None,
         ),
         (
             AuthShape::ApiKey {
@@ -576,6 +566,11 @@ fn auth_mode_and_shape_helpers_agree_on_token_and_chatgpt_families() {
         ),
     ] {
         assert_eq!(shape.mode(), mode);
-        assert_eq!(shape.family(), mode.map(AuthMode::family));
+        let family = match shape {
+            // A personal access token Superba wrote before user bug 139 is a key.
+            AuthShape::Pat { .. } => Some(AuthFamily::Token),
+            _ => mode.map(AuthMode::family),
+        };
+        assert_eq!(shape.family(), family);
     }
 }

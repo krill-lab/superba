@@ -15,10 +15,10 @@ use std::time::{Duration, SystemTime};
 use common::{FakeEngine, engine, host, original_profile, token_profile};
 use pretty_assertions::assert_eq;
 use superba_core::codex::ENV_AUTHAPI_BASE_URL;
-use superba_core::env::{LEGACY_COMMENT_PREFIX, MARKER_BEGIN};
+use superba_core::env::MARKER_BEGIN;
 use superba_core::{
-    AuthMode, AuthShape, BlockReason, CodexHome, ConfigEngine, DataDir, EnvObservation, Error,
-    FileChange, HostSource, RemoteHost, RemoteHosts, StashScope,
+    AuthMode, AuthShape, BlockReason, CodexHome, DataDir, EnvObservation, Error, HostSource,
+    RemoteHost, RemoteHosts,
 };
 use superba_remote::script::{Expect, FileOp, Mode, WriteSpec, new_nonce, write_script};
 use superba_remote::ssh::RemoteShell;
@@ -54,7 +54,7 @@ struct Env {
     _tmp: TempDir,
     home: PathBuf,
     data: DataDir,
-    engine: Arc<FakeEngine>,
+    _engine: Arc<FakeEngine>,
     hosts: SshRemoteHosts,
 }
 
@@ -106,7 +106,7 @@ fn setup(shell: Option<&str>) -> Env {
         _tmp: tmp,
         home,
         data,
-        engine,
+        _engine: engine,
         hosts,
     }
 }
@@ -186,156 +186,12 @@ async fn login_shell_view_sets_codex_home_env_and_codex_version() {
 }
 
 #[tokio::test]
-async fn pat_apply_writes_files_env_marker_and_backups_then_rolls_back() {
-    let env = setup(Some("/bin/bash"));
-    let h = devbox();
-    let desired = token_profile(ORIGIN, AuthMode::Pat, KEY);
-    let plan = env.hosts.plan_apply(&h, &desired).await.unwrap();
-    assert!(plan.blocked.is_empty(), "{:?}", plan.blocked);
-    assert!(
-        plan.files
-            .iter()
-            .all(|f| matches!(f.change, FileChange::Write { .. }))
-    );
-    assert!(plan.auth_change.as_ref().unwrap().stash_login);
-    let env_plan = plan.env.as_ref().expect("PAT writes the env");
-    assert!(!env_plan.edits.is_empty());
-    let keys: Vec<&str> = plan.warnings.iter().map(|w| w.text.key.as_str()).collect();
-    assert!(keys.contains(&"remote.warn.pkill"), "{keys:?}");
-    // No Codex on the host's login PATH (see PROFILE).
-    assert!(keys.contains(&"remote.warn.codex_missing"), "{keys:?}");
-    // Plans serialize without contents or keys.
-    let json = serde_json::to_string(&plan).unwrap();
-    assert!(!json.contains(KEY) && !json.contains("access_token"));
-
-    // Nothing written by planning.
-    assert_eq!(read(&env.home.join(".codex/auth.json")), CHATGPT_AUTH);
-
-    let report = env.hosts.apply(&h, &plan).await.unwrap();
-    let codex = env.home.join(".codex");
-    let auth = read(&codex.join("auth.json"));
-    assert!(auth.contains(KEY) && auth.contains("personal_access_token"));
-    let mode = std::fs::metadata(codex.join("auth.json"))
-        .unwrap()
-        .permissions()
-        .mode();
-    assert_eq!(mode & 0o777, 0o600);
-    let cfg = read(&codex.join("config.toml"));
-    assert!(cfg.contains("openai_base_url = \"https://api.kbsfdxc.net/backend-api/codex\""));
-    assert!(cfg.contains("[mcp_servers.docs]"), "other config is kept");
-    assert_eq!(
-        std::fs::metadata(codex.join("config.toml"))
-            .unwrap()
-            .permissions()
-            .mode()
-            & 0o777,
-        0o644,
-        "mode preserved"
-    );
-    let rc = read(&env.home.join(".bashrc"));
-    assert!(rc.starts_with(MARKER_BEGIN), "{rc}");
-    assert!(rc.contains(&format!("{LEGACY_COMMENT_PREFIX}{}", legacy_line())));
-    assert!(read(&env.home.join(".profile")).contains(MARKER_BEGIN));
-    // Marker, first-write pre-images and backups on the host.
-    let marker = read(&codex.join(".superba/remote-state.json"));
-    assert!(marker.contains("\"tool\": \"superba\""));
-    assert_eq!(
-        read(&codex.join(".superba/first-write/auth.json")),
-        CHATGPT_AUTH
-    );
-    for fw in &report.files {
-        let b = fw.backup.as_ref().expect("backup of an existing file");
-        assert!(Path::new(b).exists(), "{}", b.display());
-    }
-    assert_eq!(report.env.as_ref().unwrap().backups.len(), 2);
-    // The ChatGPT login was stashed for this remote target.
-    let stash = env
-        .engine
-        .load_login_stash(&StashScope::Remote(h.target_id.clone()))
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(stash.expose(), CHATGPT_AUTH.as_bytes());
-
-    // The app's login shell now sees the line's origin.
-    let st = env.hosts.probe(&h).await.unwrap();
-    assert_eq!(st.authapi_env, EnvObservation::Present(ORIGIN.into()));
-    assert!(matches!(st.auth, AuthShape::Pat { .. }));
-    assert_eq!(st.machine_id, st.marker_machine_id);
-    assert!(!st.shared_home_suspected());
-    // The settings engine sees the host's file and the keys Superba owns there.
-    assert_eq!(
-        st.config_toml.as_ref().map(|b| b.expose().to_vec()),
-        Some(std::fs::read(codex.join("config.toml")).unwrap())
-    );
-    assert!(st.owned_paths.iter().any(|p| p == "openai_base_url"));
-    assert!(
-        !serde_json::to_string(&st).unwrap().contains("config_toml"),
-        "file contents are never serialized"
-    );
-
-    // Re-planning the same profile is a no-op.
-    let again = env.hosts.plan_apply(&h, &desired).await.unwrap();
-    assert!(
-        again
-            .files
-            .iter()
-            .all(|f| f.change == FileChange::Unchanged)
-    );
-    assert!(again.env.is_none());
-    let noop = env.hosts.apply(&h, &again).await.unwrap();
-    assert!(noop.files.is_empty() && noop.env.is_none());
-
-    let store = HostStore::new(&env.data, &h.target_id);
-    assert_eq!(store.load_state().await.unwrap().generation, 1);
-    assert!(!store.load_state().await.unwrap().last_written.is_empty());
-
-    // Rollback restores every byte.
-    env.hosts.rollback(&h, &report).await.unwrap();
-    assert_eq!(read(&codex.join("auth.json")), CHATGPT_AUTH);
-    assert_eq!(read(&codex.join("config.toml")), CONFIG);
-    assert_eq!(read(&env.home.join(".bashrc")), bashrc());
-    assert_eq!(read(&env.home.join(".profile")), PROFILE);
-    let st = store.load_state().await.unwrap();
-    assert_eq!(st.generation, 0);
-    assert!(st.last_written.is_empty());
-    // A second rollback finds everything as before and does nothing.
-    env.hosts.rollback(&h, &report).await.unwrap();
-}
-
-#[tokio::test]
-async fn a_codex_on_the_login_path_is_not_reported_missing() {
-    let env = setup(Some("/bin/bash"));
-    let h = devbox();
-    let desired = token_profile(ORIGIN, AuthMode::Pat, KEY);
-    let keys = |plan: &superba_core::RemotePlan| -> Vec<String> {
-        plan.warnings.iter().map(|w| w.text.key.clone()).collect()
-    };
-    let plan = env.hosts.plan_apply(&h, &desired).await.unwrap();
-    assert!(keys(&plan).contains(&"remote.warn.codex_missing".to_owned()));
-    // A Codex in `~/.local/bin` (the app's PATH prefix) is found, with its version.
-    write(
-        &env.home.join(".local/bin/codex"),
-        "#!/bin/sh\necho 'codex-cli 0.162.0'\n",
-        0o755,
-    );
-    let plan = env.hosts.plan_apply(&h, &desired).await.unwrap();
-    let keys = keys(&plan);
-    assert!(
-        !keys
-            .iter()
-            .any(|k| k == "remote.warn.codex_missing" || k == "remote.warn.version_unknown"),
-        "{keys:?}"
-    );
-}
-
-#[tokio::test]
 async fn restore_original_uses_first_write_images_and_restores_rc_files() {
     let env = setup(Some("/bin/bash"));
     let h = devbox();
     let plan = env
         .hosts
-        .plan_apply(&h, &token_profile(ORIGIN, AuthMode::Pat, KEY))
+        .plan_apply(&h, &token_profile(ORIGIN, AuthMode::ApiKey, KEY))
         .await
         .unwrap();
     env.hosts.apply(&h, &plan).await.unwrap();
@@ -527,15 +383,23 @@ async fn write_script_is_compare_and_swap_and_all_or_nothing() {
 async fn symlinked_rc_files_are_written_through_the_link() {
     let env = setup(Some("/bin/bash"));
     let real = env.home.join("dotfiles/bashrc");
-    write(&real, &bashrc(), 0o644);
+    // The block Superba persisted for a personal access token before user
+    // bug 139: an API-key apply removes it, through the link.
+    let block = superba_core::env::render_block(
+        &superba_core::ShellKind::Bash,
+        &[(ENV_AUTHAPI_BASE_URL, ORIGIN)],
+    );
+    let with_block = format!("{block}{}", bashrc());
+    write(&real, &with_block, 0o644);
     std::fs::remove_file(env.home.join(".bashrc")).unwrap();
     std::os::unix::fs::symlink(&real, env.home.join(".bashrc")).unwrap();
     let h = devbox();
     let plan = env
         .hosts
-        .plan_apply(&h, &token_profile(ORIGIN, AuthMode::Pat, KEY))
+        .plan_apply(&h, &token_profile(ORIGIN, AuthMode::ApiKey, KEY))
         .await
         .unwrap();
+    assert!(plan.env.is_some());
     let report = env.hosts.apply(&h, &plan).await.unwrap();
     assert!(
         std::fs::symlink_metadata(env.home.join(".bashrc"))
@@ -543,7 +407,7 @@ async fn symlinked_rc_files_are_written_through_the_link() {
             .file_type()
             .is_symlink()
     );
-    assert!(read(&real).starts_with(MARKER_BEGIN));
+    assert!(!read(&real).contains(MARKER_BEGIN));
     env.hosts.rollback(&h, &report).await.unwrap();
     assert!(
         std::fs::symlink_metadata(env.home.join(".bashrc"))
@@ -551,7 +415,7 @@ async fn symlinked_rc_files_are_written_through_the_link() {
             .file_type()
             .is_symlink()
     );
-    assert_eq!(read(&real), bashrc());
+    assert_eq!(read(&real), with_block);
 }
 
 #[tokio::test]

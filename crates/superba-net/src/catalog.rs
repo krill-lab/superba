@@ -266,22 +266,15 @@ pub fn validate_site(site: &Site) -> Result<()> {
             if caps
                 .auth_modes
                 .iter()
-                .any(|m| !matches!(m, AuthMode::Pat | AuthMode::ApiKey))
+                .any(|m| !matches!(m, AuthMode::ApiKey))
             {
                 return Err(Error::invalid(format!(
-                    "site {sid}: Krill sites offer PAT and API key only"
+                    "site {sid}: Krill sites offer API key auth only"
                 )));
             }
             if caps.codex_paths.is_empty() || caps.codex_paths.contains(&CodexPath::AsIs) {
                 return Err(Error::invalid(format!(
                     "site {sid}: Krill sites need /backend-api/codex or /codex/v1 paths"
-                )));
-            }
-            if caps.auth_modes.contains(&AuthMode::Pat)
-                && !caps.codex_paths.contains(&CodexPath::BackendApiCodex)
-            {
-                return Err(Error::invalid(format!(
-                    "site {sid}: PAT needs the /backend-api/codex path"
                 )));
             }
         }
@@ -534,7 +527,7 @@ mod tests {
             &Url::parse("https://c.example/v1").unwrap(),
         )
         .unwrap();
-        c.capabilities.auth_modes = vec![AuthMode::Pat];
+        c.capabilities.auth_modes = vec![AuthMode::OfficialChatGpt];
         assert!(validate_custom_site(&c).is_err());
     }
 
@@ -564,7 +557,10 @@ mod tests {
 
         let mut s = catalog::krill_site();
         s.capabilities.codex_paths = vec![CodexPath::CodexV1];
-        assert!(validate_site(&s).is_err(), "PAT needs backend-api");
+        assert!(
+            validate_site(&s).is_ok(),
+            "an API key also works on /codex/v1"
+        );
 
         let mut s = catalog::krill_site();
         s.lines.clear();
@@ -698,12 +694,15 @@ mod plain_http_tests {
     }
 
     #[test]
-    fn a_compatible_site_that_also_offers_pat_never_gets_plain_http() {
+    fn a_compatible_site_that_also_offers_the_official_login_never_gets_plain_http() {
         let base = Url::parse("http://192.168.1.2:8000/v1").unwrap();
         let mut site = new_compatible_site("lan".into(), "LAN", &base).unwrap();
         site.allow_plain_http = true;
         assert!(site.allows_plain_http());
-        for modes in [vec![AuthMode::ApiKey, AuthMode::Pat], vec![AuthMode::Pat]] {
+        for modes in [
+            vec![AuthMode::ApiKey, AuthMode::OfficialChatGpt],
+            vec![AuthMode::OfficialChatGpt],
+        ] {
             site.capabilities.auth_modes = modes.clone();
             assert!(!site.allows_plain_http(), "{modes:?}");
             assert!(!site.allows_plain_http_for(&base), "{modes:?}");

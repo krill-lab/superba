@@ -29,24 +29,6 @@ pub fn login_shell(host: &str) -> LocalizedText {
     .arg("host", host)
 }
 
-/// No `codex` on the login shell's PATH.
-pub fn codex_missing(host: &str) -> LocalizedText {
-    LocalizedText::new(
-        "remote.warn.codex_missing",
-        "No codex binary was found on the PATH of {host}'s login shell.",
-    )
-    .arg("host", host)
-}
-
-/// Unknown Codex version (PAT needs confirmation, plan 9.8).
-pub fn version_unknown(host: &str) -> LocalizedText {
-    LocalizedText::new(
-        "remote.warn.version_unknown",
-        "The Codex version on {host} is unknown; PAT needs a recent Codex.",
-    )
-    .arg("host", host)
-}
-
 /// The Codex home was last written from another machine (plan 8.6).
 pub fn shared_home(host: &str, other: &str) -> LocalizedText {
     LocalizedText::new(
@@ -139,8 +121,6 @@ pub fn all_samples() -> Vec<LocalizedText> {
         wsl_codex_missing("h"),
         wsl_env_scope(),
         login_shell("h"),
-        codex_missing("h"),
-        version_unknown("h"),
         shared_home("h", "m"),
         legacy_provider("h"),
         foreign_env("/p", 3, "v"),

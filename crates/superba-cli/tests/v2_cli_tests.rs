@@ -5,7 +5,7 @@ mod common;
 
 use clap::Parser;
 use common::*;
-use superba_core::{AuthChoice, LineId, ProfileId, SettingValue, SiteId, SwitchIntent};
+use superba_core::{AuthMode, LineId, ProfileId, SettingValue, SiteId, SwitchIntent};
 
 #[tokio::test]
 async fn settings_list_and_get_show_catalog_rows() {
@@ -344,7 +344,11 @@ async fn profile_add_creates_v2_profiles() {
     .await;
     assert_eq!(code, 0, "{stderr}");
     let saved = service.calls().saves.pop().unwrap().profile;
-    assert_eq!(saved.auth_choice(), AuthChoice::Auto, "Auto by default");
+    assert_eq!(
+        saved.auth_mode,
+        AuthMode::ApiKey,
+        "an API key (user bug 139)"
+    );
     assert_eq!(
         saved.line_priority(),
         vec![LineId::new("cdn"), LineId::new("overseas")]
@@ -355,19 +359,12 @@ async fn profile_add_creates_v2_profiles() {
     );
     let (code, _, _) = invoke(
         service.clone(),
-        &[
-            "profile",
-            "add",
-            "plain",
-            "--auth",
-            "apikey",
-            "--no-recommended-keys",
-        ],
+        &["profile", "add", "plain", "--no-recommended-keys"],
     )
     .await;
     assert_eq!(code, 0);
     let saved = service.calls().saves.pop().unwrap().profile;
-    assert_eq!(saved.auth_choice(), AuthChoice::ApiKey);
+    assert_eq!(saved.auth_mode, AuthMode::ApiKey);
     assert!(saved.codex_settings.is_empty());
 
     let base = url::Url::parse("https://api.acme.example/v1").unwrap();
@@ -391,8 +388,7 @@ async fn profile_edit_changes_lines_auth_and_model() {
     let (code, stdout, stderr) = invoke(
         service.clone(),
         &[
-            "profile", "edit", "work", "--line", "cdn", "--line", "cn-fast", "--auth", "pat",
-            "--model", "gpt-x",
+            "profile", "edit", "work", "--line", "cdn", "--line", "cn-fast", "--model", "gpt-x",
         ],
     )
     .await;
@@ -404,7 +400,7 @@ async fn profile_edit_changes_lines_auth_and_model() {
         saved.line_priority(),
         vec![LineId::new("cdn"), LineId::new("cn-fast")]
     );
-    assert_eq!(saved.auth_choice(), AuthChoice::Pat);
+    assert_eq!(saved.auth_mode, AuthMode::ApiKey);
     assert_eq!(saved.model.model.as_deref(), Some("gpt-x"));
     let (code, _, _) = invoke(
         service.clone(),

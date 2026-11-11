@@ -42,7 +42,7 @@ use crate::app::{
 };
 use crate::auth::AuthMode;
 use crate::caps::{
-    AccountSummary, AuthApiHealth, KeyCheck, LineCaps, ModelInfo, ResponsesProbe, SiteProbeReport,
+    AccountSummary, KeyCheck, LineCaps, ModelInfo, ResponsesProbe, SiteProbeReport,
     SiteProbeRequest,
 };
 use crate::codex::CodexVersion;
@@ -300,17 +300,6 @@ pub trait LineProber: Send + Sync {
         key: &Secret,
     ) -> Result<KeyCheck>;
 
-    /// whoami with `key` against an auth API origin (plan 7.1 rule 7: the origin the
-    /// running app was launched with). Must return `Error::Invalid` without sending
-    /// anything when `origin` is not one of `site`'s line origins (Krill: also any
-    /// Krill host), so a key never reaches a foreign origin.
-    async fn check_authapi(
-        &self,
-        site: &Site,
-        origin: &Origin,
-        key: &Secret,
-    ) -> Result<AuthApiHealth>;
-
     /// Model catalog at `openai_base_url` (`<base>/models`).
     async fn list_models(&self, openai_base_url: &Url, key: &Secret) -> Result<Vec<ModelInfo>>;
 
@@ -417,9 +406,8 @@ pub trait LineProber: Send + Sync {
     }
 
     /// [`LineProber::probe`] refined with one key (plan 3.2 `LineCaps` per line and
-    /// key): sets `key_access` from the API-key view of the authenticated models
-    /// request, and keeps `pat_ok` only if the key's PAT endpoints (whoami, accounts
-    /// check) work as well. The default composes `probe` and `check_key`;
+    /// key): sets `key_access` from the authenticated models request. The
+    /// default composes `probe` and `check_key`;
     /// implementations may need fewer requests. Costs one request of quota.
     async fn probe_with_key(&self, site: &Site, line: &Line, key: &Secret) -> Result<LineCaps> {
         let mut caps = self.probe(site, line).await?;
@@ -429,14 +417,6 @@ pub trait LineProber: Send + Sync {
         if site.supports(AuthMode::ApiKey) {
             let check = self.check_key(site, line, AuthMode::ApiKey, key).await?;
             caps.key_access = Some(check.access);
-        }
-        if site.supports(AuthMode::Pat) && caps.pat_ok {
-            let check = self.check_key(site, line, AuthMode::Pat, key).await?;
-            caps.pat_ok = check.access.is_ok()
-                && matches!(check.whoami, Some(crate::caps::AuthApiHealth::Healthy));
-            if caps.key_access.is_none() {
-                caps.key_access = Some(check.access);
-            }
         }
         Ok(caps)
     }

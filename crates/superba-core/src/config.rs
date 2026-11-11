@@ -12,7 +12,7 @@ use crate::env::{EnvSnapshot, RcLine};
 use crate::error::{Error, Result};
 use crate::i18n::Notice;
 use crate::ids::{LineId, ProfileId, SiteId};
-use crate::origin::{CodexPath, Origin, chatgpt_base_url};
+use crate::origin::{CodexPath, Origin};
 use crate::profile::ModelDefaults;
 use crate::secret::{Secret, SecretBytes};
 use crate::site::SiteKind;
@@ -28,10 +28,6 @@ pub struct ResolvedEndpoints {
     pub allow_plain_http: bool,
     /// Value of top-level `openai_base_url`.
     pub openai_base_url: Url,
-    /// Value of `chatgpt_base_url` (PAT only; `None` = restore baseline value).
-    pub chatgpt_base_url: Option<Url>,
-    /// Value for `CODEX_AUTHAPI_BASE_URL` (PAT only).
-    pub authapi_origin: Option<Origin>,
     /// The Codex path used.
     pub codex_path: CodexPath,
     /// Public router certificate to install in a managed WSL home. Never a
@@ -41,41 +37,20 @@ pub struct ResolvedEndpoints {
 }
 
 impl ResolvedEndpoints {
-    /// API-key-only transport exception. PAT endpoints never inherit it.
+    /// API-key-only transport exception (user-defined compatible sites).
     pub fn allows_plain_http(&self) -> bool {
-        self.allow_plain_http
-            && self.codex_path == CodexPath::AsIs
-            && self.chatgpt_base_url.is_none()
-            && self.authapi_origin.is_none()
+        self.allow_plain_http && self.codex_path == CodexPath::AsIs
     }
 
-    /// Endpoints for a Krill-style line: `openai_base_url = origin + path`;
-    /// PAT additionally gets `chatgpt_base_url = origin/backend-api/` and the
-    /// authapi origin. PAT requires [`CodexPath::BackendApiCodex`] (`/codex/v1` is
-    /// an API-key-only fallback); other combinations return [`Error::Invalid`].
-    pub fn for_line(origin: &Origin, path: CodexPath, mode: AuthMode) -> Result<Self> {
+    /// Endpoints for a Krill-style line: `openai_base_url = origin + path`.
+    pub fn for_line(origin: &Origin, path: CodexPath) -> Result<Self> {
         if !origin.is_https() && !origin.is_loopback() {
             return Err(Error::invalid("built-in lines require https"));
-        }
-        if mode.writes_chatgpt_base_url() && path != CodexPath::BackendApiCodex {
-            return Err(Error::invalid(format!(
-                "{mode:?} requires the /backend-api/codex path, not {path:?}"
-            )));
-        }
-        if mode.writes_chatgpt_base_url() && !origin.is_https() {
-            // Codex 0.162 rejects a plain-http chatgpt_base_url at the first turn.
-            return Err(Error::invalid(format!(
-                "{mode:?} requires an https line, not {origin}"
-            )));
         }
         Ok(Self {
             origin: origin.clone(),
             allow_plain_http: false,
             openai_base_url: path.base_url(origin),
-            chatgpt_base_url: mode
-                .writes_chatgpt_base_url()
-                .then(|| chatgpt_base_url(origin)),
-            authapi_origin: mode.needs_authapi_env().then(|| origin.clone()),
             codex_path: path,
             ca_certificate: None,
         })
@@ -112,8 +87,6 @@ impl ResolvedEndpoints {
             origin,
             allow_plain_http,
             openai_base_url: base.clone(),
-            chatgpt_base_url: None,
-            authapi_origin: None,
             codex_path: CodexPath::AsIs,
             ca_certificate: None,
         })

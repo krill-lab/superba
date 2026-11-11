@@ -3,7 +3,6 @@ mod support;
 use std::time::{Duration, Instant};
 
 use pretty_assertions::assert_eq;
-use serde_json::json;
 use superba_core::{AuthMode, CodexPath, LatencyGrade, LineProber, ProbeEndpoint};
 use tokio::time::timeout;
 
@@ -22,20 +21,16 @@ async fn healthy_relay_probes_every_endpoint_without_authorization() {
     assert!(caps.reachable);
     assert!(caps.latency_ms.is_some());
     assert_ne!(caps.latency_grade(), LatencyGrade::Unknown);
-    assert!(caps.pat_ok);
     assert!(caps.apikey_ok);
     assert_eq!(caps.codex_path, Some(CodexPath::BackendApiCodex));
     assert!(!caps.blocked_by_edge);
     assert_eq!(caps.key_access, None);
     assert_detail(&caps, "probe.ok", &[]);
-    assert!(caps.allows(AuthMode::Pat));
     assert!(caps.allows(AuthMode::ApiKey));
     assert_eq!(
         caps.checks.iter().map(|c| c.endpoint).collect::<Vec<_>>(),
         vec![
             ProbeEndpoint::ModelsUnauth,
-            ProbeEndpoint::Whoami,
-            ProbeEndpoint::WhamAccountsCheck,
             ProbeEndpoint::BackendCodexModels,
             ProbeEndpoint::CodexV1Models,
         ]
@@ -51,7 +46,7 @@ async fn healthy_relay_probes_every_endpoint_without_authorization() {
     let requests = server.recorded();
     let samples = 1 + prober.config().latency_samples as usize;
     assert_eq!(server.count(MODELS), samples);
-    assert_eq!(requests.len(), samples + 4);
+    assert_eq!(requests.len(), samples + 2);
     for request in &requests {
         assert_eq!(request.method, "GET");
         assert_eq!(request.header("authorization"), None);
@@ -64,104 +59,13 @@ async fn healthy_relay_probes_every_endpoint_without_authorization() {
     assert!(models.iter().all(|r| r.peer_addr == models[0].peer_addr));
     let backend = requests.iter().find(|r| r.path == BACKEND_MODELS).unwrap();
     assert_client_version(backend, &prober.config().client_version);
-    for path in [WHOAMI, WHAM, BACKEND_MODELS, CODEX_V1_MODELS] {
+    for path in [BACKEND_MODELS, CODEX_V1_MODELS] {
         assert_eq!(server.count(path), 1);
     }
-}
-
-async fn assert_wham_interception(response: MockResponse, diagnostic: &str) {
-    let server = MockServer::start(move |r| {
-        if r.path == WHAM {
-            response.clone()
-        } else {
-            relay_401()
-        }
-    })
-    .await;
-    let site = site(&server);
-    let caps = prober().probe(&site, &site.lines[0]).await.unwrap();
-
-    assert!(caps.reachable);
-    assert!(!caps.pat_ok);
-    assert!(caps.apikey_ok);
-    assert!(caps.blocked_by_edge);
-    assert_eq!(caps.codex_path, Some(CodexPath::BackendApiCodex));
-    assert_detail(&caps, "probe.pat_edge_blocked", &[("endpoint", WHAM)]);
-    assert!(!caps.allows(AuthMode::Pat));
-    assert!(caps.allows(AuthMode::ApiKey));
-    let check = caps
-        .checks
-        .iter()
-        .find(|c| c.endpoint == ProbeEndpoint::WhamAccountsCheck)
-        .unwrap();
-    assert_eq!(check.status, Some(200));
-    assert!(!check.ok);
-    assert!(check.edge_blocked);
-    assert_eq!(check.detail.as_deref(), Some(diagnostic));
-}
-
-#[tokio::test]
-async fn wham_with_edge_header_disables_pat() {
-    assert_wham_interception(
-        edge_block(),
-        "intercepted by the line's edge (HTTP 200 with an l-block header)",
-    )
-    .await;
-}
-
-#[tokio::test]
-async fn empty_wham_without_edge_header_disables_pat() {
-    assert_wham_interception(
-        MockResponse::empty(200),
-        "intercepted by the line's edge (HTTP 200 with an empty body)",
-    )
-    .await;
-}
-
-#[tokio::test]
-async fn html_wham_without_edge_header_disables_pat() {
-    let response = MockResponse {
-        body: b"<html>challenge</html>".to_vec(),
-        ..MockResponse::empty(200)
+    // The PAT endpoints are no longer probed (user bug 139).
+    for path in [WHOAMI, WHAM] {
+        assert_eq!(server.count(path), 0);
     }
-    .with_header("Content-Type", "text/html");
-    assert_wham_interception(
-        response,
-        "intercepted by the line's edge (HTTP 200 with a non-JSON body)",
-    )
-    .await;
-}
-
-#[tokio::test]
-async fn missing_whoami_reports_endpoint_and_status() {
-    let server = MockServer::start(|r| {
-        if r.path == WHOAMI {
-            MockResponse::json(404, json!({"error": "not found"}))
-        } else {
-            relay_401()
-        }
-    })
-    .await;
-    let site = site(&server);
-    let caps = prober().probe(&site, &site.lines[0]).await.unwrap();
-
-    assert!(caps.reachable);
-    assert!(!caps.pat_ok);
-    assert!(caps.apikey_ok);
-    assert!(!caps.blocked_by_edge);
-    assert_detail(
-        &caps,
-        "probe.pat_unavailable",
-        &[("endpoint", WHOAMI), ("status", "HTTP 404")],
-    );
-    let check = caps
-        .checks
-        .iter()
-        .find(|c| c.endpoint == ProbeEndpoint::Whoami)
-        .unwrap();
-    assert_eq!(check.status, Some(404));
-    assert!(!check.ok);
-    assert_eq!(check.detail.as_deref(), Some("HTTP 404: not found"));
 }
 
 #[tokio::test]
@@ -178,12 +82,10 @@ async fn intercepted_backend_uses_codex_v1_for_api_keys() {
     let caps = prober().probe(&site, &site.lines[0]).await.unwrap();
 
     assert!(caps.reachable);
-    assert!(caps.pat_ok, "the PAT endpoints themselves still answer");
     assert_eq!(caps.codex_path, Some(CodexPath::CodexV1));
     assert!(caps.apikey_ok);
     assert!(caps.blocked_by_edge);
     assert_detail(&caps, "probe.codex_v1_fallback", &[]);
-    assert!(!caps.allows(AuthMode::Pat));
     assert!(caps.allows(AuthMode::ApiKey));
     assert_eq!(server.count(CODEX_V1_MODELS), 1);
 }
@@ -205,7 +107,6 @@ async fn both_codex_paths_intercepted_report_no_usable_path() {
     assert_eq!(caps.codex_path, None);
     assert!(!caps.apikey_ok);
     assert!(caps.blocked_by_edge);
-    assert!(!caps.allows(AuthMode::Pat));
     assert!(!caps.allows(AuthMode::ApiKey));
     assert_detail(
         &caps,
@@ -232,7 +133,6 @@ async fn closed_port_is_unreachable_without_latency() {
     assert_eq!(caps.latency_ms, None);
     assert_eq!(caps.latency_grade(), LatencyGrade::Unknown);
     assert_eq!(caps.codex_path, None);
-    assert!(!caps.pat_ok);
     assert!(!caps.apikey_ok);
     assert_eq!(caps.checks.len(), 1);
     assert_eq!(caps.checks[0].endpoint, ProbeEndpoint::ModelsUnauth);
@@ -320,7 +220,7 @@ async fn probe_all_runs_lines_concurrently_and_preserves_site_order() {
         assert_eq!(caps.site_id, site.id);
         assert!(caps.reachable);
         assert!(caps.latency_ms.is_some());
-        assert!(caps.pat_ok && caps.apikey_ok);
+        assert!(caps.apikey_ok);
         assert_detail(caps, "probe.ok", &[]);
     }
     assert_eq!(first.count(MODELS), 3);
@@ -362,7 +262,6 @@ async fn compatible_site_accepts_html_404_and_only_probes_its_models_path() {
     assert!(caps.latency_ms.is_some());
     assert_eq!(caps.codex_path, Some(CodexPath::AsIs));
     assert!(caps.apikey_ok);
-    assert!(!caps.pat_ok);
     assert!(!caps.blocked_by_edge);
     assert_detail(&caps, "probe.ok", &[]);
     assert_eq!(caps.checks.len(), 1);

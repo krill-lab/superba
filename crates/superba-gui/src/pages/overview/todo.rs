@@ -148,14 +148,7 @@ impl Todo {
 /// restart bridge, a platform without hot switching).
 pub fn reopen_fixes(overview: &Overview) -> Option<FullRestartReason> {
     match &overview.app.hot_switch {
-        HotSwitchStatus::Unavailable { reason }
-            if matches!(
-                reason,
-                FullRestartReason::NoCdp
-                    | FullRestartReason::AuthApiMissing
-                    | FullRestartReason::AuthApiUnhealthy
-            ) =>
-        {
+        HotSwitchStatus::Unavailable { reason } if matches!(reason, FullRestartReason::NoCdp) => {
             Some(*reason)
         }
         _ => None,

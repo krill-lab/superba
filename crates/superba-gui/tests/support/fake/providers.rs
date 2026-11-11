@@ -202,7 +202,6 @@ pub(super) async fn probe_site(
         checked_at: Timestamp::now(),
         reachable: true,
         latency_ms: Some(210),
-        pat_ok: false,
         apikey_ok: true,
         codex_path: Some(CodexPath::AsIs),
         blocked_by_edge: false,

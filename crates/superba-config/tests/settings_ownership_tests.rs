@@ -48,7 +48,6 @@ fn original_config(with_web_search: bool, crlf: bool) -> String {
 
 fn profile(mode: AuthMode) -> ResolvedProfile {
     let mut desired = match mode {
-        AuthMode::Pat => pat(OVERSEAS),
         AuthMode::ApiKey => apikey(OVERSEAS),
         _ => panic!("expected a token mode"),
     };
@@ -128,13 +127,8 @@ async fn apply_and_release(mode: AuthMode, with_web_search: bool, crlf: bool) {
     env.engine.apply(&plan).await.unwrap();
 
     // The expected bytes contain only the requested setting and routing edits.
-    let mut routing = match mode {
-        AuthMode::Pat => format!(
-            "openai_base_url = \"{OVERSEAS}/backend-api/codex\"\n\
-             chatgpt_base_url = \"{OVERSEAS}/backend-api/\"\n"
-        ),
-        _ => format!("openai_base_url = \"{OVERSEAS}/codex/v1\"\n"),
-    };
+    let _ = mode;
+    let mut routing = format!("openai_base_url = \"{OVERSEAS}/codex/v1\"\n");
     if !with_web_search {
         routing.push_str("web_search = \"live\"\n");
     }
@@ -219,7 +213,7 @@ async fn apply_and_release(mode: AuthMode, with_web_search: bool, crlf: bool) {
 
 #[tokio::test]
 async fn pat_settings_preserve_bytes_and_release_cached_baselines() {
-    apply_and_release(AuthMode::Pat, true, false).await;
+    apply_and_release(AuthMode::ApiKey, true, false).await;
 }
 
 #[tokio::test]
@@ -230,7 +224,7 @@ async fn apikey_settings_preserve_crlf_and_release_absent_baselines() {
 async fn drifted_setting() -> (Env, ResolvedProfile) {
     let env = Env::new();
     env.write_config(&original_config(true, false));
-    let mut desired = profile(AuthMode::Pat);
+    let mut desired = profile(AuthMode::ApiKey);
     desired.settings.set("web_search", "live").unwrap();
     let plan = env.engine.plan(&env.home, &desired).await.unwrap();
     env.engine.apply(&plan).await.unwrap();
@@ -306,7 +300,7 @@ async fn scalar_parent_shape_conflict_skips_only_that_setting_with_a_notice() {
     let env = Env::new();
     let original = format!("features.token_budget = true # 用户的布尔值\n{OFFICIAL_CONFIG}");
     env.write_config(&original);
-    let mut desired = profile(AuthMode::Pat);
+    let mut desired = profile(AuthMode::ApiKey);
     desired
         .settings
         .set("features.token_budget.enabled", true)
@@ -371,7 +365,7 @@ async fn rollback_first_apply(with_user_edit: bool) {
     env.write_config(&original);
     let plan = env
         .engine
-        .plan(&env.home, &settings_profile(AuthMode::Pat))
+        .plan(&env.home, &settings_profile(AuthMode::ApiKey))
         .await
         .unwrap();
     let report = env.engine.apply(&plan).await.unwrap();
@@ -414,7 +408,7 @@ async fn rollback_second_apply(with_user_edit: bool) {
     let before = env.config();
     let before_auth = env.auth();
 
-    let mut second = profile(AuthMode::Pat);
+    let mut second = profile(AuthMode::ApiKey);
     second
         .settings
         .set("notify", SettingValue::Array(vec!["a".into(), "b".into()]))
@@ -471,7 +465,7 @@ async fn restore_settings(mode: ResolvedMode) {
     env.write_config(&original);
     let plan = env
         .engine
-        .plan(&env.home, &settings_profile(AuthMode::Pat))
+        .plan(&env.home, &settings_profile(AuthMode::ApiKey))
         .await
         .unwrap();
     env.engine.apply(&plan).await.unwrap();

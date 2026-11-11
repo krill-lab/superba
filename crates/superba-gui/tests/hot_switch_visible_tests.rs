@@ -137,18 +137,6 @@ async fn only_what_a_reopen_fixes_is_offered() {
         ),
         (
             HotSwitchStatus::Unavailable {
-                reason: FullRestartReason::AuthApiMissing,
-            },
-            true,
-        ),
-        (
-            HotSwitchStatus::Unavailable {
-                reason: FullRestartReason::AuthApiUnhealthy,
-            },
-            true,
-        ),
-        (
-            HotSwitchStatus::Unavailable {
                 reason: FullRestartReason::NoBridge,
             },
             false,

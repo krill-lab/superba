@@ -101,8 +101,6 @@ pub(crate) enum WslRoute {
         origin: Origin,
         /// The source token (`wsl:<distro>`).
         token: Secret,
-        /// Public certificate of the listener reached from this distribution.
-        certificate: superba_core::SecretBytes,
     },
     /// Not reachable: the distribution stays direct.
     Direct {
@@ -127,13 +125,8 @@ pub(crate) fn is_router_health(answer: &str, instance_id: &str) -> bool {
 }
 
 /// The routed resolution of a distribution: the local routed `base` (router
-/// endpoints, PAT mode) pointed at `origin` with `token` and Codex-only trust.
-pub(crate) fn routed(
-    base: &ResolvedProfile,
-    origin: &Origin,
-    token: &Secret,
-    certificate: &superba_core::SecretBytes,
-) -> ResolvedProfile {
+/// endpoints, API key) pointed at `origin` with `token`.
+pub(crate) fn routed(base: &ResolvedProfile, origin: &Origin, token: &Secret) -> ResolvedProfile {
     let mut r = base.clone();
     if let ResolvedMode::Token {
         endpoints,
@@ -142,19 +135,13 @@ pub(crate) fn routed(
         ..
     } = &mut r.mode
     {
-        *auth = superba_core::AuthMode::Pat;
-        let mut tls_origin = origin.url().clone();
-        tls_origin
-            .set_scheme("https")
-            .expect("HTTPS is a valid URL scheme");
+        *auth = superba_core::AuthMode::ApiKey;
         *endpoints = ResolvedEndpoints {
             allow_plain_http: false,
             origin: origin.clone(),
             openai_base_url: origin.join(ROUTER_BASE_PATH),
-            chatgpt_base_url: Some(tls_origin.join("/backend-api/").expect("absolute URL path")),
-            authapi_origin: Some(origin.clone()),
             codex_path: endpoints.codex_path,
-            ca_certificate: Some(certificate.clone()),
+            ca_certificate: None,
         };
         *key = token.clone();
     }
@@ -294,23 +281,9 @@ impl Switcher {
                         Err(_) => return direct("switch.wsl.route_unknown"),
                     },
                 };
-                let certificate = match superba_router::tls::wsl_certificate(
-                    &superba_router::RouterPaths::new(&d.ctx.data_dir),
-                    address,
-                ) {
-                    Ok(bytes) => superba_core::SecretBytes::new(bytes),
-                    Err(e) => {
-                        return WslRoute::Direct {
-                            reason: text("switch.wsl.route_check_failed")
-                                .arg_text("host", title)
-                                .arg("detail", e.to_string()),
-                        };
-                    }
-                };
                 WslRoute::Routed {
                     origin,
                     token: Secret::new(token),
-                    certificate,
                 }
             }
             Ok(_) if path == RouterPath::HostAddress => direct("switch.wsl.route_blocked"),

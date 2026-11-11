@@ -334,7 +334,6 @@ fn krill_profile(line: LineId, auth: AuthMode) -> Profile {
         key_ref: Some(key_ref(&"krill".into())),
         base_url_override: None,
         model: ModelDefaults::default(),
-        auth: superba_core::AuthChoice::from_mode(auth),
         backup_lines: Vec::new(),
         disabled_lines: Default::default(),
         codex_settings: Default::default(),
@@ -342,7 +341,7 @@ fn krill_profile(line: LineId, auth: AuthMode) -> Profile {
 }
 
 fn auth_shape(mode: AuthMode) -> AuthShape {
-    if mode == AuthMode::Pat {
+    if mode == AuthMode::ApiKey {
         AuthShape::Pat {
             key_last4: "9f3a".into(),
         }
@@ -441,7 +440,7 @@ fn fake_remote(now: Timestamp, devbox: bool) -> RemoteOverview {
             config_sha256: Some(fake_hash(11)),
             auth_sha256: Some(fake_hash(12)),
             auth: auth_shape(if devbox {
-                AuthMode::Pat
+                AuthMode::ApiKey
             } else {
                 AuthMode::OfficialChatGpt
             }),
@@ -474,7 +473,7 @@ impl FakeState {
             profile_id: Some("krill".into()),
             site_id: Some("krill".into()),
             line_id: Some("overseas".into()),
-            auth_mode: Some(AuthMode::Pat),
+            auth_mode: Some(AuthMode::ApiKey),
             generation: 7,
             applied_at: ago(now, 7200),
         });
@@ -482,7 +481,7 @@ impl FakeState {
         if !first {
             profiles
                 .profiles
-                .push(krill_profile("overseas".into(), AuthMode::Pat));
+                .push(krill_profile("overseas".into(), AuthMode::ApiKey));
             profiles.last_selected = Some("krill".into());
         }
         let bundled_version = CodexVersion {
@@ -596,11 +595,7 @@ impl FakeState {
                 reasoning_effort: Some("high".into()),
                 profile_override: None,
                 cli_auth_credentials_store: None,
-                auth: auth_shape(if first {
-                    AuthMode::ApiKey
-                } else {
-                    AuthMode::Pat
-                }),
+                auth: auth_shape(AuthMode::ApiKey),
                 active,
                 drift: vec![],
                 auth_drift: None,
@@ -627,7 +622,6 @@ impl FakeState {
                 } else {
                     HotSwitchStatus::Ready
                 },
-                authapi_line: (!first).then(|| "overseas".into()),
             },
             cli: CliOverview {
                 binaries: vec![
@@ -717,7 +711,6 @@ fn line_caps(site: &SiteId, line: &LineId) -> LineCaps {
         checked_at: Timestamp::now(),
         reachable: true,
         latency_ms: Some(latency),
-        pat_ok: !blocked,
         apikey_ok: true,
         codex_path: Some(CodexPath::BackendApiCodex),
         blocked_by_edge: blocked,
@@ -871,7 +864,7 @@ impl FakeState {
                         available: true,
                         suggestions: vec![],
                     });
-                    if auth == AuthMode::Pat && line == "cn-fast" {
+                    if auth == AuthMode::ApiKey && line == "cn-fast" {
                         plan.primary = RestartKind::Blocked {
                             reasons: vec![BlockReason::AuthModeUnavailable {
                                 line_id: line.clone(),
@@ -914,17 +907,6 @@ impl FakeState {
                         .count();
                     plan.warnings
                         .push(Notice::info(warn_cli().arg("count", count)));
-                    if auth == AuthMode::Pat
-                        && let Some(old) = &self.app.authapi_line
-                        && old != &line
-                    {
-                        let old_name = catalog::krill_site()
-                            .line(old)
-                            .map(|l| l.name.render_fallback())
-                            .unwrap_or_else(|| old.to_string());
-                        plan.warnings
-                            .push(Notice::info(warn_authapi().arg("line", old_name)));
-                    }
                 }
             }
             SwitchIntent::Restore { target } => {
@@ -1112,9 +1094,9 @@ impl FakeState {
                 config.openai_base_url = Some(superba_gui::pages::providers::form::base_url(&site));
             } else {
                 let endpoints =
-                    ResolvedEndpoints::for_line(&line.origin, CodexPath::BackendApiCodex, auth)?;
+                    ResolvedEndpoints::for_line(&line.origin, CodexPath::BackendApiCodex)?;
                 config.openai_base_url = Some(endpoints.openai_base_url.to_string());
-                config.chatgpt_base_url = endpoints.chatgpt_base_url.map(|u| u.to_string());
+                config.chatgpt_base_url = None;
             }
             if let Some(profile) = to
                 .profile_id
@@ -1394,11 +1376,6 @@ impl FakeState {
             .map(|u| u.origin().ascii_serialization());
         let session = app_session(Timestamp::now(), true, origin);
         self.app.hot_switch = HotSwitchStatus::Ready;
-        self.app.authapi_line = if self.config.auth.mode() == Some(AuthMode::Pat) {
-            self.config.active.as_ref().and_then(|a| a.line_id.clone())
-        } else {
-            None
-        };
         self.app.session = Some(session.clone());
         session
     }
@@ -1440,7 +1417,7 @@ impl FakeState {
         {
             self.profiles.profiles.push(krill_profile(
                 plan.to.line_id.clone().unwrap_or_else(|| "overseas".into()),
-                plan.to.auth_mode.unwrap_or(AuthMode::Pat),
+                plan.to.auth_mode.unwrap_or(AuthMode::ApiKey),
             ));
         }
         if let Some(p) = self
@@ -1618,7 +1595,7 @@ impl FakeService {
     async fn apply_steps(&self, plan: &SwitchPlan, migrate: bool, events: &dyn SwitchEvents) {
         phase(events, SwitchPhase::Applying);
         self.step(events, SwitchStep::WriteConfig, 150).await;
-        if plan.to.auth_mode == Some(AuthMode::Pat) {
+        if plan.to.auth_mode == Some(AuthMode::ApiKey) {
             self.step(events, SwitchStep::WriteEnv, 120).await;
         } else {
             step_status(events, SwitchStep::WriteEnv, StepStatus::Skipped);
@@ -1977,12 +1954,12 @@ impl SwitchService for FakeService {
         };
         let access = if bad {
             KeyAccess::InvalidKey
-        } else if line == "cn-fast" && mode == AuthMode::Pat {
+        } else if line == "cn-fast" && mode == AuthMode::ApiKey {
             KeyAccess::EdgeBlocked
         } else {
             KeyAccess::Ok
         };
-        let whoami = (mode == AuthMode::Pat).then(|| match access {
+        let whoami = (mode == AuthMode::ApiKey).then(|| match access {
             KeyAccess::InvalidKey => AuthApiHealth::Unhealthy {
                 reason: "invalid key".into(),
             },

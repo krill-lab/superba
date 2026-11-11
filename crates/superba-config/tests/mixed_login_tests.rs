@@ -15,16 +15,10 @@ use superba_core::{AuthMode, ConfigEngine, ResolvedMode, StashScope};
 const ROUTER: &str = "http://127.0.0.1:47123";
 
 fn routed(auth: AuthMode) -> superba_core::ResolvedProfile {
-    let mut endpoints = superba_core::ResolvedEndpoints::for_base_url(
+    let endpoints = superba_core::ResolvedEndpoints::for_base_url(
         &url::Url::parse(&format!("{ROUTER}/backend-api/codex")).unwrap(),
     )
     .unwrap();
-    if auth == AuthMode::Pat {
-        let mut chatgpt = endpoints.origin.join("/backend-api/");
-        let _ = chatgpt.set_scheme("https");
-        endpoints.chatgpt_base_url = Some(chatgpt);
-        endpoints.authapi_origin = Some(endpoints.origin.clone());
-    }
     let mut p = restore(ResolvedMode::Token {
         site_kind: superba_core::SiteKind::Krill,
         auth,
@@ -35,8 +29,8 @@ fn routed(auth: AuthMode) -> superba_core::ResolvedProfile {
     p
 }
 
-fn router_pat() -> superba_core::ResolvedProfile {
-    routed(AuthMode::Pat)
+fn router_key() -> superba_core::ResolvedProfile {
+    routed(AuthMode::ApiKey)
 }
 
 fn mixed() -> superba_core::ResolvedProfile {
@@ -46,17 +40,17 @@ fn mixed() -> superba_core::ResolvedProfile {
 #[tokio::test]
 async fn mixed_login_restores_the_stashed_login_and_drops_chatgpt_base_url() {
     let env = Env::new();
-    env.write_config(OFFICIAL_CONFIG);
+    env.write_config(&format!(
+        "{OFFICIAL_CONFIG}chatgpt_base_url = \"https://chatgpt.example/backend-api/\"\n"
+    ));
     let login = chatgpt_login("user@example.com", "rt-1", "2026-10-01T00:00:00Z");
     env.write_auth(&login);
     let e = &env.engine;
-    // PAT router mode first: the login is stashed, chatgpt_base_url points at
-    // the router.
-    e.apply(&e.plan(&env.home, &router_pat()).await.unwrap())
+    // Router mode first: the login is stashed (the router's local key is an
+    // API key).
+    e.apply(&e.plan(&env.home, &router_key()).await.unwrap())
         .await
         .unwrap();
-    let doc = ConfigDoc::parse(env.config().as_bytes()).unwrap();
-    assert!(doc.get_str(k::CHATGPT_BASE_URL).is_some());
     let stash = e
         .login_stash(&StashScope::Local(env.home.root().to_path_buf()))
         .await
@@ -101,10 +95,11 @@ async fn leaving_mixed_login_stashes_the_login_again() {
     e.apply(&e.plan(&env.home, &mixed()).await.unwrap())
         .await
         .unwrap();
-    let plan = e.plan(&env.home, &router_pat()).await.unwrap();
+    let plan = e.plan(&env.home, &router_key()).await.unwrap();
     assert!(plan.auth_change.as_ref().unwrap().stash_login);
     e.apply(&plan).await.unwrap();
-    assert_eq!(env.auth_json()["personal_access_token"], "sbr_router_token");
+    assert_eq!(env.auth_json()["OPENAI_API_KEY"], "sbr_router_token");
+    assert_eq!(env.auth_json()["auth_mode"], "apikey");
 }
 
 #[tokio::test]

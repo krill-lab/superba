@@ -6,9 +6,9 @@
 use std::path::Path;
 
 use superba_core::{
-    AuthApiHealth, AuthFamily, AuthMode, BlockReason, CodexProcessKind, CodexVersion, ConsumerKind,
-    ConsumerRestart, EnvObservation, FullRestartReason, Line, Origin, ProcessInfo, RestartKind,
-    Site, SiteKind, TargetId, Timestamp, Verification,
+    AuthFamily, AuthMode, BlockReason, CodexProcessKind, CodexVersion, ConsumerKind,
+    ConsumerRestart, FullRestartReason, Line, Origin, ProcessInfo, RestartKind, Site, SiteKind,
+    TargetId, Timestamp, Verification,
     codex::{LOCAL_HOST_ID, VersionCapability},
     plan::CheckResult,
 };
@@ -19,25 +19,13 @@ use superba_core::{
 
 /// Minimum Codex versions per capability.
 ///
-/// `WhamAccountsCheck` (0.160) is a verified fact (relay `accounts_check.rs`). The
-/// other two rows are provisional until spike S9 pins them from the Codex sources:
-/// PAT support shipped together with the `wham/accounts/check` call, and top-level
-/// `openai_base_url` is required since custom providers stopped reading auth.json
-/// (0.149). The table only ever blocks consumers older than these values.
-pub const VERSION_TABLE: &[(VersionCapability, CodexVersion)] = &[
-    (
-        VersionCapability::TopLevelOpenaiBaseUrl,
-        CodexVersion::new(0, 149, 0),
-    ),
-    (
-        VersionCapability::PersonalAccessToken,
-        CodexVersion::new(0, 160, 0),
-    ),
-    (
-        VersionCapability::WhamAccountsCheck,
-        CodexVersion::new(0, 160, 0),
-    ),
-];
+/// Provisional until spike S9 pins it from the Codex sources: top-level
+/// `openai_base_url` is required since custom providers stopped reading
+/// auth.json (0.149). The table only ever blocks consumers older than this.
+pub const VERSION_TABLE: &[(VersionCapability, CodexVersion)] = &[(
+    VersionCapability::TopLevelOpenaiBaseUrl,
+    CodexVersion::new(0, 149, 0),
+)];
 
 /// Minimum version for a capability (`0.0.0` for capabilities not in the table).
 pub fn min_version(cap: VersionCapability) -> CodexVersion {
@@ -52,7 +40,7 @@ pub fn min_version(cap: VersionCapability) -> CodexVersion {
 ///
 /// Official login (or an unknown restore destination) needs nothing; any token mode
 /// on a relay needs top-level `openai_base_url` (else the key would go to
-/// api.openai.com); PAT additionally needs PAT support and `wham/accounts/check`.
+/// api.openai.com).
 pub fn required_capabilities(
     site_kind: Option<SiteKind>,
     auth: Option<AuthMode>,
@@ -63,12 +51,7 @@ pub fn required_capabilities(
     if !auth.uses_key() || matches!(site_kind, Some(SiteKind::Official)) {
         return Vec::new();
     }
-    let mut caps = vec![VersionCapability::TopLevelOpenaiBaseUrl];
-    if auth.needs_authapi_env() || auth.writes_chatgpt_base_url() {
-        caps.push(VersionCapability::PersonalAccessToken);
-        caps.push(VersionCapability::WhamAccountsCheck);
-    }
-    caps
+    vec![VersionCapability::TopLevelOpenaiBaseUrl]
 }
 
 /// Role of a consumer in the version gate.
@@ -170,29 +153,6 @@ pub fn local_versioned_consumers(
     consumers
 }
 
-/// Whether every Codex in `consumers` can use a personal access token, for
-/// [`superba_core::AuthContext::pat_version_ok`]: `Some(false)` as soon as one
-/// known version lacks a PAT-only capability (Automatic authentication then uses an
-/// API key), `Some(true)` when every version is known and new enough, `None` when
-/// nothing is known (no consumer, or an unknown version: the version gate asks).
-pub fn pat_version_ok(consumers: &[VersionedConsumer]) -> Option<bool> {
-    let pat_only = [
-        VersionCapability::PersonalAccessToken,
-        VersionCapability::WhamAccountsCheck,
-    ];
-    let mut all_known = !consumers.is_empty();
-    for c in consumers {
-        match &c.version {
-            Some(v) if pat_only.iter().any(|cap| !v.meets(&min_version(*cap))) => {
-                return Some(false);
-            }
-            Some(_) => {}
-            None => all_known = false,
-        }
-    }
-    all_known.then_some(true)
-}
-
 // ---------------------------------------------------------------------------
 // Restart decision (plan 7.1)
 // ---------------------------------------------------------------------------
@@ -208,12 +168,6 @@ pub enum AppFacts {
         cdp: bool,
         /// `electronBridge.sendMessageFromView` is callable.
         bridge_ready: bool,
-        /// `CODEX_AUTHAPI_BASE_URL` in the app main process (inherited by every
-        /// hot-restarted app-server).
-        authapi_env: EnvObservation,
-        /// whoami with the destination key on that origin; `None` = not checked
-        /// (treated as unhealthy: a hot switch must not risk the login).
-        authapi_health: Option<AuthApiHealth>,
     },
 }
 
@@ -235,8 +189,6 @@ pub struct LocalFacts {
     pub current_family: Option<AuthFamily>,
     /// Auth family of the destination (`None` = unknown up front, e.g. generation restore).
     pub target_family: Option<AuthFamily>,
-    /// The destination needs `CODEX_AUTHAPI_BASE_URL` in the app-server (PAT).
-    pub target_needs_authapi: bool,
     /// Desktop app.
     pub app: AppFacts,
     /// This platform build can hot-restart the app-server at all.
@@ -265,11 +217,7 @@ pub const fn platform_hot_supported() -> bool {
 /// 4. app not running -> `None`
 /// 5. no hot switch on this platform / no CDP / no bridge ->
 ///    `FullAppRestart(PlatformNoHot | NoCdp | NoBridge)`
-/// 6. PAT destination, app env lacks `CODEX_AUTHAPI_BASE_URL` (or it cannot be
-///    read) -> `FullAppRestart(AuthApiMissing)`
-/// 7. PAT destination, whoami on that origin unhealthy or unchecked ->
-///    `FullAppRestart(AuthApiUnhealthy)`
-/// 8. otherwise -> `AppServerHot { host_id: "local", kill_remote: false }`
+/// 6. otherwise -> `AppServerHot { host_id: "local", kill_remote: false }`
 pub fn decide_local(f: &LocalFacts) -> RestartKind {
     if !f.blocks.is_empty() {
         return RestartKind::Blocked {
@@ -280,13 +228,7 @@ pub fn decide_local(f: &LocalFacts) -> RestartKind {
     if f.migration {
         return full(FullRestartReason::SessionMigration);
     }
-    let AppFacts::Running {
-        cdp,
-        bridge_ready,
-        authapi_env,
-        authapi_health,
-    } = &f.app
-    else {
+    let AppFacts::Running { cdp, bridge_ready } = &f.app else {
         return RestartKind::None;
     };
     if let (Some(from), Some(to)) = (f.current_family, f.target_family)
@@ -302,14 +244,6 @@ pub fn decide_local(f: &LocalFacts) -> RestartKind {
     }
     if !bridge_ready {
         return full(FullRestartReason::NoBridge);
-    }
-    if f.target_needs_authapi {
-        if authapi_env.value().is_none_or(|v| v.trim().is_empty()) {
-            return full(FullRestartReason::AuthApiMissing);
-        }
-        if !matches!(authapi_health, Some(AuthApiHealth::Healthy)) {
-            return full(FullRestartReason::AuthApiUnhealthy);
-        }
     }
     RestartKind::AppServerHot {
         host_id: LOCAL_HOST_ID.to_owned(),
@@ -470,7 +404,7 @@ pub fn mark_stale(processes: &mut [ProcessInfo], applied_at: Option<Timestamp>) 
 }
 
 // ---------------------------------------------------------------------------
-// Lines and auth API origin
+// Lines
 // ---------------------------------------------------------------------------
 
 /// The line of `site` whose origin equals `origin` (an env value such as
@@ -479,51 +413,6 @@ pub fn mark_stale(processes: &mut [ProcessInfo], applied_at: Option<Timestamp>) 
 pub fn line_for_origin<'a>(site: &'a Site, origin: &str) -> Option<&'a Line> {
     let o = Origin::parse(origin).ok()?;
     site.line_for_origin(&o)
-}
-
-/// The origin Superba injects as `CODEX_AUTHAPI_BASE_URL` when it launches the app
-/// (plan 7.1 note): the destination line when it is a Krill line, else the line of
-/// the currently applied Krill profile, else the Krill default line.
-pub fn launch_authapi_origin(
-    krill: &Site,
-    destination: Option<&Line>,
-    destination_is_krill: bool,
-    active_line: Option<&Line>,
-) -> Option<Origin> {
-    if destination_is_krill && let Some(l) = destination {
-        return Some(l.origin.clone());
-    }
-    if let Some(l) = active_line
-        && krill.lines.iter().any(|k| k.matches_origin(&l.origin))
-    {
-        return Some(l.origin.clone());
-    }
-    krill.default_line().map(|l| l.origin.clone())
-}
-
-/// The Krill-kind site to take the launch-time auth origin from, and the applied
-/// profile's line on it: the site of the applied profile when it is Krill-kind
-/// (the built-in Krill site or an e2e test site from `SUPERBA_TEST_SITES`), else
-/// the built-in Krill site from `sites` (or the catalog) with no active line. Feed
-/// the result to [`launch_authapi_origin`].
-pub fn active_krill_site(
-    sites: &[Site],
-    active_site: Option<&superba_core::SiteId>,
-    active_line: Option<&superba_core::LineId>,
-) -> (Site, Option<Line>) {
-    if let Some(site) = active_site
-        .and_then(|id| sites.iter().find(|s| &s.id == id))
-        .filter(|s| s.kind == SiteKind::Krill)
-        && let Some(line) = active_line.and_then(|l| site.line(l))
-    {
-        return (site.clone(), Some(line.clone()));
-    }
-    let krill = sites
-        .iter()
-        .find(|s| s.id == superba_core::catalog::KRILL_SITE_ID)
-        .cloned()
-        .unwrap_or_else(superba_core::catalog::krill_site);
-    (krill, None)
 }
 
 // ---------------------------------------------------------------------------

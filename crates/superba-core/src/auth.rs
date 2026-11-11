@@ -11,22 +11,17 @@ use crate::i18n::LocalizedText;
 /// query these methods instead of matching on variants, so a future mode only needs
 /// new method arms here plus its own rendering in `superba-config`.
 ///
-/// A planned (not implemented) example is a "Krill account display" mode that wraps
-/// the API key in an unsigned ChatGPT-style JWT, so the app shell shows plan, usage
-/// and name, and points the shell at a localhost forwarder. It would be a new
-/// variant with its own [`AuthFamily`] answer and an [`crate::AuthShape`] variant,
-/// and would reuse [`crate::ResolvedEndpoints`] with a loopback origin.
+/// Key-based profiles always use an API key (user bug 139): the desktop app
+/// 26.1106 never confirms an account for a personal access token, so queued
+/// messages fail with "Account is not confirmed". Profiles saved with the
+/// former PAT mode (`"pat"`) read as an API key and get API-key auth the next
+/// time they are applied.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum AuthMode {
-    /// Personal access token:
-    /// auth.json `{"personal_access_token":K,"OPENAI_API_KEY":K}`,
-    /// `chatgpt_base_url = <line>/backend-api/`, env `CODEX_AUTHAPI_BASE_URL=<line origin>`.
-    #[serde(rename = "pat")]
-    Pat,
     /// Plain API key:
     /// auth.json `{"auth_mode":"apikey","OPENAI_API_KEY":K}`; no env needed.
-    #[serde(rename = "apikey")]
+    #[serde(rename = "apikey", alias = "pat")]
     ApiKey,
     /// The user's own ChatGPT login (restored from the encrypted stash).
     #[serde(rename = "chatgpt")]
@@ -46,19 +41,14 @@ impl AuthMode {
     /// S18 proves otherwise (plan 7.1 rule 3).
     pub fn family(self) -> AuthFamily {
         match self {
-            AuthMode::Pat | AuthMode::ApiKey => AuthFamily::Token,
+            AuthMode::ApiKey => AuthFamily::Token,
             AuthMode::OfficialChatGpt | AuthMode::MixedOfficial => AuthFamily::ChatGpt,
         }
     }
 
     /// True if the mode needs a Superba-managed key ([`crate::KeyRef`]).
     pub fn uses_key(self) -> bool {
-        matches!(self, AuthMode::Pat | AuthMode::ApiKey)
-    }
-
-    /// True if Codex must see `CODEX_AUTHAPI_BASE_URL` (PAT whoami origin).
-    pub fn needs_authapi_env(self) -> bool {
-        matches!(self, AuthMode::Pat)
+        matches!(self, AuthMode::ApiKey)
     }
 
     /// True if `auth.json` holds the user's own ChatGPT login.
@@ -66,15 +56,9 @@ impl AuthMode {
         matches!(self, AuthMode::OfficialChatGpt | AuthMode::MixedOfficial)
     }
 
-    /// True if `chatgpt_base_url` must point at the line (`wham/accounts/check`).
-    pub fn writes_chatgpt_base_url(self) -> bool {
-        matches!(self, AuthMode::Pat)
-    }
-
     /// Display name.
     pub fn text(self) -> LocalizedText {
         match self {
-            AuthMode::Pat => LocalizedText::new("auth_mode.pat", "PAT (personal access token)"),
             AuthMode::ApiKey => LocalizedText::new("auth_mode.apikey", "API key"),
             AuthMode::OfficialChatGpt => {
                 LocalizedText::new("auth_mode.chatgpt", "Official ChatGPT login")
@@ -85,6 +69,23 @@ impl AuthMode {
             ),
         }
     }
+}
+
+/// The site's auth modes as written, without repeats: catalogs and saved
+/// sites from before user bug 139 list `["pat", "apikey"]`, which both read
+/// as [`AuthMode::ApiKey`].
+pub fn deserialize_auth_modes<'de, D>(deserializer: D) -> Result<Vec<AuthMode>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let mut modes = Vec::<AuthMode>::deserialize(deserializer)?;
+    let mut seen = Vec::with_capacity(modes.len());
+    modes.retain(|m| {
+        let new = !seen.contains(m);
+        seen.push(*m);
+        new
+    });
+    Ok(modes)
 }
 
 /// Families of auth modes that are hot-switchable among themselves.
@@ -119,7 +120,8 @@ pub enum AuthShape {
         /// Last four characters of the key.
         key_last4: String,
     },
-    /// `{"personal_access_token":K, ...}`.
+    /// `{"personal_access_token":K, ...}`: a personal access token, which
+    /// Superba no longer writes (user bug 139); only ever observed.
     Pat {
         /// Last four characters of the token.
         key_last4: String,
@@ -137,13 +139,16 @@ impl AuthShape {
         match self {
             AuthShape::ChatGpt { .. } => Some(AuthMode::OfficialChatGpt),
             AuthShape::ApiKey { .. } => Some(AuthMode::ApiKey),
-            AuthShape::Pat { .. } => Some(AuthMode::Pat),
-            AuthShape::Missing | AuthShape::Unknown { .. } => None,
+            AuthShape::Missing | AuthShape::Pat { .. } | AuthShape::Unknown { .. } => None,
         }
     }
 
-    /// Family of the current shape, if known.
+    /// Family of the current shape, if known (a personal access token is a
+    /// key, like an API key).
     pub fn family(&self) -> Option<AuthFamily> {
-        self.mode().map(AuthMode::family)
+        match self {
+            AuthShape::Pat { .. } => Some(AuthFamily::Token),
+            _ => self.mode().map(AuthMode::family),
+        }
     }
 }

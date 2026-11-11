@@ -19,7 +19,7 @@ fn line_change(request: SwitchRequest, home: &Path) -> SwitchPlan {
                 .name
                 .clone(),
         )
-        .arg_text("mode", AuthMode::Pat.text());
+        .arg_text("mode", AuthMode::ApiKey.text());
     plan.primary = RestartKind::AppServerHot {
         host_id: "local".into(),
         kill_remote: false,
@@ -194,7 +194,6 @@ async fn isolated_cli_transcripts() {
         overview.app.installs.clear();
         overview.app.session = None;
         overview.app.hot_switch = HotSwitchStatus::NotInstalled;
-        overview.app.authapi_line = None;
         overview.cli.binaries.clear();
         overview.cli.processes.clear();
         overview.remotes.clear();

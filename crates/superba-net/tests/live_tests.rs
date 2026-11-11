@@ -45,12 +45,11 @@ async fn live_public_krill_lines() {
     assert_eq!(caps.len(), site.lines.len());
     for c in &caps {
         eprintln!(
-            "{:>9} reachable={} latency={:?}ms grade={:?} pat_ok={} apikey_ok={} path={:?} edge={} | {}",
+            "{:>9} reachable={} latency={:?}ms grade={:?} apikey_ok={} path={:?} edge={} | {}",
             c.line_id.as_str(),
             c.reachable,
             c.latency_ms,
             c.latency_grade(),
-            c.pat_ok,
             c.apikey_ok,
             c.codex_path,
             c.blocked_by_edge,
@@ -113,16 +112,15 @@ async fn live_keyed_line() {
         .await
         .expect("probe_with_key");
     eprintln!(
-        "probe_with_key: reachable={} latency={:?} pat_ok={} apikey_ok={} path={:?} key_access={:?} | {}",
+        "probe_with_key: reachable={} latency={:?} apikey_ok={} path={:?} key_access={:?} | {}",
         caps.reachable,
         caps.latency_ms,
-        caps.pat_ok,
         caps.apikey_ok,
         caps.codex_path,
         caps.key_access,
         text(&caps.detail)
     );
-    for mode in [AuthMode::Pat, AuthMode::ApiKey] {
+    for mode in [AuthMode::ApiKey] {
         let check = prober
             .check_key(&site, &line, mode, &key)
             .await
@@ -132,11 +130,6 @@ async fn live_keyed_line() {
             check.access, check.whoami, check.identity, check.codex_path, check.key_last4
         );
     }
-    let health = prober
-        .check_authapi(&site, &line.origin, &key)
-        .await
-        .expect("check_authapi");
-    eprintln!("check_authapi: {health:?}");
     let summary = prober
         .account_summary(&site, &line, &key)
         .await
@@ -144,7 +137,7 @@ async fn live_keyed_line() {
     eprintln!("account_summary: {summary:?}");
 
     let path = caps.codex_path.unwrap_or(CodexPath::BackendApiCodex);
-    let endpoints = ResolvedEndpoints::for_line(&line.origin, path, AuthMode::ApiKey).unwrap();
+    let endpoints = ResolvedEndpoints::for_line(&line.origin, path).unwrap();
     let models = prober
         .list_models(&endpoints.openai_base_url, &key)
         .await
@@ -187,8 +180,7 @@ async fn live_transports() {
     };
     let key = Secret::new(std::env::var(&key_var).expect("key variable is set"));
     let origin = Origin::parse(&origin).expect("origin");
-    let endpoints =
-        ResolvedEndpoints::for_line(&origin, CodexPath::BackendApiCodex, AuthMode::ApiKey).unwrap();
+    let endpoints = ResolvedEndpoints::for_line(&origin, CodexPath::BackendApiCodex).unwrap();
     let probe = HttpLineProber::default()
         .probe_transports(&endpoints, &key)
         .await
@@ -221,7 +213,7 @@ async fn live_compaction() {
     let prober = HttpLineProber::default();
     let mut native = 0;
     for path in [CodexPath::BackendApiCodex, CodexPath::CodexV1] {
-        let endpoints = ResolvedEndpoints::for_line(&origin, path, AuthMode::ApiKey).unwrap();
+        let endpoints = ResolvedEndpoints::for_line(&origin, path).unwrap();
         let check = prober
             .probe_compaction(&endpoints, &key, &model)
             .await

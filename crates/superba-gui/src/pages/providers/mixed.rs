@@ -235,7 +235,7 @@ mod tests {
     #[test]
     fn states() {
         let l = login();
-        let pat = AuthShape::Pat {
+        let key = AuthShape::ApiKey {
             key_last4: "abcd".into(),
         };
         assert_eq!(
@@ -253,13 +253,13 @@ mod tests {
             MixedStatus::RouterOff
         );
         assert_eq!(
-            status(&facts(Some(&pat), Some(AuthMode::Pat))),
+            status(&facts(Some(&key), Some(AuthMode::ApiKey))),
             MixedStatus::NoLogin
         );
         assert_eq!(
             status(&Facts {
                 stash_account: Some("acct"),
-                ..facts(Some(&pat), Some(AuthMode::Pat))
+                ..facts(Some(&key), Some(AuthMode::ApiKey))
             }),
             MixedStatus::Pending
         );

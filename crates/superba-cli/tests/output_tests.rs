@@ -26,7 +26,6 @@ async fn status_json_is_exactly_the_overview_and_human_status_has_required_field
         "CDP port: 9234",
         "Launched by Superba: yes",
         "Hot switch: Ready",
-        "Auth line: Overseas (overseas)",
         "/fake/bin/codex",
         "0.162.0",
         "PATH rank",
@@ -81,7 +80,6 @@ async fn lines_listing_and_probe_have_distinct_calls_and_json_shapes() {
     let (_, stdout, _) = invoke(service.clone(), &["lines", "--probe"]).await;
     for value in [
         "123",
-        "PAT ok",
         "API key ok",
         "Codex path",
         "Edge blocked",
@@ -264,7 +262,7 @@ async fn plan_preview_covers_diffs_and_never_serializes_secret_payloads() {
             profile_id: Some(ProfileId::new("work")),
             site_id: Some(SiteId::new("krill")),
             line_id: Some(LineId::new("overseas")),
-            auth_mode: Some(AuthMode::Pat),
+            auth_mode: Some(AuthMode::ApiKey),
             files: vec![PlannedFile {
                 kind: CodexFileKind::AuthJson,
                 path: "/fake/codex/auth.json".into(),
@@ -294,11 +292,10 @@ async fn plan_preview_covers_diffs_and_never_serializes_secret_payloads() {
                 line_id: Some(LineId::new("overseas")),
                 mode: ResolvedMode::Token {
                     site_kind: SiteKind::Krill,
-                    auth: AuthMode::Pat,
+                    auth: AuthMode::ApiKey,
                     endpoints: ResolvedEndpoints::for_line(
                         &Origin::parse("https://example.invalid").unwrap(),
                         CodexPath::BackendApiCodex,
-                        AuthMode::Pat,
                     )
                     .unwrap(),
                     key: Secret::new(FAKE_KEY),
@@ -491,7 +488,7 @@ async fn line_names_match_across_status_lines_and_switch_in_both_locales() {
                 site.line(&LineId::new("overseas")).unwrap().name.clone(),
             )
             .arg_text("site", site.name)
-            .arg_text("mode", AuthMode::Pat.text());
+            .arg_text("mode", AuthMode::ApiKey.text());
         Ok(plan)
     });
     for (locale, expected) in [

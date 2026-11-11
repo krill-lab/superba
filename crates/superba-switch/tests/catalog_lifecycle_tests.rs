@@ -12,8 +12,8 @@ use std::sync::Arc;
 use fakes::v3::files_in;
 use fakes::*;
 use superba_core::{
-    AuthChoice, AuthMode, ExecuteOptions, ModelOverride, NoEvents, OutcomeStatus, ProfileId,
-    RestoreTarget, SafeDefaults, SwitchIntent, SwitchPlan, SwitchRequest, SwitchService,
+    AuthMode, ExecuteOptions, ModelOverride, NoEvents, OutcomeStatus, ProfileId, RestoreTarget,
+    SafeDefaults, SwitchIntent, SwitchPlan, SwitchRequest, SwitchService,
 };
 use superba_switch::Switcher;
 
@@ -37,7 +37,6 @@ fn work_with_window(w: &World, n: u64) {
         .find(|p| p.id.as_str() == "work")
         .unwrap();
     p.auth_mode = AuthMode::ApiKey;
-    p.set_auth(AuthChoice::ApiKey);
     p.model_overrides.insert(
         "gpt-6-astra".into(),
         ModelOverride {

@@ -64,7 +64,7 @@ impl Rig {
         let mut old_preset = CodexSettings::krill_recommended();
         old_preset.set_openai_telemetry_off(true);
         let work = set.profiles.iter_mut().find(|p| p.id == "work").unwrap();
-        assert_eq!(work.auth_choice(), superba_core::AuthChoice::Auto);
+        assert_eq!(work.auth_mode, superba_core::AuthMode::ApiKey);
         if with_catalog {
             work.model_overrides.insert(
                 "gpt-5.5".to_owned(),
@@ -79,7 +79,7 @@ impl Rig {
         } else {
             CodexSettings::krill_recommended()
         };
-        let mut spare = krill_profile("spare", Some("overseas"), superba_core::AuthMode::Pat);
+        let mut spare = krill_profile("spare", Some("overseas"), superba_core::AuthMode::ApiKey);
         spare.codex_settings = old_preset;
         set.profiles.push(spare);
         // Saved as already migrated, so the old switch below keeps the preset.
@@ -498,7 +498,7 @@ async fn the_profile_store_is_not_touched() {
     );
     let work = rig.store.load().await.unwrap();
     let work = work.profile(&ProfileId::new("work")).unwrap();
-    assert_eq!(work.auth_choice(), superba_core::AuthChoice::Auto);
+    assert_eq!(work.auth_mode, superba_core::AuthMode::ApiKey);
 }
 
 #[tokio::test]

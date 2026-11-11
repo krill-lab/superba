@@ -1,30 +1,27 @@
 //! The Connection tab of a provider (UX §3.3): its lines ([`super::lines`]:
 //! the line in use, switching and the order, latency, WebSocket / zstd support,
-//! auth availability and the key check per line; a custom site: its base URL,
-//! editable inline), the automatic authentication decision with the manual
-//! choice under Advanced, the key (masked, where it is stored, check on all
+//! API-key availability and the key check per line; a custom site: its base
+//! URL, editable inline), the key (masked, where it is stored, check on all
 //! lines, replace), and summaries of the provider's models and Codex settings
 //! with links to the Models and Settings pages; the settings row carries
 //! "Disable OpenAI telemetry" (user bug 137).
 
 use egui::{Align, Layout, RichText, Sense, TextEdit, Ui, vec2};
 use superba_core::{
-    AuthChoice, AuthMode, AuthReason, KeyAccess, KeyInput, KeyRef, Line, LineCaps, ModelListSource,
-    Profile, Secret, Site, SiteKind,
+    AuthMode, KeyAccess, KeyInput, KeyRef, Line, LineCaps, ModelListSource, Profile, Secret, Site,
+    SiteKind,
 };
 
 use super::{KeyEdit, State, form, ops};
-use crate::design::fonts::{Weight, font, mono_font};
+use crate::design::fonts::{Weight, mono_font};
 use crate::design::icons::{self, Icon};
 use crate::design::tokens::text;
 use crate::design::widgets::{
-    Button, KeyInput as KeyField, Latency, LatencyBadge, Segmented, Status, StatusDot, Text,
-    Toggle, link_button,
+    Button, KeyInput as KeyField, Latency, LatencyBadge, Status, StatusDot, Text, Toggle,
+    link_button,
 };
 use crate::pages::shared::providers::{Provider, ProviderKind};
-use crate::pages::shared::{
-    auto_facts, decision_with, new_profile, ordered_lines, telemetry_actions,
-};
+use crate::pages::shared::{new_profile, telemetry_actions};
 use crate::pages::{Action, Cx, Page, divider, elided, error_text, key_access_status};
 
 /// Width of the labels of the summary rows.
@@ -64,9 +61,6 @@ pub(super) fn show(
     ui.add_space(6.0);
     divider(ui, cx);
     ui.add_space(6.0);
-    if site.supports(AuthMode::Pat) {
-        auth(ui, cx, state, p, out);
-    }
     key(ui, cx, state, p, out);
     super::compaction::poll(ui, cx, p);
     super::compaction::show(ui, cx, p, out);
@@ -107,7 +101,7 @@ pub(super) fn row_split(
     });
 }
 
-/// What a line offers (PAT and API key, API key only) and the key check result.
+/// Whether a line takes an API key and the key check result.
 pub(super) fn availability(
     ui: &mut Ui,
     cx: &Cx<'_>,
@@ -122,15 +116,7 @@ pub(super) fn availability(
         elided(ui, Text::small(cx.tr.t("lines.key.checking"), cx.pal));
         return;
     }
-    let mode = decision_with(
-        &p.site,
-        Some(line),
-        caps,
-        p.profile.as_ref(),
-        auto_facts(cx.data),
-    )
-    .mode
-    .unwrap_or(AuthMode::ApiKey);
+    let mode = AuthMode::ApiKey;
     let checked = state
         .checks
         .get(&p.id)
@@ -138,7 +124,6 @@ pub(super) fn availability(
         .map(|(_, _, r)| r);
     let caps_text = match caps {
         Some(c) if !c.reachable || c.codex_path.is_none() => Some(cx.tr.t("caps.unavailable")),
-        Some(c) if c.allows(AuthMode::Pat) => Some(cx.tr.t("caps.pat_and_key")),
         Some(c) if c.allows(AuthMode::ApiKey) => Some(cx.tr.t("caps.key_only")),
         Some(_) => Some(cx.tr.t("caps.unavailable")),
         None => None,
@@ -306,108 +291,6 @@ fn save_base_url(state: &mut State, cx: &Cx<'_>, p: &Provider) {
         }
         Err(e) => {
             state.base_url_error = Some(super::add::form_error_text(cx, &e));
-        }
-    }
-}
-
-/// "Automatic → PAT · reason", with the manual choice under Advanced.
-fn auth(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, p: &Provider, out: &mut Vec<Action>) {
-    let site = &p.site;
-    let profile = p.profile.as_ref();
-    let lines = ordered_lines(site, profile);
-    let primary = lines.first();
-    let caps = primary.and_then(|l| cx.data.site_caps(&site.id, &l.id));
-    let d = decision_with(site, primary, caps, profile, auto_facts(cx.data));
-    // Advanced keeps its size; a long reason (router mode) is shortened.
-    row_split(
-        ui,
-        cx,
-        &cx.tr.t("providers.row.auth"),
-        |ui| {
-            let label = if state.advanced {
-                cx.tr.t("connection.auth.hide_advanced")
-            } else {
-                cx.tr.t("connection.auth.advanced")
-            };
-            if link_button(ui, &label, false).clicked() {
-                state.advanced = !state.advanced;
-            }
-        },
-        |ui| {
-            let status = match d.mode {
-                None => Status::Error,
-                Some(_) if d.fell_back() => Status::Idle,
-                Some(_) => Status::Ok,
-            };
-            ui.add(StatusDot::new(status));
-            let mode = d
-                .mode
-                .map(|m| cx.auth_short(m))
-                .unwrap_or_else(|| cx.tr.t("connection.auth.none"));
-            let main = if d.reason == AuthReason::Manual {
-                cx.tr.f("connection.auth.manual", &[("mode", &mode)])
-            } else {
-                format!("{} → {mode}", cx.tr.text(&d.choice.text()))
-            };
-            ui.label(
-                RichText::new(main)
-                    .font(font(text::SMALL, Weight::Medium))
-                    .color(cx.pal.text),
-            );
-            if d.reason != AuthReason::Manual {
-                let line = primary.map(|l| cx.tr.text(&l.name)).unwrap_or_default();
-                let reason = cx.tr.f(
-                    "connection.auth.reason",
-                    &[("line", &line), ("reason", &cx.localize(&d.reason.text()))],
-                );
-                let text = format!("· {reason}");
-                let r = ui.add(egui::Label::new(Text::small(&text, cx.pal)).truncate());
-                // The whole reason on hover, then its detail.
-                let tip = match d.reason.detail() {
-                    Some(detail) => format!("{reason}\n{}", cx.localize(detail)),
-                    None => reason,
-                };
-                r.on_hover_text(tip);
-            }
-        },
-    );
-    if state.advanced {
-        let mut choice = profile.map_or(AuthChoice::Auto, Profile::auth_choice);
-        let before = choice;
-        ui.horizontal(|ui| {
-            ui.add_space(LABEL_W + 8.0);
-            ui.add_enabled_ui(profile.is_some() && !cx.busy, |ui| {
-                let mut seg = Segmented::new("providers-auth", &mut choice).small();
-                for c in AuthChoice::ALL {
-                    let usable = match c {
-                        AuthChoice::Pat => site.supports(AuthMode::Pat),
-                        AuthChoice::ApiKey => site.supports(AuthMode::ApiKey),
-                        _ => true,
-                    };
-                    if usable {
-                        seg = seg.option(c, cx.tr.text(&c.text()));
-                    }
-                }
-                seg.show(ui);
-            });
-            ui.add(
-                egui::Label::new(Text::caption(
-                    cx.tr.t("connection.auth.advanced_body"),
-                    cx.pal,
-                ))
-                .truncate(),
-            )
-            .on_hover_text(cx.tr.t("connection.auth.advanced_body"));
-        });
-        if choice != before
-            && let Some(p) = profile
-        {
-            let mut changed = p.clone();
-            changed.set_auth(choice);
-            out.push(Action::SaveProfile {
-                profile: Box::new(changed),
-                key: None,
-            });
         }
     }
 }

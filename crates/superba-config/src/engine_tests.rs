@@ -60,13 +60,9 @@ impl T {
             line_id: Some(LineId::new("overseas")),
             mode: ResolvedMode::Token {
                 site_kind: SiteKind::Krill,
-                auth: AuthMode::Pat,
-                endpoints: ResolvedEndpoints::for_line(
-                    &origin,
-                    CodexPath::BackendApiCodex,
-                    AuthMode::Pat,
-                )
-                .unwrap(),
+                auth: AuthMode::ApiKey,
+                endpoints: ResolvedEndpoints::for_line(&origin, CodexPath::BackendApiCodex)
+                    .unwrap(),
                 key: Secret::new("krill-unit-test-pat-0007"),
             },
             model: ModelDefaults::default(),
@@ -140,11 +136,11 @@ fn crash_mid_publish_rolls_forward() {
     let t = T::new();
     t.crash_apply(Crash::FirstPublish);
     // auth.json was published, config.toml not yet.
-    assert!(t.auth().contains("personal_access_token"));
+    assert!(t.auth().contains("\"auth_mode\": \"apikey\""));
     assert_eq!(t.config(), CONFIG);
     let r = t.engine.recover_sync(&t.root).unwrap();
     assert_eq!(r.entries[0].action, JournalAction::Completed);
-    assert!(t.config().contains("chatgpt_base_url"));
+    assert!(t.config().contains("openai_base_url"));
     assert!(t.temps().is_empty());
     assert_eq!(t.generation(), Some(1));
     // Ready for the next plan.
@@ -290,8 +286,8 @@ fn concurrent_change_before_publish_is_rebased() {
     assert_eq!(report.generation, 1);
     let out = t.config();
     assert!(out.contains("[desktop]\ntheme = \"light\""), "{out}");
-    assert!(out.contains("chatgpt_base_url"), "{out}");
-    assert!(t.auth().contains("personal_access_token"));
+    assert!(out.contains("openai_base_url"), "{out}");
+    assert!(t.auth().contains("\"auth_mode\": \"apikey\""));
     assert!(t.temps().is_empty());
     assert!(!t.engine.pending(&t.root).unwrap());
 }
@@ -345,7 +341,7 @@ fn change_after_first_publish_undoes_and_retries() {
     res.unwrap();
     assert!(t.config().contains("# touched"));
     assert!(t.config().contains("openai_base_url"));
-    assert!(t.auth().contains("personal_access_token"));
+    assert!(t.auth().contains("\"auth_mode\": \"apikey\""));
     // The other tool's auth.json was stashed nowhere (not a ChatGPT login) but its
     // first-write pre-image exists for the original restore.
     let hs = state::read_home(t.engine.data(), &t.root).unwrap();
@@ -399,7 +395,7 @@ fn rollback_crash_mid_publish_recovers_from_encrypted_sources() {
             assert_eq!(t.auth(), AUTH);
         } else {
             assert_eq!(t.config().as_bytes(), restored.expose());
-            assert!(t.auth().contains("personal_access_token"));
+            assert!(t.auth().contains("\"auth_mode\": \"apikey\""));
         }
         for temp in t.temps() {
             std::fs::remove_file(t.root.join(temp)).unwrap();

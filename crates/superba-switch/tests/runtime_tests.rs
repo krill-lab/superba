@@ -40,7 +40,7 @@ fn active(n: u64, at: i64) -> ActiveState {
         profile_id: Some(ProfileId::new("krill")),
         site_id: Some(SiteId::new("krill")),
         line_id: Some(LineId::new("overseas")),
-        auth_mode: Some(AuthMode::Pat),
+        auth_mode: Some(AuthMode::ApiKey),
         generation: n,
         applied_at: Timestamp(at),
     }

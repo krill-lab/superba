@@ -167,12 +167,10 @@ fn process(pid: u32, cmdline: &[&str]) -> ProcessInfo {
     }
 }
 
-fn full_restart_reasons() -> [FullRestartReason; 9] {
+fn full_restart_reasons() -> [FullRestartReason; 7] {
     [
         FullRestartReason::NoCdp,
         FullRestartReason::NoBridge,
-        FullRestartReason::AuthApiMissing,
-        FullRestartReason::AuthApiUnhealthy,
         FullRestartReason::CrossAuthFamily,
         FullRestartReason::SessionMigration,
         FullRestartReason::PlatformNoHot,
@@ -842,7 +840,7 @@ fn nested_site_line_and_mode_use_the_banner_locale_recursively() {
     let destination = messages::text("switch.destination.profile")
         .arg_text("site", site.name.clone())
         .arg_text("line", line.name.clone())
-        .arg_text("mode", AuthMode::Pat.text());
+        .arg_text("mode", AuthMode::ApiKey.text());
     let [english_destination, chinese_destination] =
         assert_message(&destination, "switch.destination.profile");
     let lines = messages::countdown_banner(&destination, 5);

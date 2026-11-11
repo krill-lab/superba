@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use futures_util::future::join_all;
 use superba_core::{
-    AppSession, ApplyReport, AuthApiHealth, AuthMode, CodexFileKind, CodexHome, CodexProcessKind,
+    AppSession, ApplyReport, AuthMode, CodexFileKind, CodexHome, CodexProcessKind,
     ConsumersStopped, Decision, DecisionRequest, EnvApplied, Error, ExecuteOptions,
     HotRestartRequest, LaunchOptions, LocalizedText, MigrationReceipt, Notice, OutcomeStatus,
     ProcessInfo, QuitOptions, QuitOutcome, RemoteApplyReport, RemoteHost, RemoteOutcome,
@@ -474,16 +474,6 @@ impl Run<'_> {
             && (matches!(primary, RestartKind::FullAppRestart { .. })
                 || plan.migration.is_some()
                 || self.pc.rollback_migration.is_some());
-        // Resolve the dependency before quitting or writing. Follow-off and
-        // stopped distributions must not be silently taken over or started.
-        let legacy_dependency = if !write_only
-            && ((full && self.session.is_some()) || primary.is_hot() || self.pc.restart_app)
-        {
-            self.legacy_wsl_dependency(full || self.pc.restart_app)
-                .await?
-        } else {
-            None
-        };
         if full {
             // Read the WSL distributions' login environment while ChatGPT
             // closes (alpha.10 re-test, W81): a cold distribution starts
@@ -518,29 +508,6 @@ impl Run<'_> {
         self.entry.status = JournalStatus::Committed;
         self.save_journal();
 
-        if let Some(target) = legacy_dependency {
-            self.early_remotes = self.remotes(Some(&target)).await;
-            if self
-                .early_remotes
-                .iter()
-                .any(|r| r.status == OutcomeStatus::Failed)
-            {
-                // Keep the written local destination for an explicit retry,
-                // but never start it against the old WSL authentication env.
-                // The failed dependency makes the final outcome Partial.
-                self.notices.push(Notice::danger(
-                    text("switch.wsl.legacy_restart_skipped")
-                        .arg_text("host", superba_core::target_title(&target)),
-                ));
-                return Ok(LocalResult {
-                    status: OutcomeStatus::WrittenOnly,
-                    restart: RestartKind::None,
-                    verification: None,
-                    returned_to: None,
-                });
-            }
-        }
-
         if write_only {
             if plan.migration.is_some() {
                 self.notices
@@ -574,80 +541,6 @@ impl Run<'_> {
                 })
             }
         }
-    }
-
-    /// A legacy local core reads the Windows files, but its login bash reads
-    /// the distribution's exports. Only an already-authorized host write may
-    /// prepare those exports; an independent home must already be compatible.
-    async fn legacy_wsl_dependency(&self, launching: bool) -> Result<Option<TargetId>> {
-        let Some(distro) = self.pc.legacy_wsl.as_deref() else {
-            return Ok(None);
-        };
-        let Some(expected) = self
-            .pc
-            .endpoints
-            .as_ref()
-            .and_then(|e| e.authapi_origin.as_ref())
-        else {
-            return Ok(None);
-        };
-        let fail = |message: &str| Error::Wsl {
-            distro: distro.to_owned(),
-            message: message.to_owned(),
-        };
-        let d = self.deps();
-        d.remote.wsl_running().await?;
-        let host = d.remote.discover(&self.pc.home, &[], &[]).await?
-            .into_iter().find(|h| h.wsl_distro().as_deref() == Some(distro))
-            .ok_or_else(|| fail("Cannot prepare the local app's WSL authentication environment: distribution not found."))?;
-        if host.wsl.as_ref().and_then(superba_core::WslDistro::running) == Some(false) {
-            return Err(fail(
-                "The local app's WSL distribution is stopped. Start it and retry the switch; it has not been started or changed.",
-            ));
-        }
-        if let Some(plan) = self
-            .plan
-            .remotes
-            .iter()
-            .find(|p| p.target_id == host.target_id)
-        {
-            if !plan.blocked.is_empty() {
-                return Err(Error::Blocked {
-                    reasons: plan.blocked.clone(),
-                });
-            }
-            let origin = plan.desired.as_ref().and_then(|p| match &p.mode {
-                superba_core::ResolvedMode::Token { endpoints, .. } => {
-                    endpoints.authapi_origin.as_ref()
-                }
-                _ => None,
-            });
-            if origin != Some(expected) {
-                return Err(fail(
-                    "The local app and the WSL home need different authentication environments. Check the WSL router connection before retrying; neither home has been changed.",
-                ));
-            }
-            return Ok(Some(host.target_id));
-        }
-        let state = d.remote.probe(&host).await?;
-        let expected = expected.as_str();
-        let matches = match state.authapi_env {
-            superba_core::EnvObservation::Present(ref value) => value == &expected,
-            superba_core::EnvObservation::Absent => {
-                launching
-                    || self
-                        .session
-                        .as_ref()
-                        .is_some_and(|s| s.authapi_env.value() == Some(expected.as_str()))
-            }
-            superba_core::EnvObservation::Unknown => false,
-        };
-        if !matches {
-            return Err(fail(
-                "The independent WSL login environment does not match the local app's destination. Update it or enable following before retrying; its configuration has not been changed.",
-            ));
-        }
-        Ok(None)
     }
 
     /// Current turn activity of the local app and the plan's remote hosts.
@@ -1129,19 +1022,6 @@ impl Run<'_> {
                 Err(e) if account.is_none() && e.is_not_implemented() => {}
                 Err(e) => return Err(e),
             }
-        }
-
-        if self
-            .pc
-            .endpoints
-            .as_ref()
-            .is_some_and(|e| self.sw.matches_router_endpoint(e.openai_base_url.as_str()))
-            && plan
-                .to
-                .auth_mode
-                .is_some_and(superba_core::AuthMode::needs_authapi_env)
-        {
-            self.sw.prepare_router_certificate().await?;
         }
 
         // The model catalog file exists before config.toml names it
@@ -1646,7 +1526,7 @@ impl Run<'_> {
         .await;
         match decision {
             Decision::FullRestart => {
-                self.full_restart_after_write(superba_core::FullRestartReason::AuthApiUnhealthy)
+                self.full_restart_after_write(superba_core::FullRestartReason::Requested)
                     .await
             }
             Decision::KeepWritten => {
@@ -1746,8 +1626,7 @@ impl Run<'_> {
         }
     }
 
-    /// Launch the app through Superba (CDP unless safe mode or root, the auth
-    /// address of the current line in its environment).
+    /// Launch the app through Superba (CDP unless safe mode or root).
     async fn launch_app(&mut self, reopen: bool) -> Result<AppSession> {
         let d = self.deps().clone();
         if !reopen {
@@ -1755,35 +1634,12 @@ impl Run<'_> {
         }
         self.ev.step(SwitchStep::LaunchApp, StepStatus::Running);
         let mut env = BTreeMap::new();
-        let origin = match (&self.session, reopen) {
-            // Reopen exactly as before: keep the auth address it had.
-            (Some(s), true) => s.authapi_env.value().map(str::to_owned),
-            _ => self
-                .pc
-                .endpoints
-                .as_ref()
-                .and_then(|e| e.authapi_origin.as_ref())
-                .or(self.pc.launch_authapi.as_ref())
-                .map(|o| o.as_str()),
-        };
-        if !reopen
-            && self
-                .plan
-                .env
-                .as_ref()
-                .is_none_or(superba_core::EnvPlan::is_noop)
-        {
-            // A switch that wrote no environment (`spb launch --restart`, an
-            // unchanged line): what the app needs at start-up (user bug 69a).
-            let origin = origin
-                .as_deref()
-                .and_then(|o| superba_core::Origin::parse(o).ok());
-            self.sw.prepare_launch_env(origin.as_ref()).await;
+        // Reopen exactly as before: keep the auth address it had (an app
+        // started for a personal access token before user bug 139).
+        if reopen && let Some(o) = self.session.as_ref().and_then(|s| s.authapi_env.value()) {
+            env.insert(ENV_AUTHAPI_BASE_URL.to_owned(), o.to_owned());
         }
-        if let Some(o) = origin {
-            env.insert(ENV_AUTHAPI_BASE_URL.to_owned(), o);
-        }
-        let env_remove = self.sw.prepare_router_launch_env(&mut env).await?;
+        let env_remove = self.sw.prepare_router_launch_env(&mut env).await;
         let mut options = LaunchOptions {
             install_id: self.pc.install_id.clone(),
             cdp: launch_cdp_mode(self.pc.safe_mode, effective_root()),
@@ -1895,7 +1751,8 @@ impl Run<'_> {
         let v = Verification {
             process: self.verify_process(session, restarted).await,
             files: self.verify_files().await,
-            auth: self.verify_auth(session).await,
+            // An API key has no auth address to check (user bug 139).
+            auth: skipped(text("switch.verify.not_applicable")),
             line: self.verify_line().await,
             renderer: if renderer {
                 self.verify_renderer(session, self.launched_at.is_some())
@@ -2110,78 +1967,6 @@ impl Run<'_> {
         CheckResult::Passed
     }
 
-    async fn verify_auth(&self, session: Option<&AppSession>) -> CheckResult {
-        let d = self.deps();
-        if !self.pc.auth.is_some_and(AuthMode::needs_authapi_env) {
-            return skipped(text("switch.verify.not_applicable"));
-        }
-        // The local PAT belongs to the router, not its selected member. Scope
-        // verification to the configured router origin, never to the observed
-        // process environment: a stale app must not send this token upstream.
-        let router_site = self
-            .pc
-            .endpoints
-            .as_ref()
-            .filter(|e| self.sw.matches_router_endpoint(e.openai_base_url.as_str()))
-            .map(|e| {
-                superba_net::new_compatible_site(
-                    superba_core::SiteId::new("superba-router"),
-                    "Superba local router",
-                    &e.openai_base_url,
-                )
-            })
-            .transpose();
-        let router_site = match router_site {
-            Ok(site) => site,
-            Err(e) => {
-                return CheckResult::Failed {
-                    detail: e.to_string(),
-                };
-            }
-        };
-        // Without a configured site that owns the destination (for example a
-        // restored legacy tutorial config) the key must not be sent anywhere to
-        // check it; skip with the reason instead of failing, otherwise such a
-        // restore (and uninstall) could never pass verification.
-        let (Some(site), Some(key)) =
-            (router_site.as_ref().or(self.pc.site.as_ref()), &self.pc.key)
-        else {
-            return skipped(text("switch.verify.authapi_credentials_missing"));
-        };
-        // The new app-server authenticates against the auth address of the app
-        // process (hot path) or the one Superba launched it with.
-        let origin = session
-            .and_then(|s| s.authapi_env.value())
-            .and_then(|v| superba_core::Origin::parse(v).ok())
-            .or_else(|| {
-                self.pc
-                    .endpoints
-                    .as_ref()
-                    .and_then(|e| e.authapi_origin.clone())
-            });
-        let Some(origin) = origin else {
-            return CheckResult::Failed {
-                detail: text("switch.verify.authapi_unhealthy")
-                    .arg("reason", "no auth address")
-                    .render_fallback(),
-            };
-        };
-        match d.prober.check_authapi(site, &origin, key).await {
-            Ok(AuthApiHealth::Healthy) => CheckResult::Passed,
-            Ok(AuthApiHealth::Unhealthy { reason }) => CheckResult::Failed {
-                detail: text("switch.verify.authapi_unhealthy")
-                    .arg("reason", reason)
-                    .render_fallback(),
-            },
-            Err(e) if e.is_not_implemented() => skipped(text("switch.verify.not_supported")),
-            Err(e) => CheckResult::Failed {
-                detail: text("switch.verify.authapi_unhealthy")
-                    .arg("reason", e.to_string())
-                    .render_fallback(),
-            },
-        }
-    }
-
     async fn verify_line(&self) -> CheckResult {
         let d = self.deps();
         if self.pc.kept_foreign_auth {
@@ -2343,12 +2128,6 @@ impl Run<'_> {
         // A full restart has closed this session. Its WSL connections will
         // read the prepared files when the app opens them again.
         let session = self.session.clone().filter(|_| !self.app_was_quit);
-        let expected_authapi = self
-            .pc
-            .endpoints
-            .as_ref()
-            .and_then(|e| e.authapi_origin.as_ref())
-            .map(|o| o.as_str());
         let timeout_ms = self.sw.tuning.verify_timeout.as_millis() as u64;
         let journal = SwitchJournal::new(&d.ctx.data_dir);
         let rollback_target = self.pc.rollback_remote.clone();
@@ -2357,19 +2136,6 @@ impl Run<'_> {
         let futs = work.into_iter().map(|(host, plan)| {
             let d = d.clone();
             let session = session.clone();
-            // A host's own plan says which env it gets (a WSL distribution may be
-            // routed or direct while this computer is the other).
-            let expected_authapi = plan
-                .and_then(|p| p.desired.as_ref())
-                .map(|desired| match &desired.mode {
-                    superba_core::ResolvedMode::Token {
-                        auth, endpoints, ..
-                    } if auth.needs_authapi_env() || verify_login_env => {
-                        endpoints.authapi_origin.as_ref().map(|o| o.as_str())
-                    }
-                    _ => None,
-                })
-                .unwrap_or_else(|| expected_authapi.clone());
             let journal = journal.clone();
             let rollback_target = rollback_target.clone();
             async move {
@@ -2384,7 +2150,7 @@ impl Run<'_> {
                             &host,
                             plan,
                             session.as_ref(),
-                            expected_authapi,
+                            None,
                             timeout_ms,
                             verify_login_env,
                         )
@@ -2656,10 +2422,8 @@ impl Run<'_> {
                     lines.extend(p.line_priority().into_iter().filter(|x| x != &l));
                     p.set_line_priority(lines);
                 }
-                match update.auth_mode {
-                    Some(AuthMode::Pat) => p.set_auth(superba_core::AuthChoice::Pat),
-                    Some(AuthMode::ApiKey) => p.set_auth(superba_core::AuthChoice::ApiKey),
-                    _ => {}
+                if let Some(mode) = update.auth_mode.filter(|m| m.uses_key()) {
+                    p.auth_mode = mode;
                 }
             }
             set.last_selected = Some(update.profile_id);

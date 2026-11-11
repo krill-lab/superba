@@ -29,7 +29,7 @@ fn plan() -> SwitchPlan {
             profile_id: Some("test".into()),
             site_id: Some("test".into()),
             line_id: Some("test-line".into()),
-            auth_mode: Some(AuthMode::Pat),
+            auth_mode: Some(AuthMode::ApiKey),
             label: LocalizedText::new("test.destination", "Test destination"),
         },
         primary: RestartKind::AppServerHot {
@@ -425,7 +425,7 @@ async fn the_toast_after_a_switch_names_what_was_applied() {
         profile_id: Some("krill".into()),
         site_id: Some("krill".into()),
         line_id: Some(line.into()),
-        auth_mode: Some(AuthMode::Pat),
+        auth_mode: Some(AuthMode::ApiKey),
         label: LocalizedText::new("test.destination", "Krill"),
     };
     let from = |a: &ActiveState| SwitchPlan {
@@ -494,7 +494,7 @@ fn the_progress_banner_of_a_reapply_says_it_applies_the_changes() {
                 profile_id: Some("test".into()),
                 site_id: Some("test".into()),
                 line_id: Some("test-line".into()),
-                auth_mode: Some(AuthMode::Pat),
+                auth_mode: Some(AuthMode::ApiKey),
                 generation: 1,
                 applied_at: Timestamp::EPOCH,
             });

@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use pretty_assertions::assert_eq;
 use serde_json::{Value, json};
 use superba_core::{
-    AuthMode, CodexPath, Line, LineCaps, LineId, LineSource, LocalizedText, ManualClock, Origin,
+    CodexPath, Line, LineCaps, LineId, LineSource, LocalizedText, ManualClock, Origin,
     ResolvedEndpoints, Secret, Site, SiteId, Timestamp,
 };
 use superba_net::{HttpLineProber, ProbeConfig, new_compatible_site};
@@ -366,8 +366,6 @@ pub fn probe_config() -> ProbeConfig {
         latency_samples: 2,
         client_version: "0.162.0-superba-test".into(),
         use_system_proxy: false,
-        // Mock servers speak plain http; the https rule has its own test.
-        pat_requires_https: false,
         ..ProbeConfig::default()
     }
 }
@@ -419,7 +417,6 @@ pub fn endpoints(server: &MockServer) -> ResolvedEndpoints {
     ResolvedEndpoints::for_line(
         &Origin::parse(&server.origin()).unwrap(),
         CodexPath::BackendApiCodex,
-        AuthMode::ApiKey,
     )
     .unwrap()
 }

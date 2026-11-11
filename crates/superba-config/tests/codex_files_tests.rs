@@ -482,7 +482,7 @@ fn codex_files_keep() -> usize {
 async fn switch_pre_images_and_the_original_are_listed_and_restorable() {
     let env = Env::new();
     env.write_config(LEGACY_CONFIG);
-    let desired = common::token(common::OVERSEAS, AuthMode::Pat, PAT_KEY);
+    let desired = common::token(common::OVERSEAS, AuthMode::ApiKey, PAT_KEY);
     let plan = env.engine.plan(&env.home, &desired).await.unwrap();
     env.engine.apply(&plan).await.unwrap();
     let store = EditorStore::new(env.ctx.clone());

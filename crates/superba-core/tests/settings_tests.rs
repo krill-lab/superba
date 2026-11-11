@@ -175,184 +175,64 @@ fn krill_recommended_preset_matches_the_tutorial_keys() {
 }
 
 // ---------------------------------------------------------------------------
-// auth choice
+// key auth (user bug 139: key-based profiles always use an API key)
 // ---------------------------------------------------------------------------
 
-fn caps(reachable: bool, pat_ok: bool, apikey_ok: bool, path: Option<&str>) -> LineCaps {
+fn caps(reachable: bool, apikey_ok: bool, path: Option<&str>) -> LineCaps {
     let mut v = json!({
         "site_id": "krill", "line_id": "overseas", "checked_at": 0,
-        "reachable": reachable, "latency_ms": 120, "pat_ok": pat_ok, "apikey_ok": apikey_ok,
-        "blocked_by_edge": !pat_ok,
+        "reachable": reachable, "latency_ms": 120, "apikey_ok": apikey_ok,
+        "blocked_by_edge": false,
     });
     if let Some(p) = path {
         v["codex_path"] = json!(p);
-    }
-    if !pat_ok {
-        v["detail"] = json!({"key": "probe.pat_edge_blocked", "fallback": "edge blocks {endpoint}",
-            "args": [["endpoint", "/backend-api/wham/accounts/check"]]});
     }
     serde_json::from_value(v).expect("LineCaps from JSON")
 }
 
 #[test]
-fn auth_choice_serializes_and_maps_modes() {
-    assert_eq!(serde_json::to_value(AuthChoice::Auto).unwrap(), "auto");
-    assert_eq!(serde_json::to_value(AuthChoice::Pat).unwrap(), "pat");
-    assert_eq!(serde_json::to_value(AuthChoice::ApiKey).unwrap(), "apikey");
-    assert_eq!(AuthChoice::default(), AuthChoice::Auto);
-    assert_eq!(AuthChoice::from_mode(AuthMode::Pat), AuthChoice::Auto);
-    assert_eq!(AuthChoice::from_mode(AuthMode::ApiKey), AuthChoice::ApiKey);
-    assert_eq!(
-        AuthChoice::from_mode(AuthMode::OfficialChatGpt),
-        AuthChoice::Auto
-    );
-    assert_eq!(AuthChoice::Auto.manual_mode(), None);
-    assert_eq!(AuthChoice::Pat.manual_mode(), Some(AuthMode::Pat));
-    assert_eq!(AuthChoice::ApiKey.manual_mode(), Some(AuthMode::ApiKey));
-    assert_eq!(AuthChoice::Auto.representative_mode(), AuthMode::Pat);
-    assert_eq!(AuthChoice::ApiKey.representative_mode(), AuthMode::ApiKey);
-}
-
-#[test]
-fn auto_prefers_pat_and_explains_every_fallback() {
+fn key_auth_uses_an_api_key_where_the_site_and_line_take_one() {
     let krill = catalog::krill_site();
-    let line = krill.line(&"overseas".into()).unwrap().clone();
-    let pat_ok = caps(true, true, true, Some("backend_api_codex"));
-    let edge = caps(true, false, true, Some("backend_api_codex"));
-    let v1_only = caps(true, true, true, Some("codex_v1"));
-    let down = caps(false, false, false, None);
-    let cx = || AuthContext::new(&krill).line(&line);
-
-    let d = AuthChoice::Auto.decide(&cx().caps(&pat_ok));
+    let d = key_auth(&krill, None);
     assert_eq!(
-        (d.mode, d.reason.clone()),
-        (Some(AuthMode::Pat), AuthReason::PatAvailable)
+        (d.mode, d.reason),
+        (Some(AuthMode::ApiKey), AuthReason::Available)
     );
-    assert!(!d.fell_back());
-
-    let d = AuthChoice::Auto.decide(&cx());
-    assert_eq!(
-        (d.mode, d.reason.clone()),
-        (Some(AuthMode::Pat), AuthReason::NotProbed)
-    );
-
-    let d = AuthChoice::Auto.decide(&cx().caps(&edge));
+    let d = key_auth(&krill, Some(&caps(true, true, Some("backend_api_codex"))));
     assert_eq!(d.mode, Some(AuthMode::ApiKey));
-    assert!(matches!(
-        d.reason,
-        AuthReason::PatUnavailable { detail: Some(_) }
-    ));
-    assert!(d.fell_back());
-    assert!(
-        d.text()
-            .render_fallback()
-            .starts_with("API key: The line's edge blocks PAT sign-in.")
-    );
-
-    // PAT needs the backend-api path; a /codex/v1-only line falls back.
-    let d = AuthChoice::Auto.decide(&cx().caps(&v1_only));
+    let d = key_auth(&krill, Some(&caps(true, true, Some("codex_v1"))));
     assert_eq!(d.mode, Some(AuthMode::ApiKey));
-    assert!(d.fell_back());
-
-    for (cx, reason) in [
-        (cx().custom_base_url(true), AuthReason::CustomBaseUrl),
-        (cx().pat_version_ok(Some(false)), AuthReason::CodexTooOld),
+    for down in [
+        caps(false, false, None),
+        caps(true, false, Some("backend_api_codex")),
+        caps(true, true, None),
     ] {
-        let d = AuthChoice::Auto.decide(&cx.caps(&pat_ok));
-        assert_eq!((d.mode, d.reason.clone()), (Some(AuthMode::ApiKey), reason));
-        assert!(d.fell_back());
+        let d = key_auth(&krill, Some(&down));
+        assert_eq!((d.mode, d.reason), (None, AuthReason::LineUnavailable));
     }
-    let mut http_line = line.clone();
-    http_line.origin = Origin::parse("http://127.0.0.1:8080").unwrap();
-    let d = AuthChoice::Auto.decide(&AuthContext::new(&krill).line(&http_line));
-    assert_eq!(
-        (d.mode, d.reason.clone()),
-        (Some(AuthMode::ApiKey), AuthReason::PatNeedsHttps)
-    );
-
-    let d = AuthChoice::Auto.decide(&cx().caps(&down));
-    assert_eq!(
-        (d.mode, d.reason.clone()),
-        (None, AuthReason::LineUnavailable)
-    );
-    let d = AuthChoice::Auto.decide(&cx().router(true).caps(&down));
-    assert_eq!(d.mode, None);
-}
-
-#[test]
-fn compatible_and_official_sites_never_pick_pat() {
-    let mut compatible = catalog::krill_site();
-    compatible.kind = SiteKind::Compatible;
-    compatible.capabilities = catalog::compatible_capabilities();
-    let d = AuthChoice::Auto.decide(&AuthContext::new(&compatible));
-    assert_eq!(
-        (d.mode, d.reason.clone()),
-        (Some(AuthMode::ApiKey), AuthReason::SiteApiKeyOnly)
-    );
-    assert!(!d.fell_back());
-    let d = AuthChoice::Pat.decide(&AuthContext::new(&compatible));
-    assert_eq!(d.mode, None);
-    assert!(matches!(
-        d.reason,
-        AuthReason::ManualUnavailable {
-            mode: AuthMode::Pat,
-            detail: Some(_)
-        }
-    ));
-    let d = AuthChoice::ApiKey.decide(&AuthContext::new(&compatible));
-    assert_eq!(
-        (d.mode, d.reason.clone()),
-        (Some(AuthMode::ApiKey), AuthReason::Manual)
-    );
-
     let official = catalog::official_site();
-    let d = AuthChoice::Auto.decide(&AuthContext::new(&official));
+    let d = key_auth(&official, None);
     assert_eq!((d.mode, d.reason), (None, AuthReason::NoKeyMode));
 }
 
 #[test]
-fn manual_choices_never_fall_back() {
-    let krill = catalog::krill_site();
-    let line = krill.line(&"cn-fast".into()).unwrap().clone();
-    let edge = caps(true, false, true, Some("backend_api_codex"));
-    let no_key = caps(true, true, false, Some("backend_api_codex"));
-    let cx = AuthContext::new(&krill).line(&line);
-
-    let d = AuthChoice::Pat.decide(&cx.caps(&edge));
-    assert_eq!(d.mode, None);
-    assert!(matches!(
-        d.reason,
-        AuthReason::ManualUnavailable {
-            mode: AuthMode::Pat,
-            ..
-        }
-    ));
-    let d = AuthChoice::Pat.decide(&cx);
-    assert_eq!(
-        (d.mode, d.reason),
-        (Some(AuthMode::Pat), AuthReason::Manual)
-    );
-    // Through the local router the key is always sent as an API key: a PAT
-    // choice is for direct switches only (user bug 78) and never blocks it.
-    let d = AuthChoice::Pat.decide(&cx.router(true));
-    assert_eq!(
-        (d.mode, d.reason.clone(), d.choice),
-        (Some(AuthMode::Pat), AuthReason::RouterMode, AuthChoice::Pat)
-    );
-    assert!(
-        !d.fell_back(),
-        "a manual choice is not Automatic falling back"
-    );
-    let d = AuthChoice::Pat.decide(&cx.router(true).caps(&edge));
-    assert_eq!(d.mode, Some(AuthMode::Pat), "PAT's edge block is no matter");
-
-    let d = AuthChoice::ApiKey.decide(&cx.caps(&edge));
-    assert_eq!(
-        (d.mode, d.reason),
-        (Some(AuthMode::ApiKey), AuthReason::Manual)
-    );
-    let d = AuthChoice::ApiKey.decide(&cx.caps(&no_key));
-    assert_eq!(d.mode, None);
+fn a_former_pat_reads_as_an_api_key() {
+    // Profiles, settings and catalogs saved before user bug 139.
+    let mode: AuthMode = serde_json::from_value(json!("pat")).unwrap();
+    assert_eq!(mode, AuthMode::ApiKey);
+    assert_eq!(serde_json::to_value(mode).unwrap(), "apikey");
+    let p: Profile = serde_json::from_value(json!({
+        "id": "p", "name": "P", "site_id": "krill", "auth_mode": "pat", "auth": "auto",
+    }))
+    .unwrap();
+    assert_eq!(p.auth_mode, AuthMode::ApiKey);
+    let caps: SiteCapabilities = serde_json::from_value(json!({
+        "auth_modes": ["pat", "apikey"], "codex_paths": ["backend_api_codex"],
+    }))
+    .unwrap();
+    assert_eq!(caps.auth_modes, vec![AuthMode::ApiKey]);
+    let settings: Settings = serde_json::from_value(json!({ "default_auth_mode": "pat" })).unwrap();
+    assert_eq!(settings.default_auth_mode, AuthMode::ApiKey);
 }
 
 // ---------------------------------------------------------------------------
@@ -368,27 +248,8 @@ fn profile_with(auth_mode: AuthMode) -> Profile {
 }
 
 #[test]
-fn set_auth_mirrors_the_mode() {
-    let mut p = profile_with(AuthMode::Pat);
-    assert_eq!(p.auth, AuthChoice::Auto);
-    assert_eq!(p.auth_choice(), AuthChoice::Auto);
-    // set_auth mirrors auth_mode.
-    p.set_auth(AuthChoice::Pat);
-    assert_eq!(
-        (p.auth, p.auth_mode, p.auth_choice()),
-        (AuthChoice::Pat, AuthMode::Pat, AuthChoice::Pat)
-    );
-    p.set_auth(AuthChoice::Auto);
-    assert_eq!(p.auth_mode, AuthMode::Pat);
-    // Built-ins keep the official mode.
-    let mut official = catalog::builtin_profiles().remove(1);
-    official.set_auth(AuthChoice::ApiKey);
-    assert_eq!(official.auth_mode, AuthMode::OfficialChatGpt);
-}
-
-#[test]
 fn line_priority_is_primary_then_unique_backups() {
-    let mut p = profile_with(AuthMode::Pat);
+    let mut p = profile_with(AuthMode::ApiKey);
     assert_eq!(p.line_priority(), vec![LineId::new("overseas")]);
     p.set_line_priority(["cdn", "overseas", "cdn", "cn-fast"].map(LineId::new));
     assert_eq!(p.line_id, Some(LineId::new("cdn")));
@@ -406,7 +267,7 @@ fn line_priority_is_primary_then_unique_backups() {
 #[test]
 fn preferring_a_line_preserves_the_effective_order_including_implicit_backups() {
     let site = superba_core::catalog::krill_site();
-    let mut p = profile_with(AuthMode::Pat);
+    let mut p = profile_with(AuthMode::ApiKey);
     p.set_line_priority(Vec::new());
     let order = p.ordered_line_ids(&site);
     assert_eq!(order[0], site.default_line.as_ref().unwrap().clone());
@@ -691,45 +552,10 @@ fn settings_plan_round_trips_through_json() {
 // ---------------------------------------------------------------------------
 
 fn all_texts() -> Vec<LocalizedText> {
-    let d = LocalizedText::new("x.detail", "detail");
-    let mut texts: Vec<LocalizedText> = AuthChoice::ALL.iter().map(|c| c.text()).collect();
-    for r in [
-        AuthReason::Manual,
-        AuthReason::PatAvailable,
-        AuthReason::NotProbed,
-        AuthReason::SiteApiKeyOnly,
-        AuthReason::CustomBaseUrl,
-        AuthReason::RouterMode,
-        AuthReason::CodexTooOld,
-        AuthReason::PatNeedsHttps,
-        AuthReason::PatUnavailable { detail: None },
-        AuthReason::PatUnavailable {
-            detail: Some(d.clone()),
-        },
-        AuthReason::PatUnavailable {
-            detail: Some(LocalizedText::new("probe.pat_edge_blocked", "edge")),
-        },
-        AuthReason::LineUnavailable,
-        AuthReason::NoKeyMode,
-        AuthReason::ManualUnavailable {
-            mode: AuthMode::Pat,
-            detail: None,
-        },
-        AuthReason::ManualUnavailable {
-            mode: AuthMode::Pat,
-            detail: Some(d.clone()),
-        },
-    ] {
+    let mut texts: Vec<LocalizedText> = Vec::new();
+    for r in [AuthReason::LineUnavailable, AuthReason::NoKeyMode] {
         texts.push(r.text());
     }
-    texts.push(
-        AuthDecision {
-            choice: AuthChoice::Auto,
-            mode: Some(AuthMode::ApiKey),
-            reason: AuthReason::RouterMode,
-        }
-        .text(),
-    );
     for s in [
         FeatureStage::UnderDevelopment,
         FeatureStage::Experimental,
@@ -849,10 +675,6 @@ fn every_settings_text_is_in_both_core_catalogs() {
         );
         assert!(!src.contains("上下文管理"), "{locale}");
     }
-    assert_eq!(
-        AuthMode::Pat.text().render_fallback(),
-        "PAT (personal access token)"
-    );
     assert_eq!(AuthMode::ApiKey.text().render_fallback(), "API key");
 }
 

@@ -589,7 +589,11 @@ fn a_token_launch_names_the_signed_out_owner_of_atoms_without_one() {
     }
     // A ChatGPT login, a file without atoms, or one with an owner: untouched.
     let h = home(Some(CHATGPT), Some(&original));
-    assert!(!prepare_launch(&h.home, &h.backups, None, Timestamp::now()).unwrap().owner_named);
+    assert!(
+        !prepare_launch(&h.home, &h.backups, None, Timestamp::now())
+            .unwrap()
+            .owner_named
+    );
     assert_eq!(fs::read(h.home.global_state_json()).unwrap(), original);
     for other in [
         serde_json::json!({"local-projects": {}}),

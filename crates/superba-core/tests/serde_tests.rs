@@ -29,7 +29,6 @@ fn profile_round_trip_preserves_optional_model_url_and_key_reference() {
         backup_lines: vec!["backup".into()],
         disabled_lines: Default::default(),
         auth_mode: AuthMode::ApiKey,
-        auth: AuthChoice::ApiKey,
         key_ref: Some(KeyRef::Env {
             var: "TEST_API_KEY".into(),
         }),
@@ -44,7 +43,7 @@ fn profile_round_trip_preserves_optional_model_url_and_key_reference() {
         codex_settings: CodexSettings::krill_recommended(),
     };
     let encoded = json_round_trip!(Profile, profile);
-    assert_eq!(encoded["auth"], "apikey");
+    assert!(encoded.get("auth").is_none());
     assert_eq!(encoded["backup_lines"], json!(["backup"]));
     assert_eq!(encoded["codex_settings"]["web_search"], "live");
     assert_eq!(encoded["id"], "work");
@@ -74,7 +73,7 @@ fn minimal_profile_deserialization_supplies_documented_defaults() {
     assert_eq!(profile.key_ref, None);
     assert_eq!(profile.base_url_override, None);
     assert_eq!(profile.model, ModelDefaults::default());
-    assert_eq!(profile.auth, AuthChoice::Auto);
+    assert_eq!(profile.auth_mode, AuthMode::ApiKey);
     assert!(profile.backup_lines.is_empty());
     assert!(profile.codex_settings.is_empty());
 }
@@ -128,14 +127,18 @@ fn key_references_round_trip_with_kind_tags_and_no_key_material() {
 }
 
 #[test]
-fn auth_mode_wire_names_are_pat_apikey_and_chatgpt() {
+fn auth_mode_wire_names_are_apikey_and_chatgpt() {
     for (mode, name) in [
-        (AuthMode::Pat, "pat"),
         (AuthMode::ApiKey, "apikey"),
         (AuthMode::OfficialChatGpt, "chatgpt"),
     ] {
         assert_eq!(json_round_trip!(AuthMode, mode), json!(name));
     }
+    // The former PAT mode reads as an API key (user bug 139).
+    assert_eq!(
+        serde_json::from_value::<AuthMode>(json!("pat")).unwrap(),
+        AuthMode::ApiKey
+    );
     for name in ["api_key", "official_chat_gpt", "PAT"] {
         assert!(serde_json::from_value::<AuthMode>(json!(name)).is_err());
     }
@@ -208,7 +211,6 @@ fn line_capabilities_round_trip_with_checks_and_localized_details() {
         checked_at: Timestamp(1_792_139_400_123),
         reachable: true,
         latency_ms: Some(42),
-        pat_ok: false,
         apikey_ok: true,
         codex_path: Some(CodexPath::CodexV1),
         blocked_by_edge: true,
@@ -245,7 +247,7 @@ fn overview_round_trips_nested_app_cli_remote_account_and_notice_values() {
             profile_id: Some("work".into()),
             site_id: Some("krill".into()),
             line_id: Some("overseas".into()),
-            auth_mode: Some(AuthMode::Pat),
+            auth_mode: Some(AuthMode::ApiKey),
             generation: 7,
             applied_at: Timestamp(1_000),
         }),
@@ -276,7 +278,6 @@ fn overview_round_trips_nested_app_cli_remote_account_and_notice_values() {
                 codex_home: None,
             }),
             hot_switch: HotSwitchStatus::Ready,
-            authapi_line: Some("overseas".into()),
         },
         cli: CliOverview {
             binaries: vec![CodexBinary {
@@ -402,7 +403,7 @@ fn overview_round_trips_nested_app_cli_remote_account_and_notice_values() {
     assert_eq!(encoded["external"]["source"]["kind"], "cc_switch");
     assert_eq!(encoded["external"]["source"]["provider"], "Kimi");
     assert_eq!(encoded["external"]["auth"]["live"]["kind"], "missing");
-    assert_eq!(encoded["active"]["auth_mode"], "pat");
+    assert_eq!(encoded["active"]["auth_mode"], "apikey");
     assert_eq!(
         encoded["app"]["installs"][0]["bundled_codex_version"],
         "0.162.0-alpha.17.2"
@@ -476,7 +477,7 @@ fn empty_settings_deserialize_to_defaults_and_partial_settings_preserve_other_de
         }
     );
     assert_eq!(settings.countdown_secs, 5);
-    assert_eq!(settings.default_auth_mode, AuthMode::Pat);
+    assert_eq!(settings.default_auth_mode, AuthMode::ApiKey);
     assert_eq!(settings.theme, Theme::System);
     assert_eq!(settings.locale, None);
     assert!(settings.auto_probe);

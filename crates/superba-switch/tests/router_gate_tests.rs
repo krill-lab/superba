@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use fakes::*;
 use superba_core::{
-    AuthChoice, AuthMode, ExecuteOptions, Locale, NoEvents, OutcomeStatus, ProfileId, ResolvedMode,
+    AuthMode, ExecuteOptions, Locale, NoEvents, OutcomeStatus, ProfileId, ResolvedMode,
     RouterInstallRequest, SafeDefaults, SwitchIntent, SwitchPlan, SwitchRequest, SwitchService,
     catalog,
 };
@@ -93,18 +93,18 @@ async fn users_state() -> (World, Switcher) {
         .profile(&ProfileId::new("work"))
         .cloned()
         .unwrap();
-    assert_eq!(work.auth_choice(), AuthChoice::Auto);
+    assert_eq!(work.auth_mode, AuthMode::ApiKey);
     let plan = sw.plan(req("work")).await.unwrap();
     assert!(!plan.is_blocked(), "{:?}", plan.primary);
     assert_eq!(
         token_mode(&plan).0,
-        AuthMode::Pat,
+        AuthMode::ApiKey,
         "Auto uses the PAT direct"
     );
     let outcome = execute(&sw, plan).await;
     assert_eq!(outcome.status, OutcomeStatus::Switched, "{outcome:?}");
     let (mode, _) = superba_config::authjson::token_credentials(&read(&w, "auth.json")).unwrap();
-    assert_eq!(mode, AuthMode::Pat);
+    assert_eq!(mode, AuthMode::ApiKey);
     sw.router_install(RouterInstallRequest {
         members: vec![ProfileId::new("work")],
     })
@@ -220,9 +220,9 @@ async fn a_krill_member_with_its_key_turns_router_mode_on_with_a_local_pat() {
     );
     assert_eq!(
         token_mode(&plan),
-        (AuthMode::Pat, FakeRouter::base_url(18_431))
+        (AuthMode::ApiKey, FakeRouter::base_url(18_431))
     );
-    assert_eq!(plan.to.auth_mode, Some(AuthMode::Pat));
+    assert_eq!(plan.to.auth_mode, Some(AuthMode::ApiKey));
     let outcome = execute(&sw, plan).await;
     assert_eq!(outcome.status, OutcomeStatus::Switched, "{outcome:?}");
 
@@ -233,7 +233,7 @@ async fn a_krill_member_with_its_key_turns_router_mode_on_with_a_local_pat() {
     );
     let auth = read(&w, "auth.json");
     let (mode, token) = superba_config::authjson::token_credentials(&auth).unwrap();
-    assert_eq!(mode, AuthMode::Pat, "auth.json uses the local PAT");
+    assert_eq!(mode, AuthMode::ApiKey, "auth.json uses the local PAT");
     assert_eq!(token.expose(), ROUTER_TOKEN, "Codex holds the router token");
     assert!(
         !String::from_utf8_lossy(&auth).contains(KEY),
@@ -244,45 +244,15 @@ async fn a_krill_member_with_its_key_turns_router_mode_on_with_a_local_pat() {
     let set = sw.profile_set().await.unwrap();
     assert!(set.settings.router.enabled);
     let work = set.profile(&ProfileId::new("work")).unwrap();
-    assert_eq!(work.auth_choice(), AuthChoice::Auto);
+    assert_eq!(work.auth_mode, AuthMode::ApiKey);
     assert!(sw.router_status().await.unwrap().codex_routed);
-}
-
-#[tokio::test]
-async fn local_pat_verification_uses_the_router_origin_with_the_real_prober() {
-    let (w, sw) = users_state().await;
-    let mut config = w.router.written.lock().unwrap().last().unwrap().clone();
-    config.listen_port = 0;
-    config.tuning.active_probes = false;
-    let secrets = superba_router::RouterSecrets {
-        router_token: superba_core::Secret::new(ROUTER_TOKEN),
-        member_keys: config
-            .members
-            .iter()
-            .map(|m| (m.id.clone(), superba_core::Secret::new(KEY)))
-            .collect(),
-        official_tokens: Default::default(),
-    };
-    let server = superba_router::RouterServer::bind(config, secrets)
-        .await
-        .unwrap();
-    *w.router.port.lock().unwrap() = Some(server.local_addr().port());
-    let stop = server.shutdown_handle();
-    let task = tokio::spawn(server.serve());
-    *w.prober.http_authapi.lock().unwrap() = Some(superba_net::HttpLineProber::default());
-    sw.router_set_enabled(false).await.unwrap();
-    let plan = sw.plan(router_on_request()).await.unwrap();
-    let outcome = execute(&sw, plan).await;
-    stop.shutdown();
-    task.await.unwrap().unwrap();
-    assert_eq!(outcome.status, OutcomeStatus::Switched, "{outcome:?}");
 }
 
 #[tokio::test]
 async fn turning_the_router_on_applies_a_member_never_another_profile() {
     let (w, sw) = users_state().await;
     // Another Krill profile with a key, applied, but not a member.
-    let second = krill_profile("second", Some("overseas"), AuthMode::Pat);
+    let second = krill_profile("second", Some("overseas"), AuthMode::ApiKey);
     sw.save_profile(
         second,
         Some(superba_core::Secret::new("nb-second-key-2222")),
@@ -322,8 +292,7 @@ fn the_routed_member_is_the_applied_eligible_member_else_the_first_one() {
     keyless.key_ref = None;
     let second = krill_profile("second", None, AuthMode::ApiKey);
     // PAT for direct switches: still routed with its key (user bug 78).
-    let mut pat = krill_profile("pat", None, AuthMode::Pat);
-    pat.set_auth(AuthChoice::Pat);
+    let pat = krill_profile("pat", None, AuthMode::ApiKey);
     set.profiles.extend([keyless, second, pat]);
     let sites = catalog::builtin_sites();
     let id = ProfileId::new;
@@ -429,161 +398,21 @@ async fn the_doctor_report_warns_about_a_router_program_on_a_network_share() {
     }
 }
 
-#[tokio::test]
-async fn router_certificate_environment_preserves_user_roots_and_restores_on_disable() {
-    use superba_core::EnvPersister;
-    let w = World::new();
-    let other = superba_router::RouterPaths::from_dir(w.ctx.data_dir.root().join("company"));
-    superba_router::tls::prepare_client_bundle(&other, &[], false).unwrap();
-    let original = format!(
-        "export CODEX_CA_CERTIFICATE=\"{}\"\n",
-        other.certificate_pem().display()
-    );
-    std::fs::create_dir_all(&w.ctx.home_dir).unwrap();
-    std::fs::write(w.ctx.home_dir.join(".bashrc"), &original).unwrap();
-    let env = Arc::new(superba_config::ShellEnvPersister::with_platform(
-        w.ctx.clone(),
-        superba_config::EnvPlatform::Linux,
-        Arc::new(superba_config::MemoryNativeEnv::new()),
-    ));
-    let mut deps = w.deps();
-    deps.config = Arc::new(superba_config::TomlConfigEngine::new(w.ctx.clone()));
-    deps.env = env.clone();
-    let sw = Switcher::with_tuning(
-        deps,
-        Tuning {
-            poll: Duration::from_millis(10),
-            verify_timeout: Duration::from_millis(200),
-            launch_verify_timeout: Duration::from_millis(200),
-            stable: Duration::ZERO,
-            reask_after: Duration::from_secs(60),
-            plan_cache: 16,
-            windows_app: false,
-        },
-    );
-    assert_eq!(
-        execute(&sw, sw.plan(req("work")).await.unwrap())
-            .await
-            .status,
-        OutcomeStatus::Switched
-    );
-    sw.router_install(RouterInstallRequest {
-        members: vec![ProfileId::new("work")],
-    })
-    .await
-    .unwrap();
-    let plan = sw.plan(router_on_request()).await.unwrap();
-    assert!(matches!(
-        plan.primary,
-        superba_core::RestartKind::FullAppRestart { .. }
-    ));
-    assert!(plan.certificate_env.is_some());
-    let outcome = execute(&sw, plan).await;
-    assert_eq!(outcome.status, OutcomeStatus::Switched, "{outcome:?}");
-    let paths = superba_router::RouterPaths::new(&w.ctx.data_dir);
-    let bundle = std::fs::read_to_string(paths.client_certificate_pem()).unwrap();
-    assert!(bundle.contains(&std::fs::read_to_string(other.certificate_pem()).unwrap()));
-    assert!(bundle.contains(&std::fs::read_to_string(paths.certificate_pem()).unwrap()));
-    let report = env.inspect(superba_router::tls::CERT_ENV).await.unwrap();
-    assert_eq!(
-        report.superba_value.as_deref(),
-        paths.client_certificate_pem().to_str()
-    );
-    assert_eq!(
-        w.app
-            .launches
-            .lock()
-            .unwrap()
-            .last()
-            .unwrap()
-            .env
-            .get(superba_router::tls::CERT_ENV)
-            .map(String::as_str),
-        paths.client_certificate_pem().to_str()
-    );
-    let mut disable = router_on_request();
-    disable.intent = SwitchIntent::Router { enable: false };
-    let plan = sw.plan(disable).await.unwrap();
-    assert!(matches!(
-        plan.certificate_env.as_ref().map(|e| &e.op),
-        Some(superba_core::EnvOp::Clear)
-    ));
-    assert_eq!(execute(&sw, plan).await.status, OutcomeStatus::Switched);
-    assert_eq!(
-        env.inspect(superba_router::tls::CERT_ENV)
-            .await
-            .unwrap()
-            .superba_value,
-        None
-    );
-    let bash = std::fs::read_to_string(w.ctx.home_dir.join(".bashrc")).unwrap();
-    assert!(bash.lines().any(|l| l == original.trim_end()), "{bash}");
-    assert!(!bash.contains("codex-ca.pem"));
-}
-
-#[tokio::test]
-async fn interrupted_router_rollback_recovers_the_certificate_environment() {
-    let (w, sw) = users_state().await;
-    *w.app.fail_launch.lock().unwrap() = Some(superba_core::Error::other("test launch failure"));
-    let plan = sw.plan(router_on_request()).await.unwrap();
-    let outcome = execute(&sw, plan).await;
-    assert_ne!(outcome.status, OutcomeStatus::Switched);
-    let journal = superba_switch::journal::SwitchJournal::new(&w.ctx.data_dir);
-    let mut entry = journal
-        .entries()
-        .unwrap()
-        .into_iter()
-        .find(|e| e.certificate_env.is_some())
-        .unwrap();
-    entry.status = superba_switch::journal::JournalStatus::RollingBack;
-    journal.write(&entry).unwrap();
-    w.set_session(None);
-    let recovery = sw.recover().await.unwrap();
-    assert!(
-        recovery
-            .entries
-            .iter()
-            .any(|e| e.action == superba_core::JournalAction::RolledBack)
-    );
-    assert!(
-        journal
-            .entries()
-            .unwrap()
-            .iter()
-            .any(|e| e.certificate_env.is_some() && e.rollback.certificate_env)
-    );
-    assert_eq!(
-        superba_config::authjson::token_credentials(&read(&w, "auth.json"))
-            .unwrap()
-            .0,
-        AuthMode::Pat
-    );
-    assert!(!String::from_utf8_lossy(&read(&w, "config.toml")).contains("127.0.0.1"));
-}
-
-/// The MSI first switches back to direct with `write_only`, then removes the
-/// service. Use the real config/env engines, with an isolated Windows store.
-async fn windows_router_uninstall_env(
+/// A Windows user environment where Superba set `CODEX_AUTHAPI_BASE_URL`
+/// for a personal access token before user bug 139, over the user's own
+/// `original` value. The real config and env engines, an isolated store.
+async fn windows_pat_env_world(
     original: Option<&str>,
-    user_change: Option<(&str, bool)>,
-    direct_pat: bool,
+) -> (
+    World,
+    Switcher,
+    Arc<superba_config::MemoryNativeEnv>,
+    Arc<superba_config::ShellEnvPersister>,
 ) {
     use superba_config::NativeEnv;
     use superba_core::{EnvLocation, EnvPersister, codex::ENV_AUTHAPI_BASE_URL};
 
     let w = World::new();
-    // Auto falls back to API key on a line whose edge blocks PAT sign-in,
-    // while routing still uses a local PAT regardless of the upstream mode.
-    if !direct_pat {
-        let mut caps = good_caps(catalog::KRILL_SITE_ID, "overseas");
-        caps.pat_ok = false;
-        caps.blocked_by_edge = true;
-        w.prober
-            .caps
-            .lock()
-            .unwrap()
-            .insert("overseas".into(), caps);
-    }
     let native = Arc::new(superba_config::MemoryNativeEnv::new());
     let loc = EnvLocation::WindowsUserEnv;
     if let Some(value) = original {
@@ -595,141 +424,104 @@ async fn windows_router_uninstall_env(
         superba_config::EnvPlatform::Windows,
         native.clone(),
     ));
+    let old = env
+        .plan(
+            ENV_AUTHAPI_BASE_URL,
+            superba_core::EnvOp::Set {
+                value: OVERSEAS.into(),
+                take_over_foreign: true,
+            },
+        )
+        .await
+        .unwrap();
+    env.apply(&old).await.unwrap();
+    assert_eq!(
+        native.get(&loc, ENV_AUTHAPI_BASE_URL).unwrap().as_deref(),
+        Some(OVERSEAS)
+    );
     let mut deps = w.deps();
     deps.config = Arc::new(superba_config::TomlConfigEngine::new(w.ctx.clone()));
     deps.env = env.clone();
     let sw = Switcher::new(deps);
-    let direct_auth = if direct_pat {
-        AuthMode::Pat
-    } else {
-        AuthMode::ApiKey
-    };
-    let direct = sw.plan(req("work")).await.unwrap();
-    assert_eq!(token_mode(&direct).0, direct_auth);
-    if !direct_pat {
-        assert!(
-            direct.env.is_none(),
-            "ordinary API-key switches leave env alone"
-        );
-    }
+    (w, sw, native, env)
+}
+
+/// The next API-key switch (direct or through the router) hands the variable
+/// back: the user's own value, or none.
+async fn windows_api_key_switch_returns_the_pat_env(original: Option<&str>, routed: bool) {
+    use superba_config::NativeEnv;
+    use superba_core::{EnvLocation, EnvPersister, codex::ENV_AUTHAPI_BASE_URL};
+
+    let (w, sw, native, env) = windows_pat_env_world(original).await;
+    let loc = EnvLocation::WindowsUserEnv;
     let write_only = ExecuteOptions {
         write_only: true,
         ..ExecuteOptions::default()
     };
-    let outcome = sw
-        .execute(
-            direct,
-            write_only.clone(),
-            Arc::new(SafeDefaults),
-            Arc::new(NoEvents),
-        )
+    let plan = if routed {
+        sw.router_install(RouterInstallRequest {
+            members: vec![ProfileId::new("work")],
+        })
         .await
         .unwrap();
-    assert_eq!(outcome.status, OutcomeStatus::WrittenOnly, "{outcome:?}");
-    sw.router_install(RouterInstallRequest {
-        members: vec![ProfileId::new("work")],
-    })
-    .await
-    .unwrap();
-    let on = sw.plan(router_on_request()).await.unwrap();
-    let router_origin = match &on.env.as_ref().unwrap().op {
-        superba_core::EnvOp::Set { value, .. } => value.clone(),
-        other => panic!("expected router env set: {other:?}"),
+        sw.plan(router_on_request()).await.unwrap()
+    } else {
+        sw.plan(req("work")).await.unwrap()
     };
+    assert_eq!(token_mode(&plan).0, AuthMode::ApiKey);
+    assert!(
+        matches!(
+            plan.env.as_ref().map(|e| &e.op),
+            Some(superba_core::EnvOp::Clear)
+        ),
+        "{:?}",
+        plan.env
+    );
     let outcome = sw
-        .execute(
-            on,
-            write_only.clone(),
-            Arc::new(SafeDefaults),
-            Arc::new(NoEvents),
-        )
+        .execute(plan, write_only, Arc::new(SafeDefaults), Arc::new(NoEvents))
         .await
         .unwrap();
     assert_eq!(outcome.status, OutcomeStatus::WrittenOnly, "{outcome:?}");
-    assert!(sw.router_status().await.unwrap().codex_routed);
+    if routed {
+        assert!(sw.router_status().await.unwrap().codex_routed);
+    }
+    let (mode, _) = superba_config::authjson::token_credentials(&read(&w, "auth.json")).unwrap();
+    assert_eq!(mode, AuthMode::ApiKey);
     assert_eq!(
         native.get(&loc, ENV_AUTHAPI_BASE_URL).unwrap().as_deref(),
-        Some(router_origin.as_str())
+        original,
+        "only the value Superba set goes"
+    );
+    assert_eq!(
+        native.get(&loc, "USER_SETTING").unwrap().as_deref(),
+        Some("keep-me")
     );
     assert_eq!(
         env.inspect(ENV_AUTHAPI_BASE_URL)
             .await
             .unwrap()
             .superba_value,
-        Some(router_origin)
+        None
     );
-
-    if let Some((value, false)) = user_change {
-        native.set(&loc, ENV_AUTHAPI_BASE_URL, value).unwrap();
-    }
-    let mut off = router_on_request();
-    off.intent = SwitchIntent::Router { enable: false };
-    let plan = sw.plan(off).await.unwrap();
-    assert_eq!(token_mode(&plan).0, direct_auth);
-    if let Some((value, true)) = user_change {
-        native.set(&loc, ENV_AUTHAPI_BASE_URL, value).unwrap();
-    }
-    let outcome = sw
-        .execute(plan, write_only, Arc::new(SafeDefaults), Arc::new(NoEvents))
-        .await
-        .unwrap();
-    assert_eq!(outcome.status, OutcomeStatus::WrittenOnly, "{outcome:?}");
-    let view = sw.router_uninstall().await.unwrap();
-    assert!(!view.codex_routed && !view.installed && !view.running);
-    let (mode, _) = superba_config::authjson::token_credentials(&read(&w, "auth.json")).unwrap();
-    assert_eq!(mode, direct_auth);
-    let expected = if direct_pat {
-        Some(OVERSEAS)
-    } else {
-        user_change.map(|(value, _)| value).or(original)
-    };
-    assert_eq!(
-        native.get(&loc, ENV_AUTHAPI_BASE_URL).unwrap().as_deref(),
-        expected,
-        "router removal must restore only the environment value Superba still owns"
-    );
-    assert_eq!(
-        native.get(&loc, "USER_SETTING").unwrap().as_deref(),
-        Some("keep-me")
-    );
-    if !direct_pat && user_change.is_none() {
-        assert_eq!(
-            env.inspect(ENV_AUTHAPI_BASE_URL)
-                .await
-                .unwrap()
-                .superba_value,
-            None
-        );
-    }
     assert!(
         w.app.launches.lock().unwrap().is_empty(),
-        "installer teardown must not restart the app"
+        "a write-only switch never restarts the app"
     );
 }
 
 #[tokio::test]
-async fn windows_router_uninstall_clears_owned_authapi() {
-    windows_router_uninstall_env(None, None, false).await;
+async fn windows_api_key_switch_clears_the_pat_authapi() {
+    windows_api_key_switch_returns_the_pat_env(None, false).await;
 }
 
 #[tokio::test]
-async fn windows_router_uninstall_restores_original_authapi() {
-    windows_router_uninstall_env(Some("https://original.example.test"), None, false).await;
+async fn windows_api_key_switch_restores_the_original_authapi() {
+    windows_api_key_switch_returns_the_pat_env(Some("https://original.example.test"), false).await;
 }
 
 #[tokio::test]
-async fn windows_router_uninstall_keeps_user_changed_authapi() {
-    windows_router_uninstall_env(None, Some(("https://user.example.test", false)), false).await;
-}
-
-#[tokio::test]
-async fn windows_router_uninstall_keeps_authapi_changed_after_planning() {
-    windows_router_uninstall_env(None, Some(("https://user.example.test", true)), false).await;
-}
-
-#[tokio::test]
-async fn windows_router_uninstall_preserves_direct_pat_authapi() {
-    windows_router_uninstall_env(None, None, true).await;
+async fn windows_router_mode_clears_the_pat_authapi() {
+    windows_api_key_switch_returns_the_pat_env(None, true).await;
 }
 
 fn catalog_row(

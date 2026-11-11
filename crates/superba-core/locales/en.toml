@@ -12,7 +12,6 @@ overseas = "Overseas"
 cdn = "Multi-carrier CDN"
 
 [auth_mode]
-pat = "PAT (personal access token)"
 apikey = "API key"
 chatgpt = "Official ChatGPT login"
 mixed = "Official ChatGPT login + router (mixed login)"
@@ -31,8 +30,6 @@ unknown = "Unexpected answer ({status}): {message}"
 certificate_trust_changed = "ChatGPT must restart to use the updated local router certificate settings."
 no_cdp = "ChatGPT was not opened from Superba, so it cannot be hot-switched."
 no_bridge = "This ChatGPT version does not expose the restart bridge."
-authapi_missing = "ChatGPT was started without the auth API address; a hot switch would lose the login."
-authapi_unhealthy = "The auth address of the line ChatGPT was started with is unavailable; a hot switch would lose the login."
 cross_auth_family = "Switching between the official login and an API key."
 session_migration = "Old sessions must be migrated first, which requires closing every Codex process."
 platform_no_hot = "Hot switching is not supported on this platform yet."
@@ -92,20 +89,15 @@ poor = "Slow"
 unknown = "No answer"
 
 [probe]
-pat_needs_https = "PAT needs an https line: Codex refuses a plain-http ChatGPT backend. An API key still works."
 ok = "All checks passed."
 unreachable = "Line unreachable: {detail}"
 no_codex_path = "No Codex path works on this line: {detail}"
-pat_edge_blocked = "PAT is unavailable on this line: the line's edge intercepts {endpoint}. An API key still works."
-pat_unavailable = "PAT is unavailable on this line: {endpoint} answered {status}."
 codex_v1_fallback = "/backend-api/codex is blocked on this line; API key mode uses /codex/v1 instead."
 
 [remote.warn]
 no_host_id = "ChatGPT has no host id for {host}: the change applies after you disconnect and reconnect the host in ChatGPT."
 pkill = "ChatGPT stops every `codex app-server --listen` process on {host} when it restarts it, including ones you started yourself."
 login_shell = "The login shell on {host} could not be run; CODEX_HOME and the environment were read from a plain shell and may differ from what ChatGPT sees."
-codex_missing = "No codex binary was found on the PATH of {host}'s login shell."
-version_unknown = "The Codex version on {host} is unknown; PAT needs a recent Codex."
 shared_home = "The Codex home on {host} was last written from another machine ({other}); it is probably shared (e.g. NFS), so this change affects every machine using it."
 legacy_provider = "{host} uses the old \"krill\" provider; its existing sessions stay hidden in ChatGPT until they are migrated."
 foreign_env = "{path} line {line} sets CODEX_AUTHAPI_BASE_URL to {value}; it may override Superba's value."
@@ -125,27 +117,9 @@ rate_limited_retry = "The site limits usage queries; showing saved data. Try aga
 rate_limited = "The site limits usage queries; showing saved data."
 refresh_failed = "Could not refresh ({reason}); showing saved data."
 
-[auth_choice]
-auto = "Automatic"
-pat = "Personal access token (PAT)"
-apikey = "API key"
-
 [auth_reason]
-decision = "{mode}: {reason}"
-manual = "Chosen manually."
-pat_available = "This line supports PAT."
-not_probed = "The line has not been checked yet; PAT is tried first."
-site_apikey_only = "This site uses API keys."
-custom_base_url = "A custom base URL is set; PAT needs one of the site's lines."
-router_mode = "Traffic goes through Superba's local router, which sends your key as an API key."
-codex_too_old = "A Codex that reads this configuration is too old for PAT."
-pat_needs_https = "PAT needs an https line."
-pat_edge_blocked = "The line's edge blocks PAT sign-in."
-pat_unavailable = "PAT does not work on this line."
 line_unavailable = "The line is unavailable."
 no_key_mode = "This site does not use keys."
-manual_unavailable_detail = "{mode} cannot be used here: {detail}"
-manual_unavailable = "{mode} cannot be used here."
 
 [feature_stage]
 under_development = "Under development"

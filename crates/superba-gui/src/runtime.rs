@@ -97,7 +97,9 @@ pub async fn read_original_key(
     expected: &superba_core::ConfigState,
     site: &Site,
 ) -> Result<Option<Secret>> {
-    if !config_matches_site(expected, site) || !expected.auth.mode().is_some_and(AuthMode::uses_key)
+    // A personal access token (a Krill tutorial's) holds the same key.
+    if !config_matches_site(expected, site)
+        || expected.auth.family() != Some(superba_core::AuthFamily::Token)
     {
         return Ok(None);
     }

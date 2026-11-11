@@ -3,12 +3,6 @@
 # defined in another area file (tests/i18n_tests.rs).
 
 [connection]
-auth.advanced = "Advanced"
-auth.advanced_body = "Automatic uses PAT where the line supports it and an API key elsewhere. A manual choice is kept on every line; a switch to a line that cannot use it is blocked."
-auth.hide_advanced = "Hide advanced"
-auth.manual = "{mode} (chosen manually)"
-auth.none = "no usable mode"
-auth.reason = "On {line}: {reason}"
 key.placeholder_compatible = "API key (sk-…)"
 lines.current = "current"
 lines.down = "Move down"
@@ -131,7 +125,7 @@ official.what = "chatgpt.com"
 preset.custom.body = "Enter its base URL and API key; Superba tests the connection, the key and the model list."
 preset.custom.title = "Custom OpenAI-compatible site"
 preset.default = "Default"
-preset.krill.body = "Three built-in lines (China Express, Overseas, Multi-carrier CDN); PAT chosen automatically."
+preset.krill.body = "Three built-in lines (China Express, Overseas, Multi-carrier CDN); your key is used as an API key."
 preset.krill.title = "Krill"
 preset.official.body = "Your own ChatGPT account."
 preset.official.title = "Official ChatGPT login"

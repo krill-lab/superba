@@ -262,13 +262,8 @@ impl TomlConfigEngine {
             }
             // The snapshot was pruned: only the kind of credential can be compared.
             None => (live_shape.mode() != e.active.auth_mode).then(|| superba_core::AuthDrift {
-                written: match e.active.auth_mode {
-                    Some(superba_core::AuthMode::Pat) => AuthShape::Pat {
-                        key_last4: "····".into(),
-                    },
-                    _ => AuthShape::ApiKey {
-                        key_last4: "····".into(),
-                    },
+                written: AuthShape::ApiKey {
+                    key_last4: "····".into(),
                 },
                 live: live_shape,
             }),

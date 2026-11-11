@@ -30,10 +30,10 @@ Superba 是一个小巧的桌面启动器（附带无界面 CLI），用来把
 - **热切换。** app 运行中直接换线路（Krill：国内极速、海外线路、三网优化 CDN）
   或换认证方式：app 内部的 Codex 核心约 1 秒重启，窗口、正在看的对话和最近
   列表都保留，下一轮直接走新线路并带上完整历史。
-- **自动选择认证方式。** Krill 的 Key 能用作个人访问令牌（PAT）时就用 PAT，否则
-  用普通 API Key：线路边缘拦截了 PAT 端点、线路是明文 http、设置了自定义 base URL、
-  通过本地路由，或者已安装的 Codex（app 自带的或 CLI）版本太旧不支持 PAT 时，都会
-  改用 API Key，并始终说明原因。在“高级”里仍可固定为 PAT 或 API Key。
+- **API Key 认证。** Krill 和自定义站点的 Key 一律以 API Key 写给 Codex，直连和
+  本地路由都一样。（Superba 不再使用个人访问令牌 PAT：桌面 app 26.1106 无法为 PAT
+  确认账号，排队的消息会报“Account is not confirmed”。保存为 PAT 的配置下次应用时
+  改用 API Key。）
 - **配置 = 连接 + Codex 设置。** 一个配置包括站点、按优先级排列的线路（第一条
   不可用时用下一条）、认证方式和 Key，以及 Superba 为它管理的 `config.toml` 设置。
   设置项来自按每个 Codex 版本自己的 schema 和功能列表生成的目录（英文说明取自官方，
@@ -141,8 +141,7 @@ Windows 上直接运行 `.msi`（无需管理员权限）：安装到 `%LOCALAPP
 
 1. 在 <https://www.krill-code.com> 获取 Key。
 2. 打开 **Superba**。首次启动向导会检测桌面 app 和 CLI，展示当前配置（以及旧的
-   `krill` 会话），填写 Key 并测速线路；认证方式自动选择（线路支持 PAT 时用 PAT，
-   否则用 API Key，并说明原因）。
+   `krill` 会话），填写 Key 并测速线路；Key 以 API Key 方式使用。
 3. 确认后点 **切换**。如果桌面 app 正在运行但不是 Superba 启动的，Superba 会
    提出完整重启一次，之后就可以热切换了（见下文）。
 4. 之后在概览页点另一条线路（或按 Cmd/Ctrl+K 输入线路名），倒计时结束后原地切换。
@@ -151,9 +150,9 @@ Windows 上直接运行 `.msi`（无需管理员权限）：安装到 `%LOCALAPP
 
 ```sh
 # Key 存进系统钥匙串（从 stdin 读取，不会出现在命令行参数里）
-# 认证方式自动选择：线路支持时用 PAT，否则用 API Key（并说明原因）
+# Key 以 API Key 方式使用
 spb profile add krill --line overseas --line cdn --key-stdin
-spb lines --probe                 # 各线路延迟以及 PAT / API Key 是否可用
+spb lines --probe                 # 各线路延迟以及 API Key 是否可用
 spb switch --profile krill        # 计划、倒计时、切换、校验
 spb launch                        # 通过 Superba（重新）打开桌面 app
 spb switch --line cdn             # 之后：热切换到另一条线路
@@ -364,12 +363,9 @@ Codex 只在 app-server 进程启动时读取 `config.toml`、`auth.json` 和环
 
 - 只有 Superba 启动的 app 才能热切换。否则第一次切换是**完整重启**（退出再打开），
   之后即可热切换。想一开始就这样打开 ChatGPT，见下文。
-- 有些变化必须完整重启：在 ChatGPT 登录和 Key 之间切换；PAT 模式下线路的认证地址
-  与 app 启动时不同（app 只在启动时读取一次 `CODEX_AUTHAPI_BASE_URL`）；会话迁移
-  （必须关闭所有 Codex 进程）。
+- 有些变化必须完整重启：在 ChatGPT 登录和 Key 之间切换；会话迁移（必须关闭所有
+  Codex 进程）。
 - 核心重启时正在运行的回合会丢失回答。Superba 默认等待回合结束；`--force` 会打断。
-- PAT 需要 `https` 线路，Codex 不接受明文 http 的 ChatGPT 后端。边缘节点拦截了
-  PAT 端点的线路（目前是国内极速）会改用 API Key 模式，并说明原因。
 - 终端里的 `codex` 会话和 IDE 插件在重启前继续使用旧配置，Superba 会把它们标为过期。
 - 热切换已在 Linux（桌面 app 26.10）上验证。macOS 和 Windows 已实现、仍在验证中；
   无法确认重启通道时 Superba 会退回完整重启。
@@ -402,8 +398,7 @@ Codex 只在 app-server 进程启动时读取 `config.toml`、`auth.json` 和环
 ## 本地路由（可选）
 
 路由模式默认关闭，需要你主动开启（**路由**页面，或 `spb router enable`）。至少需要
-一个成员：一个带自己 Key 的 Krill 或自定义站点配置。路由会把这个 Key 当作 API Key 发送，
-直连时设为个人访问令牌（PAT）的配置也一样可以作为成员（直连切换仍用它选的认证方式）。
+一个成员：一个带自己 Key 的 Krill 或自定义站点配置。路由会把这个 Key 当作 API Key 发送。
 
 - Superba 把 `superba-router` 安装为本用户服务（Linux：systemd 用户服务，不可用时用
   XDG 自启动；macOS：LaunchAgent；Windows：`HKCU\...\Run` 启动项），只监听
@@ -428,7 +423,7 @@ Codex 只在 app-server 进程启动时读取 `config.toml`、`auth.json` 和环
 |---|---|---|
 | `~/.codex/config.toml`（或 `$CODEX_HOME`） | 每次切换 | 只改 Superba 负责的键（`model_provider`、`openai_base_url`、`chatgpt_base_url`、配置的模型以及它管理的 Codex 设置）；配置不再管理的键会恢复原值；注释、MCP 服务、插件和其他内容逐字节保留；Superba 写入后被其他程序改过的键会被保留（见上文） |
 | `~/.codex/auth.json` | 每次切换 | 以 0600 权限写入；替换前会加密暂存你的 ChatGPT 登录；其他程序放进去的凭据，还原时保留，切换时只有你选择接管才会替换 |
-| shell 启动文件 | 仅 PAT 模式 | 一个带标记的块，导出 `CODEX_AUTHAPI_BASE_URL`（Linux：`~/.profile` 和 `~/.config/environment.d/60-superba.conf`，以及已存在或属于你所用 shell 的 `~/.bashrc`、`~/.bash_profile`、`~/.zshenv`（设了 `$ZDOTDIR` 时在其中）、fish `conf.d/superba.fish`；macOS：`~/.zshenv`、同样的 bash / fish 文件，外加 LaunchAgent `~/Library/LaunchAgents/com.krill-code.superba.env.codex-authapi-base-url.plist`；Windows：`HKCU\Environment` 里的用户变量，不写文件）。旧 Krill 教程写的行会被注释掉，之后可还原 |
+| shell 启动文件 | 仅用于清理 | Superba 不再写入；以前 PAT 模式写的、导出 `CODEX_AUTHAPI_BASE_URL` 的标记块（Linux shell 文件和 `~/.config/environment.d/60-superba.conf`、macOS LaunchAgent `com.krill-code.superba.env.codex-authapi-base-url`、Windows `HKCU\Environment`）会在下次切换时删除，被它注释掉的旧 Krill 教程行会恢复 |
 | `state_5.sqlite`、`thread_history_*.sqlite`、`sessions/**/rollout-*.jsonl` | 仅在迁移会话时 | 备份加迁移账本；`spb sessions rollback <id>` |
 | 远程主机的 `~/.codex` 和 shell 文件 | 仅限你选中的主机 | 在主机上按次备份；`spb remote rollback <目标>` |
 | 路由服务（Linux：`~/.config/systemd/user/superba-router.service`；macOS：`~/Library/LaunchAgents/com.krill.superba.router.plist`；Windows：`HKCU\Software\Microsoft\Windows\CurrentVersion\Run` 下的 `SuperbaRouter` 启动项） | 仅在安装了本地路由时 | `spb router uninstall` / `spb uninstall` |
@@ -451,9 +446,9 @@ ChaCha20-Poly1305 加密。
 | 命令 | 用途 |
 |---|---|
 | `spb status` | 当前配置、桌面 app（安装、CDP、认证地址）、CLI 进程、远程主机 |
-| `spb lines [--site ID] [--probe]` | 线路及其延迟 / PAT / API Key / 边缘拦截状态 |
+| `spb lines [--site ID] [--probe]` | 线路及其延迟 / API Key / 边缘拦截状态 |
 | `spb key set --profile P (--stdin \| --key-env VAR)` / `spb key check` | 保存或检查 Key |
-| `spb profile list \| add \| edit \| remove \| use` | 命名配置（站点、线路顺序、认证：自动 / PAT / API Key、Key 引用、模型、`--compaction auto\|native\|unsupported`） |
+| `spb profile list \| add \| edit \| remove \| use` | 命名配置（站点、线路顺序、Key 引用、模型、`--compaction auto\|native\|unsupported`） |
 | `spb profile compaction ID [--check]` | 服务商的远程压缩能力（`--check` 会向服务商检测，消耗少量 token） |
 | `spb site list \| add \| edit \| remove \| probe` | 内置站点和兼容 OpenAI 的站点、模型映射、线路和 Key 检测 |
 | `spb switch [--profile P] [--line L] [--auth pat\|apikey]` | 计划并执行切换（预览会列出每个改动的键及原因） |
@@ -489,8 +484,8 @@ Ctrl-C 取消）、`--yes`（确认完整重启）、`--wait-turn` / `--force`�
 
 ## Krill
 
-[Krill](https://www.krill-code.com) 是 Superba 的主要站点：它的线路、PAT / API Key
-两种模式、线路探测以及 whoami / 账户检查都已内置。账户、Key、套餐和计费请访问
+[Krill](https://www.krill-code.com) 是 Superba 的主要站点：它的线路、API Key 模式、
+线路探测以及 whoami / 账户检查都已内置。账户、Key、套餐和计费请访问
 <https://www.krill-code.com>。Superba 同样支持任何兼容 OpenAI Responses API 的站点
 和 ChatGPT 官方登录。
 

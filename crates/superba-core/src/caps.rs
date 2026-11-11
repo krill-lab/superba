@@ -59,8 +59,6 @@ pub struct LineCaps {
     pub reachable: bool,
     /// Median latency of the unauthenticated probe.
     pub latency_ms: Option<u32>,
-    /// PAT endpoints (whoami + wham/accounts/check) reach the relay (not edge-blocked).
-    pub pat_ok: bool,
     /// Some Codex path is usable with an API key.
     pub apikey_ok: bool,
     /// First usable Codex path; `None` = no Responses path works on this line.
@@ -73,7 +71,7 @@ pub struct LineCaps {
     /// Individual probe results.
     #[serde(default)]
     pub checks: Vec<EndpointCheck>,
-    /// One-line human summary ("PAT unavailable on this line: edge blocks wham").
+    /// One-line human summary of the probe.
     #[serde(default)]
     pub detail: Option<LocalizedText>,
 }
@@ -90,15 +88,7 @@ impl LineCaps {
 
     /// True if `mode` can be used on this line according to the probe.
     pub fn allows(&self, mode: crate::auth::AuthMode) -> bool {
-        if !mode.uses_key() || !self.reachable || self.codex_path.is_none() {
-            return false;
-        }
-        if mode.needs_authapi_env() || mode.writes_chatgpt_base_url() {
-            // PAT needs the backend-api path; `/codex/v1` is an API-key-only fallback.
-            self.pat_ok && self.codex_path == Some(CodexPath::BackendApiCodex)
-        } else {
-            self.apikey_ok
-        }
+        mode.uses_key() && self.reachable && self.codex_path.is_some() && self.apikey_ok
     }
 }
 
@@ -260,7 +250,8 @@ pub struct KeyCheck {
     pub checked_at: Timestamp,
     /// Last four characters of the key that was checked.
     pub key_last4: String,
-    /// whoami result (PAT path); `None` when not applicable.
+    /// whoami health of a personal access token; always `None` since user
+    /// bug 139 (keys are API keys).
     #[serde(default)]
     pub whoami: Option<AuthApiHealth>,
     /// Identity from whoami.

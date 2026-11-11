@@ -18,14 +18,12 @@
 //! - the router's automatic fallback never writes when Codex was moved off
 //!   Superba's credential or provider (see `router::router_fall_back_impl`).
 
-use std::path::Path;
 use std::sync::Mutex;
 
 use sha2::{Digest, Sha256};
-use superba_core::codex::ENV_AUTHAPI_BASE_URL;
 use superba_core::{
-    ALL_CHANGED, AUTH_JSON_PATH, ChangeSource, ConfigState, EnvDrift, EnvLocation, EnvReport,
-    ExternalChange, KeyResolution, LocalizedText, ResolvedMode, ResolvedProfile, ShellKind,
+    ALL_CHANGED, AUTH_JSON_PATH, ChangeSource, ConfigState, EnvDrift, ExternalChange,
+    KeyResolution, LocalizedText, ResolvedMode, ResolvedProfile,
 };
 use superba_import::detect::{Attribution, Changed, LiveFiles};
 use superba_import::{Os, ScanEnv};
@@ -37,12 +35,11 @@ use crate::messages::text;
 /// tools' databases while attributing a change.
 const SCRATCH_DIR: &str = "import";
 
-/// The last attribution and environment check, per state of the files.
+/// The last attribution, per state of the files.
 #[derive(Debug, Default)]
 pub(crate) struct OwnershipCache {
     /// Fingerprint of the Codex files the entries below belong to.
     files: String,
-    env: Option<Vec<EnvDrift>>,
     attribution: Option<Attribution>,
 }
 
@@ -65,56 +62,6 @@ fn fingerprint(files: &str, env: &[EnvDrift]) -> String {
         h.update(format!("\0{:?}={:?}", e.location, e.live).as_bytes());
     }
     hex::encode(&h.finalize()[..12])
-}
-
-/// Locations whose persisted `CODEX_AUTHAPI_BASE_URL` changed since Superba set
-/// it: Superba's own blocks and stores holding another value, and the user's
-/// own lines (after Superba's block, so they win) setting another value.
-pub(crate) fn env_drift(report: &EnvReport) -> Vec<EnvDrift> {
-    let Some(written) = report.superba_value.as_deref() else {
-        return Vec::new();
-    };
-    let mut out: Vec<EnvDrift> = report
-        .persisted
-        .iter()
-        .filter(|p| p.managed && p.value.as_deref() != Some(written))
-        .map(|p| EnvDrift {
-            var: report.var.clone(),
-            location: p.location.clone(),
-            written: Some(written.to_owned()),
-            live: p.value.clone(),
-        })
-        .collect();
-    for line in &report.foreign_lines {
-        if line.value != written {
-            out.push(EnvDrift {
-                var: report.var.clone(),
-                location: EnvLocation::ShellRc {
-                    path: line.path.clone(),
-                    shell: shell_of(&line.path),
-                },
-                written: Some(written.to_owned()),
-                live: Some(line.value.clone()),
-            });
-        }
-    }
-    out
-}
-
-fn shell_of(path: &Path) -> ShellKind {
-    let name = path
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    if name.starts_with(".zsh") || name.starts_with(".zprofile") || name.starts_with(".zlogin") {
-        ShellKind::Zsh
-    } else if name.ends_with(".fish") {
-        ShellKind::Fish
-    } else if name == ".profile" {
-        ShellKind::Sh
-    } else {
-        ShellKind::Bash
-    }
 }
 
 /// The destinations that hand the files back rather than take them over.
@@ -208,48 +155,16 @@ pub fn take_over(request: &mut superba_core::SwitchRequest) {
 impl Switcher {
     /// What changed outside Superba in what it owns in the local home, with who
     /// most likely made the change; `None` when nothing did (or Superba owns
-    /// nothing). The persisted environment is inspected on the first call and
-    /// whenever the Codex files change (never on a timer: macOS asks
-    /// `launchctl`), the other tools' stores only when something changed.
+    /// nothing). The other tools' stores are read only when something changed.
     pub(crate) async fn external_change(&self, state: &ConfigState) -> Option<ExternalChange> {
         if state.handed_off.is_some() || state.journal_pending {
             return None;
         }
         let files = files_fingerprint(state);
-        let cached_env = {
-            let c = self.ownership.lock().ok()?;
-            (c.files == files).then(|| c.env.clone()).flatten()
-        };
-        // Superba sets CODEX_AUTHAPI_BASE_URL only for a PAT.
-        let pat = state
-            .active
-            .as_ref()
-            .is_some_and(|a| a.auth_mode == Some(superba_core::AuthMode::Pat));
-        let env = match cached_env {
-            Some(env) => env,
-            None if !pat => Vec::new(),
-            None => {
-                let env = match self.deps.env.inspect(ENV_AUTHAPI_BASE_URL).await {
-                    Ok(report) => env_drift(&report),
-                    Err(_) => Vec::new(),
-                };
-                if let Ok(mut c) = self.ownership.lock() {
-                    if c.files != files {
-                        *c = OwnershipCache {
-                            files: files.clone(),
-                            ..OwnershipCache::default()
-                        };
-                    }
-                    c.env = Some(env.clone());
-                }
-                env
-            }
-        };
         let mut change = ExternalChange {
             codex_home: state.codex_home.clone(),
             keys: state.drift.clone(),
             auth: state.auth_drift.clone(),
-            env,
             fingerprint: String::new(),
             ..ExternalChange::default()
         };

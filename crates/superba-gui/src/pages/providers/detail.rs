@@ -13,8 +13,8 @@ use crate::design::tokens::{size, text};
 use crate::design::widgets::{
     Badge, Button, Segmented, Status, Text, dialog, dialog_body, link_button,
 };
+use crate::pages::shared::ordered_lines;
 use crate::pages::shared::providers::{Provider, ProviderKind};
-use crate::pages::shared::{auto_facts, decision_with, ordered_lines};
 use crate::pages::{Action, Cx, section_gap};
 
 /// What "switch to this provider" does (`None` without a key).
@@ -304,26 +304,14 @@ pub(super) fn test_connection(state: &mut State, cx: &Cx<'_>, p: &Provider, out:
     }
 }
 
-/// Check `key` on every line of `p` with the mode each line resolves to.
+/// Check `key` on every line of `p` (as an API key).
 pub(super) fn start_checks(state: &mut State, cx: &Cx<'_>, p: &Provider, key: KeyInput) {
     if state.check_task.is_some() {
         return;
     }
     let lines = ordered_lines(&p.site, p.profile.as_ref())
         .into_iter()
-        .map(|line| {
-            let caps = cx.data.site_caps(&p.site.id, &line.id);
-            let mode = decision_with(
-                &p.site,
-                Some(&line),
-                caps,
-                p.profile.as_ref(),
-                auto_facts(cx.data),
-            )
-            .mode
-            .unwrap_or(superba_core::AuthMode::ApiKey);
-            (line.id, mode)
-        })
+        .map(|line| (line.id, superba_core::AuthMode::ApiKey))
         .collect();
     let service = cx.service.clone();
     let site = p.site.id.clone();

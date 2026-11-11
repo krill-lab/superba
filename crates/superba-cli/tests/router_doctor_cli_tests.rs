@@ -5,7 +5,7 @@ mod common;
 
 use clap::Parser;
 use common::*;
-use superba_core::{AuthChoice, KeyRef, ProfileId};
+use superba_core::{KeyRef, ProfileId};
 
 #[tokio::test]
 async fn router_line_promotes_the_selected_line_without_planning_a_codex_switch() {
@@ -88,18 +88,9 @@ async fn enable_without_a_keyed_member_says_why_and_what_to_run_next() {
 /// User bug 78: a member whose direct auth is PAT (`spb switch --auth pat`)
 /// still has its key, which the router sends as an API key.
 #[tokio::test]
-async fn enable_with_a_member_set_to_pat_installs_the_router() {
+async fn enable_with_a_key_member_installs_the_router() {
     let service = FakeService::new();
     key(&service);
-    service
-        .profiles
-        .lock()
-        .unwrap()
-        .profiles
-        .iter_mut()
-        .find(|p| p.id.as_str() == "work")
-        .unwrap()
-        .set_auth(AuthChoice::Pat);
     let (code, stdout, stderr) = invoke(
         service.clone(),
         &["router", "enable", "--member", "work", "--yes"],
@@ -231,18 +222,9 @@ async fn enable_with_a_keyed_member_and_a_running_router_plans_router_mode() {
 }
 
 #[tokio::test]
-async fn enable_while_the_router_runs_plans_router_mode_for_a_member_set_to_pat() {
+async fn enable_while_the_router_runs_plans_router_mode_for_a_key_member() {
     let service = FakeService::new();
     member_running(&service);
-    service
-        .profiles
-        .lock()
-        .unwrap()
-        .profiles
-        .iter_mut()
-        .find(|p| p.id.as_str() == "work")
-        .unwrap()
-        .set_auth(AuthChoice::Pat);
     let (code, stdout, stderr) = invoke(service.clone(), &["router", "enable", "--yes"]).await;
     assert_ne!(code, 3, "not blocked: {stdout}{stderr}");
     assert!(!stdout.contains("needs at least one member"), "{stdout}");

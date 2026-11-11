@@ -22,7 +22,6 @@ pub(super) async fn run(rt: &Runtime, out: &mut Output) -> Result {
         .active
         .as_ref()
         .is_some_and(|active| active.line_id.is_some())
-        || overview.app.authapi_line.is_some()
     {
         rt.service.sites().await?
     } else {
@@ -94,15 +93,6 @@ pub(super) async fn run(rt: &Runtime, out: &mut Output) -> Result {
         HotSwitchStatus::SafeMode => out.label("cli.hot.safe_mode"),
     };
     out.field("cli.label.hot_switch", hot)?;
-    out.field(
-        "cli.label.auth_line",
-        overview
-            .app
-            .authapi_line
-            .as_ref()
-            .map(|id| out.render(&line_label(&sites, None, id)))
-            .unwrap_or_else(|| out.none()),
-    )?;
     // The app's own Codex copies (bundled, or the runtime copy it runs its
     // app-server from) are listed apart: they are not a CLI (user bug 55).
     let row = |binary: &superba_core::CodexBinary| {

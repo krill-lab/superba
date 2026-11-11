@@ -132,7 +132,6 @@ impl HttpLineProber {
             checked_at: self.clock.now(),
             reachable: lat.reachable,
             latency_ms: lat.check.latency_ms,
-            pat_ok: false,
             apikey_ok: false,
             codex_path: None,
             blocked_by_edge: lat.check.edge_blocked,
@@ -150,13 +149,10 @@ impl HttpLineProber {
             // Relay-style site: every endpoint must answer the relay's 401.
             let e = &site.endpoints;
             let o = &line.origin;
-            let pat = site.supports(AuthMode::Pat);
             let want = |p: CodexPath| paths.contains(&p);
             let backend_url =
                 with_client_version(o.join(&e.backend_codex_models), &cfg.client_version);
-            let (who, wham, backend, v1) = tokio::join!(
-                self.maybe_get(site, pat, o.join(&e.whoami)),
-                self.maybe_get(site, pat, o.join(&e.accounts_check)),
+            let (backend, v1) = tokio::join!(
                 self.maybe_get(site, want(CodexPath::BackendApiCodex), backend_url),
                 self.maybe_get(site, want(CodexPath::CodexV1), o.join(&e.codex_v1_models)),
             );
@@ -164,19 +160,15 @@ impl HttpLineProber {
                 r.as_ref()
                     .map(|r| unauth_check(endpoint, r, &cfg.unauth_expect, true))
             };
-            let who = check(ProbeEndpoint::Whoami, &who);
-            let wham = check(ProbeEndpoint::WhamAccountsCheck, &wham);
             let backend = check(ProbeEndpoint::BackendCodexModels, &backend);
             let v1 = check(ProbeEndpoint::CodexV1Models, &v1);
             let ok = |c: &Option<EndpointCheck>| c.as_ref().is_some_and(|c| c.ok);
-            caps.pat_ok = pat && ok(&who) && ok(&wham);
             caps.codex_path = paths.iter().copied().find(|p| match p {
                 CodexPath::BackendApiCodex => ok(&backend),
                 CodexPath::CodexV1 => ok(&v1),
                 CodexPath::AsIs => true,
             });
-            caps.checks
-                .extend([who, wham, backend, v1].into_iter().flatten());
+            caps.checks.extend([backend, v1].into_iter().flatten());
         } else {
             // Generic site: any sane answer means its base URL is reachable.
             let healthy = caps.checks[0].ok;
@@ -185,9 +177,6 @@ impl HttpLineProber {
         caps.apikey_ok = site.supports(AuthMode::ApiKey) && caps.codex_path.is_some();
         caps.blocked_by_edge = caps.checks.iter().any(|c| c.edge_blocked);
         caps.detail = Some(summarize(site, &caps));
-        if cfg.pat_requires_https {
-            require_https_for_pat(site, line, &mut caps);
-        }
         caps
     }
 
@@ -254,24 +243,6 @@ pub(crate) fn summarize(site: &Site, caps: &LineCaps) -> LocalizedText {
         )
         .arg("detail", detail);
     }
-    if site.supports(AuthMode::Pat) && !caps.pat_ok {
-        let pat_checks = [ProbeEndpoint::Whoami, ProbeEndpoint::WhamAccountsCheck];
-        if let Some(c) = pat_checks
-            .into_iter()
-            .filter_map(find)
-            .find(|c| c.edge_blocked)
-        {
-            return pat_edge_blocked(&endpoint_path(site, c.endpoint));
-        }
-        if let Some(c) = pat_checks.into_iter().filter_map(find).find(|c| !c.ok) {
-            let status = c
-                .status
-                .map(|s| format!("HTTP {s}"))
-                .or_else(|| c.detail.clone())
-                .unwrap_or_else(|| "no answer".to_owned());
-            return pat_unavailable(&endpoint_path(site, c.endpoint), &status);
-        }
-    }
     if caps.codex_path == Some(CodexPath::CodexV1)
         && site.capabilities.codex_paths.first() == Some(&CodexPath::BackendApiCodex)
     {
@@ -281,47 +252,6 @@ pub(crate) fn summarize(site: &Site, caps: &LineCaps) -> LocalizedText {
         );
     }
     LocalizedText::new("probe.ok", "All checks passed.")
-}
-
-/// `probe.pat_edge_blocked`.
-pub(crate) fn pat_edge_blocked(endpoint: &str) -> LocalizedText {
-    LocalizedText::new(
-        "probe.pat_edge_blocked",
-        "PAT is unavailable on this line: the line's edge intercepts {endpoint}. An API key still works.",
-    )
-    .arg("endpoint", endpoint)
-}
-
-/// `probe.pat_needs_https`.
-pub(crate) fn pat_needs_https() -> LocalizedText {
-    LocalizedText::new(
-        "probe.pat_needs_https",
-        "PAT needs an https line: Codex refuses a plain-http ChatGPT backend. An API key still works.",
-    )
-}
-
-/// PAT writes `chatgpt_base_url = <line>/backend-api/`, which Codex refuses over
-/// plain http (loopback test lines): clear `pat_ok` and say why when the PAT
-/// endpoints themselves were fine.
-pub(crate) fn require_https_for_pat(site: &Site, line: &Line, caps: &mut LineCaps) {
-    if line.origin.is_https() || !site.supports(AuthMode::Pat) {
-        return;
-    }
-    let pat_endpoints_ok = caps.pat_ok;
-    caps.pat_ok = false;
-    if pat_endpoints_ok && caps.reachable && caps.codex_path.is_some() {
-        caps.detail = Some(pat_needs_https());
-    }
-}
-
-/// `probe.pat_unavailable`.
-pub(crate) fn pat_unavailable(endpoint: &str, status: &str) -> LocalizedText {
-    LocalizedText::new(
-        "probe.pat_unavailable",
-        "PAT is unavailable on this line: {endpoint} answered {status}.",
-    )
-    .arg("endpoint", endpoint)
-    .arg("status", status)
 }
 
 #[cfg(test)]
@@ -361,7 +291,6 @@ mod tests {
             checked_at: superba_core::Timestamp::EPOCH,
             reachable: false,
             latency_ms: None,
-            pat_ok: false,
             apikey_ok: false,
             codex_path: None,
             blocked_by_edge: false,
@@ -373,12 +302,9 @@ mod tests {
         caps.reachable = true;
         texts.push(summarize(&site, &caps));
         caps.codex_path = Some(CodexPath::CodexV1);
-        caps.pat_ok = true;
         texts.push(summarize(&site, &caps));
         caps.codex_path = Some(CodexPath::BackendApiCodex);
         texts.push(summarize(&site, &caps));
-        texts.push(pat_edge_blocked("/x"));
-        texts.push(pat_unavailable("/x", "HTTP 404"));
         for g in [
             LatencyGrade::Excellent,
             LatencyGrade::Good,
@@ -394,8 +320,6 @@ mod tests {
             "probe.no_codex_path",
             "probe.codex_v1_fallback",
             "probe.ok",
-            "probe.pat_edge_blocked",
-            "probe.pat_unavailable",
         ] {
             assert!(keys.contains(&k), "{k} not produced: {keys:?}");
         }

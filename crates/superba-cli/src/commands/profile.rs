@@ -1,6 +1,5 @@
 use superba_core::{
-    AuthChoice, AuthMode, CodexSettings, KeyRef, LineId, ModelDefaults, Profile, ProfileId,
-    SiteKind, catalog,
+    AuthMode, CodexSettings, KeyRef, LineId, ModelDefaults, Profile, ProfileId, SiteKind, catalog,
 };
 
 use super::{Result, execute, missing, stdin_secret, switch, usage};
@@ -78,7 +77,6 @@ async fn add(args: &ProfileAddArgs, rt: &Runtime, out: &mut Output) -> Result {
         }
         .into());
     }
-    let choice: AuthChoice = args.auth.map(Into::into).unwrap_or_default();
     // Krill profiles start with Krill's recommended Codex settings (they are the
     // profile's own settings and can be changed with `spb settings`).
     let codex_settings = if site.kind == SiteKind::Krill && !args.no_recommended_keys {
@@ -100,7 +98,6 @@ async fn add(args: &ProfileAddArgs, rt: &Runtime, out: &mut Output) -> Result {
         backup_lines: Vec::new(),
         disabled_lines: Default::default(),
         auth_mode: AuthMode::ApiKey,
-        auth: AuthChoice::ApiKey,
         key_ref: args
             .key_env
             .as_ref()
@@ -115,7 +112,6 @@ async fn add(args: &ProfileAddArgs, rt: &Runtime, out: &mut Output) -> Result {
         },
         codex_settings,
     };
-    profile.set_auth(choice);
     profile.set_line_priority(args.lines.iter().map(LineId::new));
     if let Some(url) = &args.base_url {
         profile.base_url_override = Some(parse_base_url(url, out)?);
@@ -134,7 +130,6 @@ async fn edit(args: &ProfileEditArgs, rt: &Runtime, out: &mut Output) -> Result 
         && !args.auto_line
         && args.disable_lines.is_empty()
         && args.enable_lines.is_empty()
-        && args.auth.is_none()
         && args.model.is_none()
         && args.effort.is_none()
         && args.base_url.is_none()
@@ -170,9 +165,6 @@ async fn edit(args: &ProfileEditArgs, rt: &Runtime, out: &mut Output) -> Result 
         for line in &args.disable_lines {
             profile.set_line_disabled(&site, &LineId::new(line), true)?;
         }
-    }
-    if let Some(choice) = args.auth {
-        profile.set_auth(choice.into());
     }
     if let Some(model) = &args.model {
         profile.model.model = (!model.trim().is_empty()).then(|| model.trim().to_owned());
@@ -285,11 +277,7 @@ fn row(profile: &Profile, selected: bool, out: &Output) -> Vec<String> {
                 .collect::<Vec<_>>()
                 .join(" > ")
         },
-        if profile.is_builtin() {
-            out.render(&profile.auth_mode.text())
-        } else {
-            out.render(&profile.auth_choice().text())
-        },
+        out.render(&profile.auth_mode.text()),
         key_source(profile.key_ref.as_ref(), out),
         out.optional(profile.base_url_override.as_ref()),
     ]

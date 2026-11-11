@@ -11,7 +11,7 @@ use std::sync::{
 use superba_core::*;
 use superba_gui::design::widgets::{Status, tile_columns};
 use superba_gui::pages::{
-    Data, auth_mode_for_line, key_access_status,
+    Data, key_access_status,
     wizard::{Step, Wizard},
 };
 use superba_gui::runtime::{config_matches_site, read_original_key};
@@ -23,31 +23,6 @@ fn service() -> FakeService {
         ..Default::default()
     })
     .with_account_summary(true)
-}
-
-#[tokio::test]
-async fn context_preference_survives_a_pat_blocked_line() {
-    let service = service();
-    let caps = service.probe_lines(&"krill".into()).await.unwrap();
-    let overseas = caps.iter().find(|c| c.line_id == "overseas").unwrap();
-    let china = caps.iter().find(|c| c.line_id == "cn-fast").unwrap();
-    assert_eq!(
-        auth_mode_for_line(AuthMode::Pat, Some(overseas)),
-        AuthMode::Pat
-    );
-    assert_eq!(
-        auth_mode_for_line(AuthMode::Pat, Some(china)),
-        AuthMode::ApiKey
-    );
-    assert_eq!(
-        auth_mode_for_line(AuthMode::Pat, Some(overseas)),
-        AuthMode::Pat
-    );
-    assert_eq!(
-        auth_mode_for_line(AuthMode::ApiKey, Some(overseas)),
-        AuthMode::ApiKey
-    );
-    assert_eq!(auth_mode_for_line(AuthMode::Pat, None), AuthMode::Pat);
 }
 
 #[test]
@@ -363,7 +338,7 @@ async fn the_wizard_does_not_continue_with_a_key_the_line_rejected() {
         (KeyAccess::Unreachable, true),
     ] {
         data.key_checks
-            .insert((line.clone(), AuthMode::Pat), Ok(check(access.clone())));
+            .insert((line.clone(), AuthMode::ApiKey), Ok(check(access.clone())));
         let cx = Cx {
             tr: &tr,
             pal: Palette::of(&ctx),

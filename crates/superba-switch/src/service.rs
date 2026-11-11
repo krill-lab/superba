@@ -4,11 +4,11 @@
 use std::collections::BTreeMap;
 
 use superba_core::{
-    AppSession, AuthMode, BuiltinProfile, CodexProcessKind, DoctorFinding, EnvObservation, Error,
-    JournalAction, KeyCheck, KeyInput, KeyRef, LaunchOptions, LineId, LineSource, LocalizedText,
-    Notice, Overview, Profile, ProfileId, RecoveredJournal, RecoveryReport, RemoteOverview, Result,
-    Secret, SecretBackend, Settings, Severity, Site, SiteId, SiteKind, catalog,
-    codex::{ENV_AUTHAPI_BASE_URL, PROVIDER_OPENAI},
+    AppSession, AuthMode, BuiltinProfile, CodexProcessKind, DoctorFinding, Error, JournalAction,
+    KeyCheck, KeyInput, KeyRef, LaunchOptions, LineId, LineSource, LocalizedText, Notice, Overview,
+    Profile, ProfileId, RecoveredJournal, RecoveryReport, RemoteOverview, Result, Secret,
+    SecretBackend, Settings, Severity, Site, SiteId, SiteKind, catalog,
+    codex::PROVIDER_OPENAI,
     plan::{AppOverview, CliOverview},
 };
 
@@ -66,7 +66,6 @@ fn merge_rerun(existing: &Profile, wizard: Profile) -> Profile {
         p.disabled_lines.remove(first);
     }
     p.auth_mode = wizard.auth_mode;
-    p.set_auth(wizard.auth);
     p.base_url_override = wizard.base_url_override;
     if wizard.key_ref.is_some() {
         p.key_ref = wizard.key_ref;
@@ -185,19 +184,10 @@ impl Switcher {
                 what: format!("line {l} of site {}", site.id),
             });
         }
-        // v2: a manual choice must be offered by the site; Auto needs any key mode.
-        let usable = match profile.auth_choice().manual_mode() {
-            Some(mode) => site.supports(mode),
-            None if profile.auth_mode.uses_key() => {
-                site.capabilities.auth_modes.iter().any(|m| m.uses_key())
-            }
-            None => site.supports(profile.auth_mode),
-        };
-        if !usable {
+        if !site.supports(profile.auth_mode) {
             return Err(Error::invalid(format!(
                 "site {} does not offer {:?}",
-                site.id,
-                profile.auth_choice()
+                site.id, profile.auth_mode
             )));
         }
         if site.kind == SiteKind::Compatible
@@ -294,6 +284,9 @@ impl Switcher {
         // The bug 137 migration stays recorded (remove after alpha.14+N).
         settings.analytics_preset_dropped |= set.settings.analytics_preset_dropped;
         settings.analytics_reapply = set.settings.analytics_reapply.take();
+        // One-off alpha.16 PAT→API-key migration (user bug 139): its state is
+        // the switch service's own.
+        settings.pat_migration = set.settings.pat_migration.take();
         set.settings = settings;
         let persist = set.settings.app_codex.persist_env;
         if was_persisted == persist {
@@ -490,23 +483,8 @@ impl Switcher {
             });
         }
         let set = d.profiles.load().await?;
-        let home = d.ctx.codex_home();
-        let state = d.config.read_state(&home).await.ok();
-        // The applied profile's line when its site is Krill-kind (built-in or an e2e
-        // test site); otherwise the Krill default line (plan 7.1 launch note).
-        let active = state.as_ref().and_then(|s| s.active.as_ref());
-        let (krill, active_line) = rules::active_krill_site(
-            &all_sites(&set, self.deps.ctx.env.as_ref()),
-            active.and_then(|a| a.site_id.as_ref()),
-            active.and_then(|a| a.line_id.as_ref()),
-        );
-        let origin = rules::launch_authapi_origin(&krill, None, false, active_line.as_ref());
         let mut env = BTreeMap::new();
-        if let Some(o) = &origin {
-            env.insert(ENV_AUTHAPI_BASE_URL.to_owned(), o.as_str());
-        }
-        self.prepare_launch_env(origin.as_ref()).await;
-        let env_remove = self.prepare_router_launch_env(&mut env).await?;
+        let env_remove = self.prepare_router_launch_env(&mut env).await;
         let options = self
             .with_pin(LaunchOptions {
                 install_id: set.settings.preferred_app_id.clone(),
@@ -519,129 +497,43 @@ impl Switcher {
         d.app.launch(&options).await
     }
 
-    /// Before Superba opens the desktop app: the auth address a PAT profile
-    /// needs, where the app takes it from at start-up (user bug 69a). On
-    /// Windows the packaged app reads `HKCU\Environment` when it is activated
-    /// (no per-launch environment), and with "Run Codex in WSL" its Codex sees
-    /// the variable only when `WSLENV` forwards it; both are written here like
-    /// a switch writes them (same ownership records, so a restore removes them),
-    /// so the first PAT switch after the mode was turned on can be hot. The
-    /// value is the one Superba persisted for the applied profile, else
-    /// `origin`. Elsewhere nothing is written (the launch passes the value).
-    /// Failures are logged: the app opens anyway.
-    pub(crate) async fn prepare_launch_env(&self, origin: Option<&superba_core::Origin>) {
-        let d = &self.deps;
-        let Some(origin) = origin else {
-            return;
-        };
-        let pat = d
-            .config
-            .read_state(&d.ctx.codex_home())
-            .await
-            .ok()
-            .and_then(|s| s.active)
-            .and_then(|a| a.auth_mode)
-            .is_some_and(AuthMode::needs_authapi_env);
-        if !pat {
-            return;
-        }
-        let value = match d.env.inspect(ENV_AUTHAPI_BASE_URL).await {
-            Ok(r) => r.superba_value.unwrap_or_else(|| origin.as_str()),
-            Err(e) if e.is_not_implemented() => return,
-            Err(_) => origin.as_str(),
-        };
-        let plan = match d.env.plan_launch(ENV_AUTHAPI_BASE_URL, &value).await {
-            Ok(p) if p.is_noop() => return,
-            Ok(p) => p,
-            Err(e) if e.is_not_implemented() => return,
-            Err(e) => {
-                tracing::warn!(error = %e, "cannot plan the auth address for the app's start");
-                return;
-            }
-        };
-        match d.env.apply(&plan).await {
-            Ok(applied) => tracing::info!(
-                locations = ?applied.edits.iter().map(|e| &e.location).collect::<Vec<_>>(),
-                "auth address persisted for the app's start"
-            ),
-            Err(e) => {
-                tracing::warn!(error = %e, "cannot persist the auth address for the app's start")
-            }
-        }
-    }
-
-    /// Use the applied router identity and certificate when starting the app.
-    /// Packaged Windows apps take these values from the persisted user environment.
+    /// Before Superba starts the app: Superba itself may have started while
+    /// the router still served Codex a loopback certificate (before user bug
+    /// 139). The app must not inherit that managed CA path: the user's own
+    /// value from before is passed instead, or the variable is removed.
     pub(crate) async fn prepare_router_launch_env(
         &self,
         env: &mut BTreeMap<String, String>,
-    ) -> Result<Vec<String>> {
+    ) -> Vec<String> {
         let d = &self.deps;
-        let Ok(state) = d.config.read_state(&d.ctx.codex_home()).await else {
-            return Ok(Vec::new());
-        };
-        if !state.auth.mode().is_some_and(AuthMode::needs_authapi_env)
-            || !state
-                .openai_base_url
-                .as_deref()
-                .is_some_and(|url| self.matches_router_endpoint(url))
+        let paths = superba_router::RouterPaths::new(&d.ctx.data_dir);
+        if !d
+            .ctx
+            .env
+            .var(superba_router::tls::CERT_ENV)
+            .is_some_and(|v| std::path::Path::new(&v) == paths.client_certificate_pem())
         {
-            // Superba itself may have started while routing was on. Avoid
-            // inheriting its old managed CA path after Clear restored the user.
-            let paths = superba_router::RouterPaths::new(&d.ctx.data_dir);
-            if d.ctx
-                .env
-                .var(superba_router::tls::CERT_ENV)
-                .is_some_and(|v| std::path::Path::new(&v) == paths.client_certificate_pem())
-            {
-                if let Ok(report) = d.env.inspect(superba_router::tls::CERT_ENV).await
-                    && let Some(value) = report
-                        .persisted
-                        .iter()
-                        .filter_map(|p| p.value.as_deref())
-                        .chain(report.foreign_lines.iter().map(|l| l.value.as_str()))
-                        .find(|v| std::path::Path::new(v) != paths.client_certificate_pem())
-                {
-                    env.insert(superba_router::tls::CERT_ENV.into(), value.to_owned());
-                } else {
-                    return Ok(vec![superba_router::tls::CERT_ENV.into()]);
-                }
-            }
-            return Ok(Vec::new());
+            return Vec::new();
         }
-        self.prepare_router_certificate().await?;
-        let base = state
-            .openai_base_url
-            .as_deref()
-            .and_then(|s| url::Url::parse(s).ok())
-            .ok_or_else(|| Error::invalid("invalid router URL"))?;
-        let certificate =
-            superba_router::RouterPaths::new(&d.ctx.data_dir).client_certificate_pem();
-        for (var, value) in [
-            (ENV_AUTHAPI_BASE_URL, base.origin().ascii_serialization()),
-            (
-                superba_router::tls::CERT_ENV,
-                certificate.to_string_lossy().into_owned(),
-            ),
-        ] {
-            env.insert(var.to_owned(), value.clone());
-            match d.env.plan_launch(var, &value).await {
-                Ok(plan) if !plan.is_noop() => {
-                    d.env.apply(&plan).await?;
-                }
-                Ok(_) => {}
-                Err(e) if e.is_not_implemented() => {}
-                Err(e) => return Err(e),
-            }
+        if let Ok(report) = d.env.inspect(superba_router::tls::CERT_ENV).await
+            && let Some(value) = report
+                .persisted
+                .iter()
+                .filter_map(|p| p.value.as_deref())
+                .chain(report.foreign_lines.iter().map(|l| l.value.as_str()))
+                .find(|v| std::path::Path::new(v) != paths.client_certificate_pem())
+        {
+            env.insert(superba_router::tls::CERT_ENV.into(), value.to_owned());
+            Vec::new()
+        } else {
+            vec![superba_router::tls::CERT_ENV.into()]
         }
-        Ok(Vec::new())
     }
 
     pub(crate) async fn overview_impl(&self) -> Result<Overview> {
         let d = &self.deps;
         let home = d.ctx.codex_home();
         let set = d.profiles.load().await?;
-        let sites = all_sites(&set, self.deps.ctx.env.as_ref());
         let mut notices = Vec::new();
         let config = match d.config.read_state(&home).await {
             Ok(s) => Some(s),
@@ -674,15 +566,6 @@ impl Switcher {
                 set.settings.safe_mode,
             )
             .await;
-        let authapi_line = session
-            .as_ref()
-            .and_then(|s| s.authapi_env.value())
-            .and_then(|o| {
-                sites
-                    .iter()
-                    .find_map(|site| rules::line_for_origin(site, o))
-            })
-            .map(|l| l.id.clone());
         let active = config.as_ref().and_then(|c| c.active.clone());
         let mut processes = processes.unwrap_or_default();
         rules::mark_stale(&mut processes, active.as_ref().map(|a| a.applied_at));
@@ -780,15 +663,6 @@ impl Switcher {
                 text("switch.overview.stale_processes").arg("count", cli.stale_count()),
             ));
         }
-        if let (Some(line), Some(a)) = (&authapi_line, &active)
-            && a.auth_mode == Some(AuthMode::Pat)
-            && a.line_id.as_ref() != Some(line)
-            && let Some(l) = sites.iter().find_map(|s| s.line(line))
-        {
-            notices.push(Notice::info(
-                text("switch.overview.authapi_line").arg_text("line", l.name.clone()),
-            ));
-        }
         let account = match (&active, &set) {
             (Some(a), set) => self.account_summary(a, set).await,
             _ => None,
@@ -802,7 +676,6 @@ impl Switcher {
                 installs,
                 session,
                 hot_switch,
-                authapi_line,
             },
             cli,
             remotes,
@@ -954,21 +827,6 @@ impl Switcher {
         let mut processes = d.app.processes(&home).await.unwrap_or_default();
         let active = state.as_ref().and_then(|s| s.active.clone());
         rules::mark_stale(&mut processes, active.as_ref().map(|a| a.applied_at));
-        let pat_active = active.as_ref().and_then(|a| a.auth_mode) == Some(AuthMode::Pat);
-        if pat_active {
-            let missing = processes
-                .iter()
-                .filter(|p| rules::consumer_group(&p.kind).is_some())
-                .filter(|p| matches!(p.authapi_env, EnvObservation::Absent))
-                .count();
-            if missing > 0 {
-                out.push(finding(
-                    "missing_env",
-                    Severity::Danger,
-                    text("switch.doctor.missing_env").arg("count", missing),
-                ));
-            }
-        }
         let stale = processes
             .iter()
             .filter(|p| p.stale && rules::consumer_group(&p.kind).is_some())
@@ -1002,41 +860,13 @@ impl Switcher {
                     )
                 });
             }
-            if pat_active
-                && let (Some(origin), Some(line_id)) = (
-                    s.authapi_env.value(),
-                    active.as_ref().and_then(|a| a.line_id.as_ref()),
-                )
-            {
-                let set = d.profiles.load().await.unwrap_or_default();
-                let sites = all_sites(&set, self.deps.ctx.env.as_ref());
-                // Line ids are unique per site only: look the line up on the
-                // applied site.
-                let site = active
-                    .as_ref()
-                    .and_then(|a| a.site_id.as_ref())
-                    .and_then(|id| sites.iter().find(|s| &s.id == id));
-                let current = site.and_then(|s| s.line(line_id));
-                if current.is_some_and(|l| {
-                    !superba_core::Origin::parse(origin).is_ok_and(|o| l.matches_origin(&o))
-                }) {
-                    // Name the line the app authenticates through when it is one
-                    // of the applied site's lines.
-                    let text = match site.and_then(|s| rules::line_for_origin(s, origin)) {
-                        Some(l) => text("switch.doctor.authapi_other_line_named")
-                            .arg_text("line", l.name.clone())
-                            .arg("origin", origin),
-                        None => text("switch.doctor.authapi_other_line").arg("origin", origin),
-                    };
-                    out.push(finding("authapi_other_line", Severity::Info, text));
-                }
-            }
         }
         if let Ok(binaries) = d.app.codex_binaries().await
             && let Some(cli) = binaries.iter().find(|b| b.path_rank == Some(0))
             && let Some(v) = &cli.version
         {
-            let min = rules::min_version(superba_core::codex::VersionCapability::WhamAccountsCheck);
+            let min =
+                rules::min_version(superba_core::codex::VersionCapability::TopLevelOpenaiBaseUrl);
             if !v.meets(&min) {
                 out.push(finding(
                     "cli_too_old",

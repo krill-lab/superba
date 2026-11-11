@@ -170,7 +170,9 @@ pub enum LineSource {
 /// Feature flags of a site.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SiteCapabilities {
-    /// Auth modes offered, in preference order (first = default).
+    /// Auth modes offered, in preference order (first = default); a former
+    /// `"pat"` reads as the API key it now is, without repeats.
+    #[serde(deserialize_with = "crate::auth::deserialize_auth_modes")]
     pub auth_modes: Vec<AuthMode>,
     /// Codex paths to try, in preference order.
     pub codex_paths: Vec<CodexPath>,

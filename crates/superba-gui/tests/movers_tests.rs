@@ -327,7 +327,7 @@ fn plan() -> SwitchPlan {
             profile_id: Some("test".into()),
             site_id: Some("test".into()),
             line_id: Some("test-line".into()),
-            auth_mode: Some(AuthMode::Pat),
+            auth_mode: Some(AuthMode::ApiKey),
             label: LocalizedText::new("test.destination", "Test destination"),
         },
         primary: RestartKind::AppServerHot {

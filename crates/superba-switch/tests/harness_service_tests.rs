@@ -642,7 +642,7 @@ async fn following_codex_only_marks_the_tool_pending_and_keeps_its_applied_route
         profile_id: Some(ProfileId::new("work")),
         site_id: None,
         line_id: None,
-        auth_mode: Some(AuthMode::Pat),
+        auth_mode: Some(AuthMode::ApiKey),
         generation: 1,
         applied_at: superba_core::Timestamp(T0),
     });

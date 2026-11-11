@@ -13,7 +13,6 @@ pub(super) async fn run(site_id: &str, probe: bool, rt: &Runtime, out: &mut Outp
                         .map(|l| out.render(&name_id(l.name.clone(), &l.id)))
                         .unwrap_or_else(|| c.line_id.to_string()),
                     out.optional(c.latency_ms),
-                    out.boolean(c.pat_ok),
                     out.boolean(c.apikey_ok),
                     out.optional(c.codex_path.map(|p| p.suffix())),
                     out.boolean(c.blocked_by_edge),
@@ -28,7 +27,6 @@ pub(super) async fn run(site_id: &str, probe: bool, rt: &Runtime, out: &mut Outp
             &[
                 "cli.label.line",
                 "cli.label.latency",
-                "cli.label.pat_ok",
                 "cli.label.apikey_ok",
                 "cli.label.codex_path",
                 "cli.label.edge_blocked",

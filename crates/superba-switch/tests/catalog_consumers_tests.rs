@@ -15,9 +15,9 @@ use std::sync::Arc;
 use fakes::v3::files_in;
 use fakes::*;
 use superba_core::{
-    ActiveState, AppCodexPin, AuthChoice, AuthMode, BlockReason, CodexProcessKind, CodexVersion,
-    Error, ExecuteOptions, KeyChange, ModelOverride, NoEvents, OutcomeStatus, ProcessInfo,
-    ProfileId, SafeDefaults, Severity, SiteId, SpeedTier, SwitchIntent, SwitchOutcome, SwitchPlan,
+    ActiveState, AppCodexPin, AuthMode, BlockReason, CodexProcessKind, CodexVersion, Error,
+    ExecuteOptions, KeyChange, ModelOverride, NoEvents, OutcomeStatus, ProcessInfo, ProfileId,
+    SafeDefaults, Severity, SiteId, SpeedTier, SwitchIntent, SwitchOutcome, SwitchPlan,
     SwitchRequest, SwitchService, Timestamp,
 };
 use superba_switch::Switcher;
@@ -40,7 +40,6 @@ fn work(w: &World, f: impl FnOnce(&mut superba_core::Profile)) {
         .find(|p| p.id.as_str() == "work")
         .unwrap();
     p.auth_mode = AuthMode::ApiKey;
-    p.set_auth(AuthChoice::ApiKey);
     f(p);
 }
 

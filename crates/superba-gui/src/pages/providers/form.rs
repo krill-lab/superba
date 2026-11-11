@@ -333,7 +333,6 @@ pub fn prepare(
                     model,
                     reasoning_effort: None,
                 },
-                auth: superba_core::AuthChoice::from_mode(AuthMode::ApiKey),
                 backup_lines: Vec::new(),
                 disabled_lines: Default::default(),
                 codex_settings: Default::default(),

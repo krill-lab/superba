@@ -210,9 +210,6 @@ async fn http_consent_keeps_redirects_credentials_pat_and_other_origins_blocked(
             .await
             .is_err()
     );
-    let mut pat = ResolvedEndpoints::for_site_base_url(&site, &base).unwrap();
-    pat.chatgpt_base_url = Some(base.clone());
-    assert!(p.probe_responses(&pat, &key, "test-model").await.is_err());
     site.kind = superba_core::SiteKind::Krill;
     assert!(p.list_models_for_site(&site, &base, &key).await.is_err());
 }

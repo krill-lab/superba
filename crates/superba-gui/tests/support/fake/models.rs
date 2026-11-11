@@ -281,12 +281,11 @@ pub fn view_for(profile: &Profile, site: &Site, now: Timestamp) -> ModelsView {
             false,
         ),
     };
-    let pat = profile.auth_mode == AuthMode::Pat;
     let offered = list.offered_tiers();
     let speed = SpeedSupport {
         offered,
         cli: SpeedEffect::Applies,
-        app: if official || pat {
+        app: if official {
             SpeedEffect::AppMenu
         } else {
             SpeedEffect::AppForcesStandard
@@ -297,7 +296,6 @@ pub fn view_for(profile: &Profile, site: &Site, now: Timestamp) -> ModelsView {
             |_| None,
             profile.model.model.as_deref(),
             official,
-            pat,
             site.capabilities.tier_model_suffix,
         ),
     };

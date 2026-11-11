@@ -52,7 +52,7 @@ max = "上限 {max}"
 not_applied = "{n} 项已保存，Codex 尚未使用"
 official_readonly = "官方登录使用 ChatGPT 自己的模型列表，Superba 不改动。"
 per_model_unavailable = "此配置档不支持按模型设置。"
-catalog_scope = "PAT 和 API Key 均支持按模型设置；未单独设置的模型使用「所有模型」默认值。"
+catalog_scope = "支持按模型设置；未单独设置的模型使用「所有模型」默认值。"
 picker_mode = "在 Codex 的模型列表中显示该站点的模型"
 picker_mode_tip = "Superba 根据站点的 /v1/models 列表写入 model_catalog_json，app 的模型选择器会显示站点真实提供的模型（名称相同时沿用内置列表的元数据）。"
 provider = "供应商"
@@ -101,7 +101,7 @@ edit_compact = "填写 token 数（300k）或窗口的百分比（80%），须�
 edit_window = "填写 400000、400k 或 1m；清空即恢复默认。"
 max = "上限：{value}"
 model_default = "模型默认：{value}"
-unused = "已保存的自定义值 {value} 在 PAT 模式下不生效。"
+unused = "已保存的自定义值 {value} 在这里不生效。"
 usable = "Codex 每轮最多使用其中的 {percent} %：{value}"
 
 [models.invalid]

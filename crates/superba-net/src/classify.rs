@@ -315,18 +315,6 @@ pub(crate) fn parse_whoami(body: &[u8]) -> Result<Whoami, String> {
     })
 }
 
-/// True if a `wham/accounts/check` body lists at least one account.
-pub(crate) fn wham_lists_accounts(body: &[u8]) -> bool {
-    serde_json::from_slice::<Value>(body)
-        .ok()
-        .and_then(|v| {
-            v.get("accounts")
-                .and_then(Value::as_array)
-                .map(|a| !a.is_empty())
-        })
-        .unwrap_or(false)
-}
-
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
@@ -632,14 +620,5 @@ mod tests {
         let mut html = answer(200, "<html>");
         html.truncated = true;
         assert!(edge_intercepted(&html));
-    }
-
-    #[test]
-    fn wham_answer_must_list_an_account() {
-        assert!(wham_lists_accounts(
-            br#"{"accounts":[{"id":"a"}],"default_account_id":"a"}"#
-        ));
-        assert!(!wham_lists_accounts(br#"{"accounts":[]}"#));
-        assert!(!wham_lists_accounts(b""));
     }
 }

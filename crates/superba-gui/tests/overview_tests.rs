@@ -541,7 +541,6 @@ fn caps(data: &Data, line: &str, reachable: bool, ms: u32) -> LineCaps {
         checked_at: Timestamp::now(),
         reachable,
         latency_ms: Some(ms),
-        pat_ok: true,
         apikey_ok: true,
         codex_path: None,
         blocked_by_edge: false,

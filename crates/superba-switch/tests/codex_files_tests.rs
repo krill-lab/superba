@@ -171,7 +171,7 @@ async fn an_edit_is_saved_after_a_backup_and_stays_the_users() {
     assert_eq!(read(&w, "config.toml"), edited);
     let backup = saved.backup.clone().expect("backed up");
     assert_eq!(backup.source, BackupSource::BeforeEdit);
-    assert_eq!(saved.owned_changed.len(), 2, "{saved:?}");
+    assert_eq!(saved.owned_changed.len(), 1, "{saved:?}");
     assert!(
         saved
             .owned_changed

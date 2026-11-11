@@ -13,7 +13,7 @@ use fakes::v3::files_in;
 use fakes::*;
 use pretty_assertions::assert_eq;
 use superba_core::{
-    AppCodexPin, AuthChoice, AuthMode, BlockReason, CodexVersion, ExecuteOptions, HostSyncAction,
+    AppCodexPin, AuthMode, BlockReason, CodexVersion, ExecuteOptions, HostSyncAction,
     HostSyncSelection, InstallRequest, InstallTarget, ModelOverride, ModelPicker, ModelsEdit,
     ModelsViewRequest, NoEvents, OutcomeStatus, ProfileId, RemoteApplyScope, ResolvedMode,
     RestartKind, SafeDefaults, SettingEntry, SettingValue, SpeedEffect, SpeedTier, SwitchIntent,
@@ -52,7 +52,6 @@ fn set_profile(w: &World, f: impl FnOnce(&mut superba_core::Profile)) {
 
 fn api_key(p: &mut superba_core::Profile) {
     p.auth_mode = AuthMode::ApiKey;
-    p.set_auth(AuthChoice::ApiKey);
 }
 
 fn window(n: u64) -> ModelOverride {
@@ -234,14 +233,11 @@ async fn reasons_are_pure_and_cover_the_picker_and_tier_suffix() {
     );
     p.model_picker = ModelPicker::CodexDefault;
     p.model.speed = Some(SpeedTier::Fast);
-    assert!(catalog_reasons(&p, &site, AuthMode::ApiKey).is_empty());
     site.capabilities.tier_model_suffix = true;
     assert_eq!(
         catalog_reasons(&p, &site, AuthMode::ApiKey),
         vec![CatalogReason::TierSuffix]
     );
-    // PAT speed alone needs no catalog: the app's own speed menu works.
-    assert!(catalog_reasons(&p, &site, AuthMode::Pat).is_empty());
     // An upstream name alone edits the model map, not the catalog.
     p.model.speed = None;
     p.model_overrides.insert(
@@ -459,15 +455,6 @@ async fn without_a_catalog_file_an_api_key_cli_follows_the_bundled_tiers() {
         view.speed.effect(SpeedTier::Ultrafast).0,
         &SpeedEffect::NotOffered
     );
-    // A PAT Codex fetches the provider's list itself: its tiers decide.
-    set_profile(&w, |p| {
-        p.auth_mode = AuthMode::Pat;
-        p.set_auth(AuthChoice::Pat);
-        p.model.speed = Some(SpeedTier::Fast);
-    });
-    let view = sw.models_view(ModelsViewRequest::default()).await.unwrap();
-    assert_eq!(view.speed.offered, vec![SpeedTier::Standard]);
-    assert_eq!(view.speed.cli, SpeedEffect::NotOffered);
 }
 
 #[tokio::test]
@@ -581,14 +568,14 @@ fn tier_effects_follow_each_tier() {
         fallback_reason: None,
         sources: Vec::new(),
     };
-    let effects = |pat, suffix| {
-        tier_effects(&list, |_| None, Some("gpt-6-astra"), false, pat, suffix)
+    let effects = |suffix| {
+        tier_effects(&list, |_| None, Some("gpt-6-astra"), false, suffix)
             .into_iter()
             .map(|t| (t.tier, t.app))
             .collect::<Vec<_>>()
     };
     assert_eq!(
-        effects(false, false),
+        effects(false),
         vec![
             (SpeedTier::Standard, SpeedEffect::Applies),
             (SpeedTier::Fast, SpeedEffect::AppForcesStandard),
@@ -596,15 +583,10 @@ fn tier_effects_follow_each_tier() {
         ]
     );
     assert_eq!(
-        effects(false, true)[2].1,
+        effects(true)[2].1,
         SpeedEffect::ViaModelName {
             model: "gpt-6-astra-ultrafast".into()
         }
-    );
-    assert!(
-        effects(true, false)
-            .iter()
-            .all(|(_, e)| *e == SpeedEffect::AppMenu)
     );
 }
 
@@ -642,14 +624,12 @@ fn speed_support_is_per_consumer() {
         Some("gpt-6-luna"),
         false,
         false,
-        false,
     );
     assert_eq!(s.cli, SpeedEffect::NotOffered);
     let s = speed_support(
         SpeedTier::Ultrafast,
         &list,
         Some("gpt-6-astra"),
-        false,
         false,
         true,
     );
@@ -660,15 +640,6 @@ fn speed_support_is_per_consumer() {
             model: "gpt-6-astra-ultrafast".into()
         }
     );
-    let s = speed_support(
-        SpeedTier::Fast,
-        &list,
-        Some("gpt-6-astra"),
-        false,
-        true,
-        false,
-    );
-    assert_eq!(s.app, SpeedEffect::AppMenu);
 }
 
 // ---------------------------------------------------------------------------
@@ -1377,7 +1348,7 @@ async fn a_wizard_save_under_the_preset_id_edits_the_existing_profile() {
     let mut p = krill_profile(
         superba_core::catalog::PRESET_KRILL,
         Some("cn-fast"),
-        AuthMode::Pat,
+        AuthMode::ApiKey,
     );
     p.name = "Krill".into();
     let saved = sw
@@ -1389,7 +1360,7 @@ async fn a_wizard_save_under_the_preset_id_edits_the_existing_profile() {
     assert_eq!(saved.line_id.as_ref().map(|l| l.as_str()), Some("cn-fast"));
     assert_eq!(w.profiles.set.lock().unwrap().profiles.len(), before);
     // Another id is a new profile.
-    let p = krill_profile("second", None, AuthMode::Pat);
+    let p = krill_profile("second", None, AuthMode::ApiKey);
     sw.save_profile(p, None).await.unwrap();
     assert_eq!(w.profiles.set.lock().unwrap().profiles.len(), before + 1);
 }

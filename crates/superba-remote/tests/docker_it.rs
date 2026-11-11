@@ -319,7 +319,7 @@ async fn remote_hosts_against_an_sshd_container() {
     );
     assert!(st.app_server_pids.is_empty());
 
-    let pat = token_profile(ORIGIN, AuthMode::Pat, KEY);
+    let pat = token_profile(ORIGIN, AuthMode::ApiKey, KEY);
     let plan = rh.plan_apply(&alice, &pat).await.expect("plan");
     assert!(plan.blocked.is_empty(), "{:?}", plan.blocked);
     assert!(plan.env.is_some());

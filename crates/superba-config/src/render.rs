@@ -176,11 +176,6 @@ fn targets(
                 // Mixed login: every ChatGPT call goes to chatgpt.com with the
                 // real account; only model traffic goes to the router.
                 put(k::CHATGPT_BASE_URL, Target::Remove);
-            } else if auth.writes_chatgpt_base_url() {
-                let url = endpoints.chatgpt_base_url.as_ref().ok_or_else(|| {
-                    Error::invalid(format!("{auth:?} needs chatgpt_base_url in the endpoints"))
-                })?;
-                put(k::CHATGPT_BASE_URL, Target::Set(string_repr(url.as_str())));
             } else {
                 put(k::CHATGPT_BASE_URL, Target::Restore);
             }

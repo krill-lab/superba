@@ -12,11 +12,10 @@ use std::collections::BTreeMap;
 use fakes::*;
 use pretty_assertions::assert_eq;
 use superba_core::{
-    AuthApiHealth, AuthMode, AuthShape, BlockReason, CodexProcessKind, CodexVersion, ConsumerKind,
-    EnvOp, Error, FullRestartReason, KeyAccess, LegacySessionChoice, Locale, MigrationSelector,
-    PlanChoice, ProfileId, ProviderRestore, RcLine, ResolvedMode, RestartKind, RestoreTarget,
-    SwitchIntent, SwitchPlan, SwitchRequest, SwitchService, TargetId, Timestamp,
-    codex::LEGACY_KRILL_PROVIDER,
+    AuthMode, AuthShape, BlockReason, CodexProcessKind, CodexVersion, ConsumerKind, EnvOp, Error,
+    FullRestartReason, KeyAccess, LegacySessionChoice, MigrationSelector, PlanChoice, ProfileId,
+    ProviderRestore, RcLine, ResolvedMode, RestartKind, RestoreTarget, SwitchIntent, SwitchPlan,
+    SwitchRequest, SwitchService, TargetId, Timestamp, codex::LEGACY_KRILL_PROVIDER,
 };
 
 fn req(profile: &str) -> SwitchRequest {
@@ -70,69 +69,12 @@ fn warning_keys(p: &SwitchPlan) -> Vec<String> {
 // --- rule 8: the hot path ---------------------------------------------------
 
 #[tokio::test]
-async fn pat_profile_with_cdp_bridge_and_healthy_auth_address_is_hot() {
-    let w = World::new();
-    let p = plan(&w, req("work")).await;
-    assert_eq!(p.primary, hot());
-    assert!(p.countdown_allowed());
-    assert!(!p.needs_confirmation());
-    assert!(p.choices.is_empty());
-    let cfg = p.config.as_ref().expect("config plan");
-    assert_eq!(cfg.auth_mode, Some(AuthMode::Pat));
-    assert_eq!(
-        w.config.last_desired.lock().unwrap().as_deref(),
-        Some("token:Pat:https://api.kbsfdxc.net/backend-api/codex")
-    );
-    // PAT persists the auth address of the destination line.
-    assert_eq!(
-        w.env.plans.lock().unwrap().last(),
-        Some(&EnvOp::Set {
-            value: OVERSEAS.into(),
-            take_over_foreign: false
-        })
-    );
-    assert!(p.env.is_some());
-    assert_eq!(p.to.line_id.as_ref().map(|l| l.as_str()), Some("overseas"));
-    assert_eq!(p.to.auth_mode, Some(AuthMode::Pat));
-    // whoami was checked on the origin the running app was started with.
-    assert_eq!(
-        *w.prober.authapi_checks.lock().unwrap(),
-        vec![OVERSEAS.to_owned()]
-    );
-    // The destination label renders with nested, translated names.
-    let zh = superba_switch::messages::catalog(Locale::ZhCn);
-    let label = zh.text(&p.to.label);
-    assert!(label.contains("海外线路"), "{label}");
-    assert_eq!(
-        p.to.label.render_fallback(),
-        "Krill · Overseas · PAT (personal access token)"
-    );
-}
-
-#[tokio::test]
-async fn hot_line_change_keeps_the_app_auth_address_and_says_so() {
-    let w = World::new();
-    let p = plan(&w, with_line("work", "cdn", None)).await;
-    assert_eq!(p.primary, hot());
-    assert!(warning_keys(&p).contains(&"switch.warn.authapi_line".to_owned()));
-    // The env still follows the destination line for future launches.
-    assert_eq!(
-        w.env.plans.lock().unwrap().last(),
-        Some(&EnvOp::Set {
-            value: "https://api.kbsfdxc.com".into(),
-            take_over_foreign: false
-        })
-    );
-}
-
-#[tokio::test]
 async fn api_key_destination_ignores_the_auth_address_rules() {
     let w = World::new();
     w.set_session(Some(session(None, true)));
     let p = plan(&w, with_line("work", "overseas", Some(AuthMode::ApiKey))).await;
     assert_eq!(p.primary, hot());
     assert!(p.env.is_none(), "API key mode needs no env");
-    assert!(w.prober.authapi_checks.lock().unwrap().is_empty());
 }
 
 // --- rules 4-7 --------------------------------------------------------------
@@ -179,49 +121,6 @@ async fn missing_bridge_needs_a_full_restart() {
     );
 }
 
-#[tokio::test]
-async fn pat_without_auth_address_in_the_app_needs_a_full_restart() {
-    let w = World::new();
-    w.set_session(Some(session(None, true)));
-    let p = plan(&w, req("work")).await;
-    assert_eq!(p.primary, full(FullRestartReason::AuthApiMissing));
-    // Offered: hot switch with a plain API key instead.
-    assert_eq!(p.alternatives.len(), 1);
-    assert!(matches!(
-        p.alternatives[0].request.intent,
-        SwitchIntent::Profile {
-            auth_mode: Some(AuthMode::ApiKey),
-            ..
-        }
-    ));
-}
-
-#[tokio::test]
-async fn pat_with_unhealthy_auth_address_offers_api_key_hot_switch() {
-    let w = World::new();
-    w.prober.authapi.lock().unwrap().insert(
-        OVERSEAS.into(),
-        AuthApiHealth::Unhealthy {
-            reason: "timeout".into(),
-        },
-    );
-    let p = plan(&w, req("work")).await;
-    assert_eq!(p.primary, full(FullRestartReason::AuthApiUnhealthy));
-    assert_eq!(p.alternatives[0].label.key, "switch.action.hot_with_apikey");
-    // The alternative plans hot.
-    let alt = plan(&w, p.alternatives[0].request.clone()).await;
-    assert_eq!(alt.primary, hot());
-}
-
-#[tokio::test]
-async fn foreign_auth_address_origin_is_unhealthy_without_sending_the_key() {
-    let w = World::new();
-    w.set_session(Some(session(Some("not a url"), true)));
-    let p = plan(&w, req("work")).await;
-    assert_eq!(p.primary, full(FullRestartReason::AuthApiUnhealthy));
-    assert!(w.prober.authapi_checks.lock().unwrap().is_empty());
-}
-
 // --- rule 3 ------------------------------------------------------------------
 
 #[tokio::test]
@@ -243,60 +142,24 @@ async fn official_login_to_token_while_running_is_cross_family() {
 #[tokio::test]
 async fn generation_restore_from_chatgpt_to_pat_requires_cross_family_restart() {
     let w = World::new();
-    w.config.restore_token(AuthMode::Pat);
+    w.config.restore_token(AuthMode::ApiKey);
     w.config.state.lock().unwrap().auth = AuthShape::ChatGpt {
         email: None,
         account_id: None,
     };
     w.set_session(Some(session(None, true)));
     let p = plan(&w, restore(RestoreTarget::Generation { generation: 1 })).await;
-    assert_eq!(p.to.auth_mode, Some(AuthMode::Pat));
+    assert_eq!(p.to.auth_mode, Some(AuthMode::ApiKey));
     assert_eq!(p.primary, full(FullRestartReason::CrossAuthFamily));
 }
 
 #[tokio::test]
-async fn pat_generation_restore_without_app_auth_env_requires_restart() {
-    let w = World::new();
-    w.config.restore_token(AuthMode::Pat);
-    w.set_session(Some(session(None, true)));
-    let p = plan(&w, restore(RestoreTarget::Generation { generation: 1 })).await;
-    assert_eq!(p.primary, full(FullRestartReason::AuthApiMissing));
-    assert!(
-        matches!(p.env.as_ref().map(|e| &e.op), Some(EnvOp::Set { value, .. }) if value == OVERSEAS)
-    );
-}
-
-#[tokio::test]
 async fn same_family_generation_restore_checks_saved_key_and_stays_hot() {
-    for auth in [AuthMode::Pat, AuthMode::ApiKey] {
-        let w = World::new();
-        w.config.restore_token(auth);
-        let p = plan(&w, restore(RestoreTarget::Generation { generation: 1 })).await;
-        assert_eq!(p.primary, hot());
-        assert_eq!(p.to.auth_mode, Some(auth));
-        assert_eq!(
-            *w.prober.authapi_checks.lock().unwrap(),
-            if auth.needs_authapi_env() {
-                vec![OVERSEAS.to_owned()]
-            } else {
-                Vec::new()
-            }
-        );
-    }
-}
-
-#[tokio::test]
-async fn pat_generation_restore_rechecks_the_app_auth_address_health() {
     let w = World::new();
-    w.config.restore_token(AuthMode::Pat);
-    w.prober.authapi.lock().unwrap().insert(
-        OVERSEAS.into(),
-        AuthApiHealth::Unhealthy {
-            reason: "timeout".into(),
-        },
-    );
+    w.config.restore_token(AuthMode::ApiKey);
     let p = plan(&w, restore(RestoreTarget::Generation { generation: 1 })).await;
-    assert_eq!(p.primary, full(FullRestartReason::AuthApiUnhealthy));
+    assert_eq!(p.primary, hot());
+    assert_eq!(p.to.auth_mode, Some(AuthMode::ApiKey));
 }
 
 #[tokio::test]
@@ -308,7 +171,7 @@ async fn generation_and_unknown_original_auth_fall_back_to_rendered_auth_json() 
         },
     ] {
         let w = World::new();
-        w.config.restore_token(AuthMode::Pat);
+        w.config.restore_token(AuthMode::ApiKey);
         *w.config.restored_auth_mode.lock().unwrap() = None;
         w.config.baseline.lock().unwrap().as_mut().unwrap().auth = AuthShape::Unknown {
             detail: "old baseline".into(),
@@ -318,15 +181,15 @@ async fn generation_and_unknown_original_auth_fall_back_to_rendered_auth_json() 
             account_id: None,
         };
         let p = plan(&w, restore(target)).await;
-        assert_eq!(p.to.auth_mode, Some(AuthMode::Pat));
+        assert_eq!(p.to.auth_mode, Some(AuthMode::ApiKey));
         assert_eq!(p.primary, full(FullRestartReason::CrossAuthFamily));
     }
 }
 
 #[tokio::test]
-async fn restored_pat_key_is_never_probed_using_an_unrecognized_destination_site() {
+async fn a_restored_key_is_never_probed_using_an_unrecognized_destination_site() {
     let w = World::new();
-    w.config.restore_token(AuthMode::Pat);
+    w.config.restore_token(AuthMode::ApiKey);
     w.config
         .restored_files
         .lock()
@@ -337,8 +200,9 @@ async fn restored_pat_key_is_never_probed_using_an_unrecognized_destination_site
         b"openai_base_url = 'https://example.org/v1'\n".to_vec(),
     ));
     let p = plan(&w, restore(RestoreTarget::Generation { generation: 1 })).await;
-    assert_eq!(p.primary, full(FullRestartReason::AuthApiUnhealthy));
-    assert!(w.prober.authapi_checks.lock().unwrap().is_empty());
+    // The restored key has no known site: no line is probed with it.
+    assert_eq!(p.primary, hot());
+    assert_eq!(p.to.site_id, None);
 }
 
 #[tokio::test]
@@ -472,42 +336,10 @@ async fn pending_journal_and_unparseable_config_block() {
 }
 
 #[tokio::test]
-async fn edge_blocked_pat_falls_back_to_api_key_with_an_explanation() {
-    let w = World::new();
-    let mut caps = good_caps("krill", "cn-fast");
-    caps.pat_ok = false;
-    caps.blocked_by_edge = true;
-    w.prober.caps.lock().unwrap().insert("cn-fast".into(), caps);
-    let p = plan(&w, with_line("work", "cn-fast", None)).await;
-    assert_eq!(p.primary, hot());
-    assert_eq!(p.to.auth_mode, Some(AuthMode::ApiKey));
-    assert!(warning_keys(&p).contains(&"switch.warn.pat_fallback".to_owned()));
-    assert!(p.env.is_none());
-}
-
-#[tokio::test]
-async fn explicit_pat_on_an_edge_blocked_line_blocks_and_offers_api_key() {
-    let w = World::new();
-    let mut caps = good_caps("krill", "cn-fast");
-    caps.pat_ok = false;
-    w.prober.caps.lock().unwrap().insert("cn-fast".into(), caps);
-    let p = plan(&w, with_line("work", "cn-fast", Some(AuthMode::Pat))).await;
-    assert_eq!(
-        blocks(&p),
-        vec![BlockReason::AuthModeUnavailable {
-            line_id: "cn-fast".into(),
-            auth_mode: AuthMode::Pat
-        }]
-    );
-    assert_eq!(p.alternatives.len(), 1);
-}
-
-#[tokio::test]
 async fn codex_v1_fallback_is_used_for_api_key_only() {
     let w = World::new();
     let mut caps = good_caps("krill", "cdn");
     caps.codex_path = Some(superba_core::CodexPath::CodexV1);
-    caps.pat_ok = false;
     w.prober.caps.lock().unwrap().insert("cdn".into(), caps);
     plan(&w, with_line("work", "cdn", Some(AuthMode::ApiKey))).await;
     assert_eq!(
@@ -537,23 +369,10 @@ async fn probe_failures_other_than_missing_implementations_block_the_line() {
 
 // --- version gates (plan 9.8) -----------------------------------------------
 
-/// Make the `work` profile a manual PAT profile (Automatic falls back to an API
-/// key on a Codex too old for PAT instead of being blocked).
-fn manual_pat(w: &World) {
-    let mut set = w.profiles.set.lock().unwrap();
-    let p = set
-        .profiles
-        .iter_mut()
-        .find(|p| p.id.as_str() == "work")
-        .unwrap();
-    p.set_auth(superba_core::AuthChoice::Pat);
-}
-
 #[tokio::test]
-async fn old_bundled_codex_blocks_manual_pat() {
+async fn old_bundled_codex_blocks_a_key_profile() {
     let w = World::new();
-    manual_pat(&w);
-    w.app.installs.lock().unwrap()[0].bundled_codex_version = Some(CodexVersion::new(0, 150, 0));
+    w.app.installs.lock().unwrap()[0].bundled_codex_version = Some(CodexVersion::new(0, 148, 0));
     let b = blocks(&plan(&w, req("work")).await);
     assert!(
         matches!(&b[0], BlockReason::VersionTooOld { consumer, .. } if consumer == "ChatGPT app")
@@ -561,10 +380,9 @@ async fn old_bundled_codex_blocks_manual_pat() {
 }
 
 #[tokio::test]
-async fn old_cli_blocks_manual_pat_unless_switching_for_the_app_only() {
+async fn old_cli_blocks_a_key_profile_unless_switching_for_the_app_only() {
     let w = World::new();
-    manual_pat(&w);
-    w.app.binaries.lock().unwrap()[0].version = Some(CodexVersion::new(0, 155, 0));
+    w.app.binaries.lock().unwrap()[0].version = Some(CodexVersion::new(0, 148, 0));
     let b = blocks(&plan(&w, req("work")).await);
     assert!(
         matches!(&b[0], BlockReason::VersionTooOld { consumer, .. } if consumer == "/usr/local/bin/codex")
@@ -838,30 +656,6 @@ async fn edited_owned_keys_raise_a_conflict_question() {
     let p = plan(&w, req("work")).await;
     assert!(
         matches!(&p.choices[..], [PlanChoice::OwnedKeyConflict { conflicts, .. }] if conflicts[0].path == "openai_base_url")
-    );
-}
-
-#[tokio::test]
-async fn foreign_env_lines_ask_and_the_answer_takes_them_over() {
-    let w = World::new();
-    w.env.report.lock().unwrap().foreign_lines = vec![RcLine {
-        path: "/home/u/.bashrc".into(),
-        line_no: 7,
-        text: "export CODEX_AUTHAPI_BASE_URL=https://example.org".into(),
-        value: "https://example.org".into(),
-    }];
-    let p = plan(&w, req("work")).await;
-    assert!(matches!(&p.choices[..], [PlanChoice::ForeignEnv { .. }]));
-    let mut r = req("work");
-    r.take_over_foreign_env = Some(true);
-    let p = plan(&w, r).await;
-    assert!(p.choices.is_empty());
-    assert_eq!(
-        w.env.plans.lock().unwrap().last(),
-        Some(&EnvOp::Set {
-            value: OVERSEAS.into(),
-            take_over_foreign: true
-        })
     );
 }
 

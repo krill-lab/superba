@@ -2,12 +2,6 @@
 # providers.en.toml with the same {placeholders} (tests/i18n_tests.rs).
 
 [connection]
-auth.advanced = "高级"
-auth.advanced_body = "自动：线路支持 PAT 时用 PAT，否则用 API Key。手动选择会固定在所有线路上；不支持该方式的线路将无法切换。"
-auth.hide_advanced = "收起高级"
-auth.manual = "{mode}（手动选择）"
-auth.none = "没有可用的方式"
-auth.reason = "在{line}：{reason}"
 key.placeholder_compatible = "API Key（sk-…）"
 lines.current = "当前"
 lines.down = "下移"
@@ -130,7 +124,7 @@ official.what = "chatgpt.com"
 preset.custom.body = "填写 Base URL 和 API Key；Superba 会测试连接、Key 和模型列表。"
 preset.custom.title = "自定义 OpenAI 兼容站点"
 preset.default = "默认"
-preset.krill.body = "内置 3 条线路：国内极速 · 海外线路 · 三网优化 CDN；支持 PAT（自动选择）。"
+preset.krill.body = "内置 3 条线路：国内极速 · 海外线路 · 三网优化 CDN；Key 以 API Key 方式使用。"
 preset.krill.title = "Krill"
 preset.official.body = "使用你自己的 ChatGPT 账号。"
 preset.official.title = "官方 ChatGPT 登录"

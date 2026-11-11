@@ -174,27 +174,15 @@ pub struct MinVersion {
     pub confidence: Confidence,
 }
 
-/// Minimum Codex versions per capability (plan 9.8). `WhamAccountsCheck` 0.160 is a
-/// fact (relay `accounts_check.rs`); PAT and top-level `openai_base_url` are
-/// provisional at 0.160 (the Krill tutorial's floor) pending spike S9.
+/// Minimum Codex versions per capability (plan 9.8). Top-level
+/// `openai_base_url` is provisional at 0.160 (the Krill tutorial's floor)
+/// pending spike S9.
 pub fn min_version_table() -> Vec<MinVersion> {
-    vec![
-        MinVersion {
-            capability: VersionCapability::TopLevelOpenaiBaseUrl,
-            min: CodexVersion::new(0, 160, 0),
-            confidence: Confidence::Provisional,
-        },
-        MinVersion {
-            capability: VersionCapability::PersonalAccessToken,
-            min: CodexVersion::new(0, 160, 0),
-            confidence: Confidence::Provisional,
-        },
-        MinVersion {
-            capability: VersionCapability::WhamAccountsCheck,
-            min: CodexVersion::new(0, 160, 0),
-            confidence: Confidence::Verified,
-        },
-    ]
+    vec![MinVersion {
+        capability: VersionCapability::TopLevelOpenaiBaseUrl,
+        min: CodexVersion::new(0, 160, 0),
+        confidence: Confidence::Provisional,
+    }]
 }
 
 /// Result of checking one capability against a found version.
@@ -240,16 +228,4 @@ pub fn check(capability: VersionCapability, found: Option<&CodexVersion>) -> Gat
             found: v.clone(),
         },
     }
-}
-
-/// Capabilities a token profile needs (PAT additionally needs the PAT and wham
-/// capabilities; every Krill/compatible profile needs top-level `openai_base_url`
-/// or keys would go to api.openai.com).
-pub fn required_capabilities(pat: bool) -> Vec<VersionCapability> {
-    let mut v = vec![VersionCapability::TopLevelOpenaiBaseUrl];
-    if pat {
-        v.push(VersionCapability::PersonalAccessToken);
-        v.push(VersionCapability::WhamAccountsCheck);
-    }
-    v
 }

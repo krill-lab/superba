@@ -7,9 +7,9 @@ use std::sync::{Arc, Mutex};
 
 use fakes::*;
 use superba_core::{
-    AccountRequest, AccountSummary, ActiveState, AuthApiHealth, AuthMode, Error, KeyCheck, Line,
-    LineCaps, LineId, LineProber, ModelInfo, ProfileId, ResolvedEndpoints, ResponsesProbe, Result,
-    Secret, Site, SiteId, SwitchService, Timestamp, UsageQuery, UsageReport, async_trait,
+    AccountRequest, AccountSummary, ActiveState, AuthMode, Error, KeyCheck, Line, LineCaps, LineId,
+    LineProber, ModelInfo, ProfileId, ResolvedEndpoints, ResponsesProbe, Result, Secret, Site,
+    SiteId, SwitchService, Timestamp, UsageQuery, UsageReport, async_trait,
 };
 use superba_switch::Switcher;
 use url::Url;
@@ -58,15 +58,6 @@ impl LineProber for AccountProber {
         key: &Secret,
     ) -> Result<KeyCheck> {
         self.inner.check_key(site, line, mode, key).await
-    }
-
-    async fn check_authapi(
-        &self,
-        site: &Site,
-        origin: &superba_core::Origin,
-        key: &Secret,
-    ) -> Result<AuthApiHealth> {
-        self.inner.check_authapi(site, origin, key).await
     }
 
     async fn list_models(&self, url: &Url, key: &Secret) -> Result<Vec<ModelInfo>> {

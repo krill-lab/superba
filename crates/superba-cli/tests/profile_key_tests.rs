@@ -68,9 +68,9 @@ async fn add_builds_defaults_and_all_overrides() {
     assert_eq!(p.name, "minimal");
     assert_eq!(p.site_id, SiteId::new("krill"));
     assert_eq!(p.line_id, None);
-    // v2: auth is Auto unless chosen under Advanced; Krill's recommended keys
-    // are the profile's own Codex settings.
-    assert_eq!(p.auth_choice(), superba_core::AuthChoice::Auto);
+    // The key is an API key (user bug 139); Krill's recommended keys are the
+    // profile's own Codex settings.
+    assert_eq!(p.auth_mode, superba_core::AuthMode::ApiKey);
     assert!(!p.codex_settings.is_empty() && p.builtin.is_none());
     let base = url::Url::parse("https://example.invalid/v1").unwrap();
     service.sites.lock().unwrap().push(
@@ -102,7 +102,7 @@ async fn add_builds_defaults_and_all_overrides() {
     .await;
     assert_eq!(code, 0);
     let p = service.calls().saves[1].profile.clone();
-    assert_eq!(p.auth_choice(), superba_core::AuthChoice::Auto);
+    assert_eq!(p.auth_mode, superba_core::AuthMode::ApiKey);
     assert!(p.codex_settings.is_empty());
     assert_eq!(p.name, "My site");
     assert_eq!(p.line_id, Some(LineId::new("one")));
@@ -114,12 +114,9 @@ async fn add_builds_defaults_and_all_overrides() {
     assert_eq!(p.model.reasoning_effort.as_deref(), Some("high"));
     assert_eq!(one_json(&stdout)["id"], "custom");
     assert_eq!(
-        invoke(
-            service.clone(),
-            &["profile", "add", "explicit", "--auth", "apikey"]
-        )
-        .await
-        .0,
+        invoke(service.clone(), &["profile", "add", "explicit"])
+            .await
+            .0,
         0
     );
     assert_eq!(service.calls().saves[2].profile.auth_mode, AuthMode::ApiKey);
@@ -299,7 +296,7 @@ async fn key_check_uses_applied_profile_and_profile_defaults() {
         (
             SiteId::new("krill"),
             LineId::new("cdn"),
-            AuthMode::Pat,
+            AuthMode::ApiKey,
             RecordedKey::Profile(ProfileId::new("work"))
         )
     );
@@ -331,8 +328,6 @@ async fn key_check_explicit_profile_and_overrides_win() {
             "krill",
             "--line",
             "cn-fast",
-            "--auth",
-            "apikey",
         ],
     )
     .await;

@@ -16,9 +16,9 @@ use std::time::Duration;
 use fakes::*;
 use pretty_assertions::assert_eq;
 use superba_core::{
-    AppliedModel, AuthChoice, AuthMode, ExecuteOptions, ModelDefaults, ModelOverride, ModelSpec,
-    ModelsEdit, ModelsView, ModelsViewRequest, NoEvents, OutcomeStatus, ProfileId, SafeDefaults,
-    SwitchPlan, SwitchRequest, SwitchService, model_limits,
+    AppliedModel, AuthMode, ExecuteOptions, ModelDefaults, ModelOverride, ModelSpec, ModelsEdit,
+    ModelsView, ModelsViewRequest, NoEvents, OutcomeStatus, ProfileId, SafeDefaults, SwitchPlan,
+    SwitchRequest, SwitchService, model_limits,
 };
 use superba_switch::models::{ModelsCrate, applied_models};
 use superba_switch::{Switcher, Tuning};
@@ -39,7 +39,6 @@ fn set_profile(w: &World, f: impl FnOnce(&mut superba_core::Profile)) {
 
 fn api_key(p: &mut superba_core::Profile) {
     p.auth_mode = AuthMode::ApiKey;
-    p.set_auth(AuthChoice::ApiKey);
 }
 
 fn stored(w: &World) -> superba_core::Profile {
@@ -341,8 +340,7 @@ async fn save_refuses_values_the_models_page_refuses() {
 async fn a_personal_access_token_folds_defaults_without_overwriting_per_model_values() {
     let w = World::new();
     set_profile(&w, |p| {
-        p.auth_mode = AuthMode::Pat;
-        p.set_auth(AuthChoice::Pat);
+        p.auth_mode = AuthMode::ApiKey;
         p.model_overrides
             .insert("gpt-5.5".into(), custom(Some(200_000), Some(150_000)));
         p.model.context_window = Some(300_000);

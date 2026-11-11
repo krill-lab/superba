@@ -40,10 +40,7 @@ use crate::time::Timestamp;
 /// 3. auth family changes -> `FullAppRestart(CrossAuthFamily)` (until S18)
 /// 4. app not running -> [`RestartKind::None`]
 /// 5. no CDP / no bridge -> `FullAppRestart(NoCdp | NoBridge)`
-/// 6. PAT target, app env lacks `CODEX_AUTHAPI_BASE_URL` -> `FullAppRestart(AuthApiMissing)`
-/// 7. PAT target, that origin's whoami unhealthy -> `FullAppRestart(AuthApiUnhealthy)`
-///    (+ "hot switch with API key instead" alternative)
-/// 8. otherwise -> `AppServerHot { host_id: "local" }`
+/// 6. otherwise -> `AppServerHot { host_id: "local" }`
 ///
 /// CLI TUI/exec -> [`RestartKind::NextLaunch`]; CLI daemon -> [`RestartKind::DaemonRestart`];
 /// remote hosts -> `AppServerHot { host_id, kill_remote: true }`.
@@ -114,10 +111,6 @@ pub enum FullRestartReason {
     NoCdp,
     /// CDP is up but `electronBridge.sendMessageFromView` is missing.
     NoBridge,
-    /// PAT target but the app main process has no `CODEX_AUTHAPI_BASE_URL`.
-    AuthApiMissing,
-    /// PAT target but whoami on the app's auth API origin is unhealthy.
-    AuthApiUnhealthy,
     /// Switching between ChatGPT login and token auth.
     CrossAuthFamily,
     /// Sessions must be migrated (all Codex processes must stop).
@@ -125,7 +118,7 @@ pub enum FullRestartReason {
     /// This platform build only supports full restarts (S2/S3 fallback).
     PlatformNoHot,
     /// The user asked for it (`SwitchIntent::RestartApp`: reopen the app through
-    /// Superba so it gets CDP and the current line's auth address).
+    /// Superba so it gets CDP).
     Requested,
     /// The main app must inherit the changed router certificate trust bundle.
     CertificateTrustChanged,
@@ -142,14 +135,6 @@ impl FullRestartReason {
             Self::NoBridge => (
                 "restart.reason.no_bridge",
                 "This ChatGPT version does not expose the restart bridge.",
-            ),
-            Self::AuthApiMissing => (
-                "restart.reason.authapi_missing",
-                "ChatGPT was started without the auth API address; a hot switch would lose the login.",
-            ),
-            Self::AuthApiUnhealthy => (
-                "restart.reason.authapi_unhealthy",
-                "The auth address of the line ChatGPT was started with is unavailable; a hot switch would lose the login.",
             ),
             Self::CrossAuthFamily => (
                 "restart.reason.cross_auth_family",
@@ -1307,10 +1292,6 @@ pub struct AppOverview {
     pub session: Option<AppSession>,
     /// Hot-switch badge.
     pub hot_switch: HotSwitchStatus,
-    /// The Krill line whose origin the running app uses for PAT auth
-    /// ("auth address: Overseas (follows the current line after the next full restart)").
-    #[serde(default)]
-    pub authapi_line: Option<LineId>,
 }
 
 /// Local CLI card.

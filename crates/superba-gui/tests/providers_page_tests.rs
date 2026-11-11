@@ -11,9 +11,8 @@
 mod support;
 
 use superba_core::{
-    AccountReport, AccountSummary, AuthChoice, AuthMode, BillingSummary, CodexPath, DailyUsage,
-    LineCaps, LineId, Locale, ModelUsage, ProfileId, SiteId, SwitchService, Timestamp, UsageReport,
-    Usd,
+    AccountReport, AccountSummary, AuthMode, BillingSummary, CodexPath, DailyUsage, LineCaps,
+    LineId, Locale, ModelUsage, ProfileId, SiteId, SwitchService, Timestamp, UsageReport, Usd,
 };
 use superba_gui::design::{Palette, fonts, style};
 use superba_gui::i18n::Tr;
@@ -34,8 +33,8 @@ fn line_priority_moves_and_orders_lines() {
     );
     let site = superba_core::catalog::krill_site();
     let mut profile = shared::new_profile(&site, "Krill".into());
-    assert_eq!(profile.auth_choice(), AuthChoice::Auto);
-    assert_eq!(profile.auth_mode, AuthMode::Pat);
+    assert_eq!(profile.auth_mode, AuthMode::ApiKey);
+    assert_eq!(profile.auth_mode, AuthMode::ApiKey);
     let default: Vec<_> = shared::ordered_lines(&site, Some(&profile))
         .into_iter()
         .map(|l| l.id)
@@ -76,7 +75,7 @@ fn preferred_router_line_keeps_other_lines_and_direct_mode_still_switches() {
             .map(superba_core::LineId::new)
             .to_vec()
     );
-    assert_eq!(saved.auth_choice(), profile.auth_choice());
+    assert_eq!(saved.auth_mode, profile.auth_mode);
     assert!(profile.prefer_line(&site, "missing".into()).is_err());
     assert_eq!(profile.line_id, Some("cn-fast".into()));
     data.profiles
@@ -99,7 +98,6 @@ fn caps(site: &SiteId, line: &str, pat: bool) -> LineCaps {
         checked_at: Timestamp::EPOCH,
         reachable: true,
         latency_ms: Some(40),
-        pat_ok: pat,
         apikey_ok: true,
         codex_path: Some(CodexPath::BackendApiCodex),
         blocked_by_edge: !pat,
@@ -110,7 +108,7 @@ fn caps(site: &SiteId, line: &str, pat: bool) -> LineCaps {
 }
 
 #[test]
-fn automatic_auth_is_shown_per_line_and_left_to_the_planner_when_switching() {
+fn the_api_key_is_shown_per_line_and_the_mode_left_to_the_planner_when_switching() {
     let site = superba_core::catalog::krill_site();
     let mut data = Data {
         sites: vec![site.clone()],
@@ -133,12 +131,16 @@ fn automatic_auth_is_shown_per_line_and_left_to_the_planner_when_switching() {
             .iter()
             .find(|c| c.line_id == id)
     };
-    let shown =
-        |id: &str| shared::decision(&site, line(id).as_ref(), caps_of(id), Some(&profile)).mode;
-    assert_eq!(shown("overseas"), Some(AuthMode::Pat));
+    let _ = line;
+    let shown = |id: &str| shared::decision(&site, caps_of(id)).mode;
+    assert_eq!(shown("overseas"), Some(AuthMode::ApiKey));
     assert_eq!(shown("cn-fast"), Some(AuthMode::ApiKey));
-    assert_eq!(shown("cdn"), Some(AuthMode::Pat), "not probed: PAT assumed");
-    // Switching never pins a mode: an explicit one would become a manual choice.
+    assert_eq!(
+        shown("cdn"),
+        Some(AuthMode::ApiKey),
+        "not probed: checked when switching"
+    );
+    // Switching never pins a mode.
     for id in ["overseas", "cn-fast"] {
         match shared::switch_action(&data, &profile, &LineId::new(id)) {
             Action::Switch { auth, line, .. } => {
@@ -176,66 +178,8 @@ fn key_less_custom_sites_get_an_api_key_profile_from_the_connection_page() {
     site.capabilities.auth_modes = vec![AuthMode::ApiKey];
     let profile = shared::new_profile(&site, "Example".into());
     assert_eq!(profile.auth_mode, AuthMode::ApiKey);
-    assert_eq!(profile.auth_choice(), AuthChoice::ApiKey);
-    let line = site.lines[0].clone();
-    let d = shared::decision(&site, Some(&line), None, Some(&profile));
-    assert_eq!(d.choice, AuthChoice::Auto, "one mode: shown as Automatic");
+    let d = shared::decision(&site, None);
     assert_eq!(d.mode, Some(AuthMode::ApiKey));
-}
-
-#[test]
-fn automatic_authentication_shows_what_the_planner_will_pick() {
-    let site = superba_core::catalog::krill_site();
-    let line = site.lines[0].clone();
-    let profile = shared::new_profile(&site, "Krill".into());
-    assert_eq!(
-        profile.codex_settings,
-        superba_core::CodexSettings::krill_recommended()
-    );
-    let pick = |facts| shared::decision_with(&site, Some(&line), None, Some(&profile), facts);
-    assert_eq!(pick(shared::AutoFacts::default()).mode, Some(AuthMode::Pat));
-    let too_old = pick(shared::AutoFacts {
-        pat_version_ok: Some(false),
-        router: false,
-    });
-    assert_eq!(too_old.mode, Some(AuthMode::ApiKey));
-    assert!(too_old.fell_back());
-    let routed = pick(shared::AutoFacts {
-        pat_version_ok: Some(true),
-        router: true,
-    });
-    assert_eq!(routed.mode, Some(AuthMode::Pat));
-    assert_eq!(routed.reason, superba_core::AuthReason::RouterMode);
-    // A manual PAT choice is left to the version gate (blocked there, not here).
-    let mut manual = profile.clone();
-    manual.set_auth(AuthChoice::Pat);
-    let d = shared::decision_with(
-        &site,
-        Some(&line),
-        None,
-        Some(&manual),
-        shared::AutoFacts {
-            pat_version_ok: Some(false),
-            router: false,
-        },
-    );
-    assert_eq!(d.mode, Some(AuthMode::Pat));
-    // Router mode sends the key as an API key, also for a manual PAT choice
-    // (user bug 78): what the Providers page says matches the plan.
-    let d = shared::decision_with(
-        &site,
-        Some(&line),
-        None,
-        Some(&manual),
-        shared::AutoFacts {
-            pat_version_ok: Some(true),
-            router: true,
-        },
-    );
-    assert_eq!(
-        (d.mode, d.reason),
-        (Some(AuthMode::Pat), superba_core::AuthReason::RouterMode)
-    );
 }
 
 // ---------------------------------------------------------------------------
@@ -848,11 +792,7 @@ async fn the_base_url_row_of_a_custom_provider_shows_its_whole_auth_note() {
         .await
         .unwrap();
     let mut data = data_of(&service).await;
-    let mut caps = service.probe_lines(&site).await.unwrap();
-    for c in &mut caps {
-        // An OpenAI-compatible site: API key only.
-        c.pat_ok = false;
-    }
+    let caps = service.probe_lines(&site).await.unwrap();
     data.caps.entry(site.clone()).or_default().finish(Ok(caps));
     for (locale, note) in [(Locale::ZhCn, "仅 API Key"), (Locale::En, "API key only")] {
         for size in support::fit::SIZES {

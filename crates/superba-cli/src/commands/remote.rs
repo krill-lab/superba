@@ -134,7 +134,6 @@ pub(super) async fn run(command: &RemoteCommand, rt: &Runtime, out: &mut Output)
             targets,
             profile,
             line,
-            auth,
             exec,
         } => {
             let id = switch::resolve_profile(profile.as_deref(), None, rt, out).await?;
@@ -142,7 +141,6 @@ pub(super) async fn run(command: &RemoteCommand, rt: &Runtime, out: &mut Output)
                 id,
                 &SwitchAnswers {
                     line: line.clone(),
-                    auth: *auth,
                     ..Default::default()
                 },
                 exec,

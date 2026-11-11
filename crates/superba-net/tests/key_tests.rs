@@ -4,9 +4,8 @@ use std::time::Duration;
 
 use pretty_assertions::assert_eq;
 use serde_json::json;
-use superba_core::{AuthApiHealth, AuthMode, CodexPath, Error, KeyAccess, LineProber, Secret};
+use superba_core::{AuthMode, CodexPath, Error, KeyAccess, LineProber, Secret};
 
-use superba_net::{HttpLineProber, ProbeConfig};
 use support::*;
 
 fn denial(status: u16, message: &str) -> MockResponse {
@@ -27,12 +26,12 @@ fn access_point_denied() -> MockResponse {
 }
 
 #[tokio::test]
-async fn pat_key_check_returns_identity_and_uses_only_the_backend_path() {
+async fn key_check_returns_identity_and_tries_the_backend_path_first() {
     let server = MockServer::start(healthy_authenticated).await;
     let site = site(&server);
     let prober = prober();
     let check = prober
-        .check_key(&site, &site.lines[0], AuthMode::Pat, &key())
+        .check_key(&site, &site.lines[0], AuthMode::ApiKey, &key())
         .await
         .unwrap();
 
@@ -40,15 +39,15 @@ async fn pat_key_check_returns_identity_and_uses_only_the_backend_path() {
     assert_eq!(check.line_id, site.lines[0].id);
     assert_eq!(check.checked_at, CHECKED_AT);
     assert_eq!(check.access, KeyAccess::Ok);
-    assert_eq!(check.whoami, Some(AuthApiHealth::Healthy));
+    assert_eq!(check.whoami, None);
     let identity = check.identity.unwrap();
     assert_eq!(identity.email.as_deref(), Some("a@example.com"));
     assert_eq!(identity.user_id.as_deref(), Some("user-1"));
     assert_eq!(check.key_last4, "cdef");
     assert_eq!(check.codex_path, Some(CodexPath::BackendApiCodex));
     assert_authenticated(&server);
-    assert_eq!(server.recorded().len(), 3);
-    for path in [WHOAMI, WHAM, BACKEND_MODELS] {
+    assert_eq!(server.recorded().len(), 2);
+    for path in [WHOAMI, BACKEND_MODELS] {
         assert_eq!(server.count(path), 1);
     }
     assert_eq!(server.count(CODEX_V1_MODELS), 0);
@@ -160,49 +159,6 @@ async fn api_key_closed_port_is_unreachable() {
 }
 
 #[tokio::test]
-async fn pat_wham_interception_is_edge_blocked() {
-    let server = MockServer::start(|r| {
-        if r.path == WHAM {
-            edge_block()
-        } else {
-            healthy_authenticated(r)
-        }
-    })
-    .await;
-    let site = site(&server);
-    let check = prober()
-        .check_key(&site, &site.lines[0], AuthMode::Pat, &key())
-        .await
-        .unwrap();
-    assert_eq!(check.access, KeyAccess::EdgeBlocked);
-    assert_eq!(check.whoami, Some(AuthApiHealth::Healthy));
-    assert_eq!(check.codex_path, Some(CodexPath::BackendApiCodex));
-    assert_authenticated(&server);
-    assert_eq!(server.count(CODEX_V1_MODELS), 0);
-}
-
-#[tokio::test]
-async fn pat_models_denial_takes_priority_over_wham_interception() {
-    let server = MockServer::start(|r| match r.path.as_str() {
-        WHAM => edge_block(),
-        BACKEND_MODELS => access_point_denied(),
-        _ => healthy_authenticated(r),
-    })
-    .await;
-    let site = site(&server);
-    let check = prober()
-        .check_key(&site, &site.lines[0], AuthMode::Pat, &key())
-        .await
-        .unwrap();
-    assert_eq!(check.access, KeyAccess::AccessPointDenied);
-    assert_eq!(check.whoami, Some(AuthApiHealth::Healthy));
-    assert_eq!(server.count(WHAM), 1);
-    assert_eq!(server.count(BACKEND_MODELS), 1);
-    assert_eq!(server.count(CODEX_V1_MODELS), 0);
-    assert_authenticated(&server);
-}
-
-#[tokio::test]
 async fn api_key_falls_back_to_codex_v1_when_backend_is_intercepted() {
     let server = MockServer::start(|r| {
         if r.path == BACKEND_MODELS {
@@ -243,7 +199,7 @@ async fn check_key_rejects_a_foreign_line_before_sending_any_request() {
     let mut line = site.lines[0].clone();
     line.origin = superba_core::Origin::parse(&foreign.origin()).unwrap();
     let error = prober()
-        .check_key(&site, &line, AuthMode::Pat, &key())
+        .check_key(&site, &line, AuthMode::ApiKey, &key())
         .await
         .unwrap_err();
     assert!(matches!(error, Error::Invalid { .. }));
@@ -273,145 +229,6 @@ async fn check_key_rejects_an_empty_key_without_requests() {
         .unwrap_err();
     assert!(matches!(error, Error::Invalid { .. }));
     assert!(server.recorded().is_empty());
-}
-
-#[tokio::test]
-async fn check_authapi_rejects_a_foreign_origin_without_requests() {
-    let owned = MockServer::start(healthy_authenticated).await;
-    let foreign = MockServer::start(healthy_authenticated).await;
-    let site = site(&owned);
-    let origin = superba_core::Origin::parse(&foreign.origin()).unwrap();
-    let error = prober()
-        .check_authapi(&site, &origin, &key())
-        .await
-        .unwrap_err();
-    assert!(matches!(error, Error::Invalid { .. }));
-    assert!(foreign.recorded().is_empty());
-    assert!(owned.recorded().is_empty());
-}
-
-async fn assert_authapi(response: MockResponse, expected: AuthApiHealth) {
-    let server = MockServer::start(move |_| response.clone()).await;
-    let site = site(&server);
-    let health = prober()
-        .check_authapi(&site, &site.lines[0].origin, &key())
-        .await
-        .unwrap();
-    assert_eq!(health, expected);
-    assert_eq!(server.count(WHOAMI), 1);
-    assert_eq!(server.recorded().len(), 1);
-    assert_authenticated(&server);
-}
-
-#[tokio::test]
-async fn check_authapi_accepts_complete_whoami_on_a_site_line() {
-    assert_authapi(
-        MockResponse::json(200, whoami_body()),
-        AuthApiHealth::Healthy,
-    )
-    .await;
-}
-
-#[tokio::test]
-async fn check_authapi_requires_the_fedramp_field() {
-    let mut body = whoami_body();
-    body.as_object_mut()
-        .unwrap()
-        .remove("chatgpt_account_is_fedramp");
-    assert_authapi(
-        MockResponse::json(200, body),
-        AuthApiHealth::Unhealthy {
-            reason: "whoami answer is missing chatgpt_account_is_fedramp".into(),
-        },
-    )
-    .await;
-}
-
-#[tokio::test]
-async fn check_authapi_rejects_edge_interception() {
-    assert_authapi(
-        edge_block(),
-        AuthApiHealth::Unhealthy {
-            reason: "intercepted by the line's edge (HTTP 200 with an l-block header)".into(),
-        },
-    )
-    .await;
-}
-
-#[tokio::test]
-async fn check_authapi_rejects_401() {
-    assert_authapi(
-        relay_401(),
-        AuthApiHealth::Unhealthy {
-            reason: "HTTP 401: missing Authorization".into(),
-        },
-    )
-    .await;
-}
-
-async fn assert_keyed_probe(wham_blocked: bool) {
-    let server = MockServer::start(move |r| {
-        if r.header("authorization").is_none() {
-            relay_401()
-        } else if wham_blocked && r.path == WHAM {
-            edge_block()
-        } else {
-            healthy_authenticated(r)
-        }
-    })
-    .await;
-    let site = site(&server);
-    let caps = prober()
-        .probe_with_key(&site, &site.lines[0], &key())
-        .await
-        .unwrap();
-
-    assert!(caps.reachable);
-    assert_eq!(caps.key_access, Some(KeyAccess::Ok));
-    assert_eq!(caps.pat_ok, !wham_blocked);
-    assert!(caps.apikey_ok);
-    assert_eq!(caps.blocked_by_edge, wham_blocked);
-    assert_eq!(caps.codex_path, Some(CodexPath::BackendApiCodex));
-    assert_eq!(caps.allows(AuthMode::Pat), !wham_blocked);
-    assert!(caps.allows(AuthMode::ApiKey));
-    if wham_blocked {
-        assert_detail(&caps, "probe.pat_edge_blocked", &[("endpoint", WHAM)]);
-    } else {
-        assert_detail(&caps, "probe.ok", &[]);
-    }
-
-    let requests = server.recorded();
-    let (unauthenticated, authenticated): (Vec<_>, Vec<_>) = requests
-        .iter()
-        .partition(|r| r.header("authorization").is_none());
-    assert_eq!(unauthenticated.len(), 7);
-    assert_eq!(authenticated.len(), 3);
-    assert_eq!(
-        unauthenticated.iter().filter(|r| r.path == MODELS).count(),
-        3
-    );
-    for path in [WHOAMI, WHAM, BACKEND_MODELS, CODEX_V1_MODELS] {
-        assert_eq!(unauthenticated.iter().filter(|r| r.path == path).count(), 1);
-    }
-    for path in [WHOAMI, WHAM, BACKEND_MODELS] {
-        assert_eq!(authenticated.iter().filter(|r| r.path == path).count(), 1);
-    }
-    for request in authenticated {
-        assert_eq!(
-            request.header("authorization"),
-            Some(format!("Bearer {KEY}").as_str())
-        );
-    }
-}
-
-#[tokio::test]
-async fn probe_with_key_detects_wham_intercepting_only_authenticated_requests() {
-    assert_keyed_probe(true).await;
-}
-
-#[tokio::test]
-async fn probe_with_key_keeps_fully_healthy_pat_available() {
-    assert_keyed_probe(false).await;
 }
 
 #[tokio::test]
@@ -508,28 +325,13 @@ async fn echoed_401_is_redacted_from_key_check() {
     let server = MockServer::start(|_| echoed_401()).await;
     let site = site(&server);
     let check = prober()
-        .check_key(&site, &site.lines[0], AuthMode::Pat, &key())
+        .check_key(&site, &site.lines[0], AuthMode::ApiKey, &key())
         .await
         .unwrap();
     assert_eq!(check.access, KeyAccess::InvalidKey);
-    assert!(matches!(
-        check.whoami,
-        Some(AuthApiHealth::Unhealthy { .. })
-    ));
+    assert_eq!(check.whoami, None);
     assert_no_key!(check);
     assert!(!check.access.text().to_string().contains(KEY));
-}
-
-#[tokio::test]
-async fn echoed_401_is_redacted_from_authapi_health() {
-    let server = MockServer::start(|_| echoed_401()).await;
-    let site = site(&server);
-    let health = prober()
-        .check_authapi(&site, &site.lines[0].origin, &key())
-        .await
-        .unwrap();
-    assert!(matches!(health, AuthApiHealth::Unhealthy { .. }));
-    assert_no_key!(health);
 }
 
 async fn assert_echoed_summary_error_redacted(compatible: bool) {
@@ -576,36 +378,6 @@ async fn echoed_401_is_redacted_from_models_error() {
 }
 
 #[tokio::test]
-async fn echoed_whoami_401_is_redacted_from_caps_and_localized_arguments() {
-    let server = MockServer::start(|r| {
-        if r.header("authorization").is_none() {
-            relay_401()
-        } else if r.path == WHOAMI {
-            echoed_401()
-        } else {
-            healthy_authenticated(r)
-        }
-    })
-    .await;
-    let site = site(&server);
-    let caps = prober()
-        .probe_with_key(&site, &site.lines[0], &key())
-        .await
-        .unwrap();
-    assert!(!caps.pat_ok);
-    assert_eq!(caps.key_access, Some(KeyAccess::Ok));
-    assert_caps_redacted(&caps);
-    assert_detail(
-        &caps,
-        "probe.pat_unavailable",
-        &[
-            ("endpoint", WHOAMI),
-            ("status", "HTTP 401: rejected [redacted]"),
-        ],
-    );
-}
-
-#[tokio::test]
 async fn echoed_models_error_is_redacted_from_unknown_key_access_and_caps() {
     let server = MockServer::start(|r| {
         if r.header("authorization").is_none() {
@@ -638,48 +410,6 @@ async fn echoed_models_error_is_redacted_from_unknown_key_access_and_caps() {
     assert!(!check.access.text().to_string().contains(KEY));
     assert_eq!(caps.key_access, Some(check.access));
     assert_caps_redacted(&caps);
-}
-
-#[tokio::test]
-async fn echoed_wham_error_is_redacted_from_key_check_and_caps() {
-    let server = MockServer::start(|r| {
-        if r.header("authorization").is_none() {
-            relay_401()
-        } else if r.path == WHAM {
-            denial(403, &format!("rejected {KEY}"))
-        } else {
-            healthy_authenticated(r)
-        }
-    })
-    .await;
-    let site = site(&server);
-    let prober = prober();
-    let check = prober
-        .check_key(&site, &site.lines[0], AuthMode::Pat, &key())
-        .await
-        .unwrap();
-    let caps = prober
-        .probe_with_key(&site, &site.lines[0], &key())
-        .await
-        .unwrap();
-    assert!(matches!(
-        check.access,
-        KeyAccess::Unknown {
-            status: Some(403),
-            ..
-        }
-    ));
-    assert_no_key!(check);
-    assert!(!check.access.text().to_string().contains(KEY));
-    assert_caps_redacted(&caps);
-    assert_detail(
-        &caps,
-        "probe.pat_unavailable",
-        &[
-            ("endpoint", WHAM),
-            ("status", "HTTP 403: rejected [redacted]"),
-        ],
-    );
 }
 
 #[tokio::test]
@@ -729,13 +459,12 @@ async fn timeouts_do_not_leak_keys_in_results_or_errors() {
     let prober = prober();
     let key = key();
     let endpoints = endpoints(&server);
-    let (check, caps, models, responses, summary, health) = tokio::join!(
-        prober.check_key(&site, line, AuthMode::Pat, &key),
+    let (check, caps, models, responses, summary) = tokio::join!(
+        prober.check_key(&site, line, AuthMode::ApiKey, &key),
         prober.probe_with_key(&site, line, &key),
         prober.list_models(&endpoints.openai_base_url, &key),
         prober.probe_responses(&endpoints, &key, "gpt-x"),
         prober.account_summary(&site, line, &key),
-        prober.check_authapi(&site, &line.origin, &key),
     );
     let check = check.unwrap();
     assert_eq!(check.access, KeyAccess::Unreachable);
@@ -743,14 +472,6 @@ async fn timeouts_do_not_leak_keys_in_results_or_errors() {
     let caps = caps.unwrap();
     assert_eq!(caps.key_access, Some(KeyAccess::Unreachable));
     assert_caps_redacted(&caps);
-    assert_detail(
-        &caps,
-        "probe.pat_unavailable",
-        &[
-            ("endpoint", WHOAMI),
-            ("status", "no answer before the timeout"),
-        ],
-    );
     for error in [models.unwrap_err(), summary.unwrap_err()] {
         assert!(matches!(error, Error::Timeout { .. }));
         assert_error_redacted(&error);
@@ -763,9 +484,6 @@ async fn timeouts_do_not_leak_keys_in_results_or_errors() {
         Some("no complete answer before the timeout")
     );
     assert_no_key!(responses);
-    let health = health.unwrap();
-    assert!(matches!(health, AuthApiHealth::Unhealthy { .. }));
-    assert_no_key!(health);
 }
 
 #[tokio::test]
@@ -783,7 +501,7 @@ async fn edge_blocks_do_not_leak_keys_even_when_the_header_echoes_them() {
     let prober = prober();
     let key = key();
     let check = prober
-        .check_key(&site, line, AuthMode::Pat, &key)
+        .check_key(&site, line, AuthMode::ApiKey, &key)
         .await
         .unwrap();
     assert_eq!(check.access, KeyAccess::EdgeBlocked);
@@ -791,7 +509,6 @@ async fn edge_blocks_do_not_leak_keys_even_when_the_header_echoes_them() {
     let caps = prober.probe_with_key(&site, line, &key).await.unwrap();
     assert_eq!(caps.key_access, Some(KeyAccess::EdgeBlocked));
     assert_caps_redacted(&caps);
-    assert_detail(&caps, "probe.pat_edge_blocked", &[("endpoint", WHOAMI)]);
     let endpoints = endpoints(&server);
     let models = prober
         .list_models(&endpoints.openai_base_url, &key)
@@ -809,67 +526,4 @@ async fn edge_blocks_do_not_leak_keys_even_when_the_header_echoes_them() {
     assert!(!responses.ok);
     assert_eq!(responses.status, Some(200));
     assert_no_key!(responses);
-    let health = prober
-        .check_authapi(&site, &line.origin, &key)
-        .await
-        .unwrap();
-    assert!(matches!(health, AuthApiHealth::Unhealthy { .. }));
-    assert_no_key!(health);
-}
-
-#[tokio::test]
-async fn probe_with_key_restores_pat_after_an_unauthenticated_whoami_failure() {
-    // Unauthenticated whoami fails (as a transient upstream error would), while
-    // the authenticated requests Codex actually sends all work.
-    let server = MockServer::start(|r| {
-        if r.header("authorization").is_some() {
-            healthy_authenticated(r)
-        } else if r.path == WHOAMI {
-            MockResponse::json(502, json!({"error": {"message": "bad gateway"}}))
-        } else {
-            relay_401()
-        }
-    })
-    .await;
-    let site = site(&server);
-    let prober = prober();
-    let unauth = prober.probe(&site, &site.lines[0]).await.unwrap();
-    assert!(!unauth.pat_ok, "the unauthenticated view alone says no");
-    let caps = prober
-        .probe_with_key(&site, &site.lines[0], &key())
-        .await
-        .unwrap();
-    assert!(caps.pat_ok, "{caps:?}");
-    assert_eq!(caps.key_access, Some(superba_core::KeyAccess::Ok));
-    assert!(caps.allows(superba_core::AuthMode::Pat));
-    assert_detail(&caps, "probe.ok", &[]);
-}
-
-#[tokio::test]
-async fn pat_needs_an_https_line_even_when_its_endpoints_answer() {
-    let server = MockServer::start(|r| {
-        if r.header("authorization").is_some() {
-            healthy_authenticated(r)
-        } else {
-            relay_401()
-        }
-    })
-    .await;
-    let site = site(&server);
-    let prober = HttpLineProber::new(ProbeConfig {
-        pat_requires_https: true,
-        ..probe_config()
-    });
-    for caps in [
-        prober.probe(&site, &site.lines[0]).await.unwrap(),
-        prober
-            .probe_with_key(&site, &site.lines[0], &key())
-            .await
-            .unwrap(),
-    ] {
-        assert!(!caps.pat_ok, "{caps:?}");
-        assert!(!caps.allows(superba_core::AuthMode::Pat));
-        assert!(caps.allows(superba_core::AuthMode::ApiKey));
-        assert_detail(&caps, "probe.pat_needs_https", &[]);
-    }
 }

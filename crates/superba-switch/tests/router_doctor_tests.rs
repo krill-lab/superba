@@ -8,8 +8,8 @@ use std::path::PathBuf;
 
 use fakes::*;
 use superba_core::{
-    AuthChoice, AuthMode, Error, Locale, ProfileId, RouterInstallRequest, Severity, SiteKind,
-    SwitchService, catalog,
+    AuthMode, Error, Locale, ProfileId, RouterInstallRequest, Severity, SiteKind, SwitchService,
+    catalog,
 };
 use superba_router::doctor::{
     ConfigFacts, ExeFacts, Finding, LiveFacts, LogFacts, MemberFacts, PortFacts, PortState,
@@ -39,8 +39,7 @@ fn render(locale: Locale) -> impl Fn(&superba_core::LocalizedText) -> String {
 fn every_kind_of_provider_gets_its_eligibility() {
     let w = World::new();
     let mut set = w.profiles.set.lock().unwrap().clone();
-    let mut pat = krill_profile("pat", None, AuthMode::Pat);
-    pat.set_auth(AuthChoice::Pat);
+    let pat = krill_profile("pat", None, AuthMode::ApiKey);
     let mut keyless = krill_profile("keyless", None, AuthMode::ApiKey);
     keyless.key_ref = None;
     let mut lost = krill_profile("lost", None, AuthMode::ApiKey);
@@ -151,49 +150,6 @@ async fn turning_the_router_on_without_an_eligible_member_says_why_and_what_to_d
 /// router needs an API key"). Eligibility is having a key: the member stays,
 /// router mode routes it with the key as an API key, and a direct switch
 /// afterwards keeps the chosen PAT.
-#[tokio::test]
-async fn a_member_set_to_pat_for_direct_switches_stays_routable() {
-    let w = World::new();
-    let sw = w.switcher();
-    sw.router_install(RouterInstallRequest {
-        members: vec![ProfileId::new("work")],
-    })
-    .await
-    .unwrap();
-    // What `spb switch --auth pat` leaves behind: PAT for direct switches.
-    set_work(&w, |p| p.set_auth(AuthChoice::Pat));
-    let direct = sw
-        .plan(superba_core::SwitchRequest::profile(ProfileId::new("work")))
-        .await
-        .unwrap();
-    assert_eq!(
-        direct.to.auth_mode,
-        Some(AuthMode::Pat),
-        "{:?}",
-        direct.primary
-    );
-    let set = w.profiles.set.lock().unwrap().clone();
-    let c = router_candidates(&set, &catalog::builtin_sites());
-    let work = c
-        .iter()
-        .find(|c| c.profile_id.as_ref().is_some_and(|p| p.as_str() == "work"))
-        .unwrap();
-    assert_eq!(work.eligibility, Eligibility::Eligible);
-    assert!(has_eligible_member(&c));
-    // Router mode: planned, not blocked, through the router with the API key.
-    let mut on = superba_core::SwitchRequest::profile(ProfileId::new(""));
-    on.intent = superba_core::SwitchIntent::Router { enable: true };
-    let plan = sw.plan(on).await.unwrap();
-    assert!(!plan.is_blocked(), "{:?}", plan.primary);
-    assert_eq!(plan.to.auth_mode, Some(AuthMode::Pat));
-    assert_eq!(plan.to.label.key, "switch.destination.router");
-    sw.router_set_enabled(true).await.unwrap();
-    // The direct choice is untouched by the router.
-    let set = w.profiles.set.lock().unwrap().clone();
-    let work = set.profile(&ProfileId::new("work")).unwrap();
-    assert_eq!(work.auth_choice(), AuthChoice::Pat);
-}
-
 #[tokio::test]
 async fn doctor_without_router_facts_still_explains_the_members() {
     let w = World::new();

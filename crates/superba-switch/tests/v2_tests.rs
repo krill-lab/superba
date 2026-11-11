@@ -11,11 +11,11 @@ use std::time::Duration;
 use fakes::*;
 use pretty_assertions::assert_eq;
 use superba_core::{
-    AuthChoice, AuthMode, BlockReason, CatalogFeature, CatalogKey, CatalogSnapshot, ChangeReason,
-    CodexVersion, Error, ExecuteOptions, FeatureStage, KeyAccess, NoEvents, ProfileId,
-    ResolvedMode, RestartKind, RouterInstallRequest, RouterWatchState, SafeDefaults, SettingEntry,
-    SettingEnumValue, SettingKind, SettingValue, SettingsEdit, SettingsScope, SettingsViewRequest,
-    StaticCatalog, SwitchIntent, SwitchPlan, SwitchRequest, SwitchService, TargetId,
+    AuthMode, BlockReason, CatalogFeature, CatalogKey, CatalogSnapshot, ChangeReason, CodexVersion,
+    Error, ExecuteOptions, FeatureStage, KeyAccess, NoEvents, ProfileId, ResolvedMode, RestartKind,
+    RouterInstallRequest, RouterWatchState, SafeDefaults, SettingEntry, SettingEnumValue,
+    SettingKind, SettingValue, SettingsEdit, SettingsScope, SettingsViewRequest, StaticCatalog,
+    SwitchIntent, SwitchPlan, SwitchRequest, SwitchService, TargetId,
 };
 use superba_switch::{Switcher, Tuning};
 
@@ -251,76 +251,6 @@ fn unusable(line: &str) -> superba_core::LineCaps {
 // --- auth Auto and line priority -----------------------------------------------------
 
 #[tokio::test]
-async fn auto_uses_pat_where_the_line_supports_it_and_falls_back_with_a_reason() {
-    let w = World::new();
-    set_profile(&w, |p| p.set_auth(AuthChoice::Auto));
-    let plan = w.switcher().plan(req("work")).await.unwrap();
-    assert_eq!(token(&plan).0, AuthMode::Pat);
-
-    w.prober.caps.lock().unwrap().insert(
-        "overseas".into(),
-        superba_core::LineCaps {
-            pat_ok: false,
-            ..good_caps("krill", "overseas")
-        },
-    );
-    let plan = w.switcher().plan(req("work")).await.unwrap();
-    assert_eq!(token(&plan).0, AuthMode::ApiKey);
-    assert!(warning_keys(&plan).contains(&"switch.warn.pat_fallback".to_owned()));
-}
-
-#[tokio::test]
-async fn auto_uses_an_api_key_when_a_local_codex_is_too_old_for_pat() {
-    let w = World::new();
-    set_profile(&w, |p| p.set_auth(AuthChoice::Auto));
-    // The app's bundled Codex reads top-level openai_base_url but has no PAT.
-    w.app.installs.lock().unwrap()[0].bundled_codex_version = Some(CodexVersion::new(0, 150, 0));
-    let plan = w.switcher().plan(req("work")).await.unwrap();
-    assert!(!plan.is_blocked(), "{:?}", plan.primary);
-    assert_eq!(token(&plan).0, AuthMode::ApiKey);
-    assert!(warning_keys(&plan).contains(&"switch.warn.pat_fallback".to_owned()));
-    assert!(plan.env.is_none(), "API key mode needs no auth address");
-
-    // Same for the CLI first on the PATH: PAT would break it.
-    w.app.installs.lock().unwrap()[0].bundled_codex_version = Some(CodexVersion::new(0, 162, 0));
-    w.app.binaries.lock().unwrap()[0].version = Some(CodexVersion::new(0, 155, 0));
-    let plan = w.switcher().plan(req("work")).await.unwrap();
-    assert!(!plan.is_blocked(), "{:?}", plan.primary);
-    assert_eq!(token(&plan).0, AuthMode::ApiKey);
-
-    // Unknown versions keep PAT; the version gate asks about them.
-    w.app.binaries.lock().unwrap()[0].version = None;
-    let plan = w.switcher().plan(req("work")).await.unwrap();
-    assert_eq!(token(&plan).0, AuthMode::Pat);
-
-    // Remote-only switches do not look at the local Codex versions.
-    w.app.binaries.lock().unwrap()[0].version = Some(CodexVersion::new(0, 155, 0));
-    let mut r = req("work");
-    r.targets.local = false;
-    let plan = w.switcher().plan(r).await.unwrap();
-    assert_eq!(plan.to.auth_mode, Some(AuthMode::Pat));
-}
-
-#[tokio::test]
-async fn manual_pat_never_falls_back() {
-    let w = World::new();
-    set_profile(&w, |p| p.set_auth(AuthChoice::Pat));
-    w.prober.caps.lock().unwrap().insert(
-        "overseas".into(),
-        superba_core::LineCaps {
-            pat_ok: false,
-            ..good_caps("krill", "overseas")
-        },
-    );
-    let plan = w.switcher().plan(req("work")).await.unwrap();
-    assert!(matches!(
-        plan.primary,
-        RestartKind::Blocked { ref reasons }
-            if reasons.iter().any(|r| matches!(r, BlockReason::AuthModeUnavailable { auth_mode: AuthMode::Pat, .. }))
-    ));
-}
-
-#[tokio::test]
 async fn an_unusable_primary_line_falls_back_to_the_next_line_in_priority() {
     let w = World::new();
     set_profile(&w, |p| {
@@ -435,7 +365,7 @@ async fn overrides_are_stored_as_primary_line_and_manual_auth() {
         p.line_priority(),
         vec!["cdn".into(), "overseas".into()] as Vec<superba_core::LineId>
     );
-    assert_eq!(p.auth_choice(), AuthChoice::ApiKey);
+    assert_eq!(p.auth_mode, AuthMode::ApiKey);
 }
 
 // --- Codex settings ------------------------------------------------------------------
@@ -907,14 +837,14 @@ async fn router_install_builds_members_with_keys_and_refuses_the_official_login(
 }
 
 #[tokio::test]
-async fn router_mode_points_the_local_home_at_the_router_with_a_local_pat() {
+async fn router_mode_points_the_local_home_at_the_router_with_a_local_key() {
     let w = World::new();
     let sw = w.switcher();
     router_on(&sw).await;
     let plan = sw.plan(req("work")).await.unwrap();
     assert!(!plan.primary.is_blocked(), "{:?}", plan.primary);
     let (auth, base) = token(&plan);
-    assert_eq!(auth, AuthMode::Pat);
+    assert_eq!(auth, AuthMode::ApiKey);
     assert_eq!(base, FakeRouter::base_url(18_431));
     match &desired(&plan).mode {
         ResolvedMode::Token { key, .. } => assert_eq!(key.expose(), ROUTER_TOKEN),
@@ -922,8 +852,9 @@ async fn router_mode_points_the_local_home_at_the_router_with_a_local_pat() {
     }
     assert!(warning_keys(&plan).contains(&"switch.warn.router_mode".to_owned()));
     assert_eq!(plan.to.label.key, "switch.destination.router");
-    assert!(plan.env.is_some(), "local auth API env in router mode");
-    assert!(plan.certificate_env.is_some());
+    // An API key over plain HTTP loopback: no auth address, no certificate.
+    assert!(plan.env.is_none());
+    assert!(plan.certificate_env.is_none());
     assert!(
         !w.calls()
             .iter()
@@ -1482,8 +1413,10 @@ async fn mixed_login_keeps_the_official_login_and_routes_only_model_traffic() {
     assert_eq!(base, FakeRouter::base_url(18_431));
     match &desired(&plan).mode {
         ResolvedMode::Token { endpoints, .. } => {
-            assert!(endpoints.chatgpt_base_url.is_none(), "chatgpt.com stays");
-            assert!(endpoints.authapi_origin.is_none());
+            assert_eq!(
+                endpoints.openai_base_url.as_str(),
+                FakeRouter::base_url(18_431)
+            );
         }
         _ => unreachable!(),
     }
@@ -1535,7 +1468,7 @@ async fn mixed_login_without_a_login_falls_back_to_the_router_token_and_says_so(
     router_on(&sw).await;
     mixed_on(&w);
     let plan = sw.plan(req("work")).await.unwrap();
-    assert_eq!(token(&plan).0, AuthMode::Pat);
+    assert_eq!(token(&plan).0, AuthMode::ApiKey);
     let warnings = warning_keys(&plan);
     assert!(warnings.contains(&"switch.warn.mixed_login_no_login".to_owned()));
     assert!(warnings.contains(&"switch.warn.router_mode".to_owned()));
@@ -1547,7 +1480,7 @@ async fn turning_mixed_login_off_stops_the_router_accepting_the_login() {
     let sw = w.switcher();
     router_on(&sw).await;
     let plan = sw.plan(req("work")).await.unwrap();
-    assert_eq!(token(&plan).0, AuthMode::Pat);
+    assert_eq!(token(&plan).0, AuthMode::ApiKey);
     sw.execute(
         plan,
         ExecuteOptions {
