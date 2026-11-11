@@ -66,7 +66,7 @@ zh_basis = "0c3bee0c63af47c1"
 
 ["config:approval_policy.granular.sandbox_approval"]
 en = "Whether to allow sandbox escalation approval requests, including inline `with_additional_permissions` and `require_escalated` requests. Dangerous commands can still request approval within existing permissions."
-en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.169.0-alpha.10: codex-rs/core/config.schema.json"
 en_hash = "d5ead3985f58588e"
 zh_name = "沙箱提权审批"
 zh = "依据源码推断，控制是否允许沙箱权限升级审批，包括命令中的 `with_additional_permissions` 和 `require_escalated` 请求；设为 `false` 会拒绝这类请求。危险命令若不申请额外权限，仍可能在现有权限内要求审批；执行规则触发的审批另由 `rules` 控制。"
@@ -159,13 +159,14 @@ en_hash = "1e91082428bdd158"
 zh_name = "拒绝复核提示词"
 zh = "依据源码推断，启用 `features.guardian_denial_reconsideration` 后，用这段开发者指令让 Guardian 对同一操作的拒绝结论再复核一次。省略或仅含空白时使用内置提示词；去除首尾空白后超过 1000 个 UTF-8 字节会导致配置加载失败，提示词不授予新的操作权限。"
 zh_basis = "1e91082428bdd158"
+retired = "0.167.1"
 
 ["config:auto_review.experimental_policy_template"]
 en = "Experimental full Guardian prompt template containing the tenant policy placeholder."
 en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
 en_hash = "59d5dc998caf3103"
 zh_name = "审核模板（实验）"
-zh = "实验性：完整替换自动审核的提示词模板。模板中应包含 `{{ tenant_policy_config }}` 占位符，运行时会替换为生效的审核策略。"
+zh = "实验性：完整替换自动审核的提示词模板。模板中应包含 `{{ tenant_policy_config }}` 占位符，运行时会替换为生效的审核策略。0.169.0-alpha.10 起已移除，设置会被忽略并提示删除。"
 zh_basis = "59d5dc998caf3103"
 
 ["config:auto_review.extra_policy"]
@@ -173,7 +174,7 @@ en = "Additional policy text inserted into the Guardian template's `{{ extra_pol
 en_source = "openai/codex rust-v0.157.0: codex-rs/core/config.schema.json"
 en_hash = "8cc528ffe1d117b3"
 zh_name = "附加审核策略"
-zh = "插入到自动审核模板 `{{ extra_policy }}` 位置的附加策略文本，与基础策略一起生效；管理员 requirements 中的同类设置优先。"
+zh = "插入到自动审核模板 `{{ extra_policy }}` 位置的附加策略文本，与基础策略一起生效；管理员 requirements 中的同类设置优先。0.169.0-alpha.10 起已从 `config.toml` 移除并被忽略，需强制附加规则时改在托管的 `requirements.toml` 中设置 `guardian_extra_policy`。"
 zh_basis = "8cc528ffe1d117b3"
 
 ["config:auto_review.policy"]
