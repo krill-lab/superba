@@ -307,6 +307,48 @@ mod tests {
         assert_eq!(l.name.as_deref(), Some("我的 Krill"));
     }
 
+    /// What the Krill website sends (nebula-api, 2026-11-11).
+    #[test]
+    fn accepts_the_websites_sample_link() {
+        let l = ImportLink::parse("superba://import/v1?key=sk-krill-FAKE0000example&name=Krill")
+            .unwrap();
+        assert_eq!(l.key.expose(), "sk-krill-FAKE0000example");
+        assert_eq!(l.name.as_deref(), Some("Krill"));
+    }
+
+    /// The website builds the query with JS `URLSearchParams`
+    /// (application/x-www-form-urlencoded): `+` in a key is `%2B`, `/` is
+    /// `%2F`, `=` is `%3D` and a space is `+`.
+    #[test]
+    fn decodes_the_query_like_url_search_params_encodes_it() {
+        // new URLSearchParams({key: "sk-krill-a+b/c==", name: "Krill Work"}).toString()
+        let l =
+            ImportLink::parse("superba://import/v1?key=sk-krill-a%2Bb%2Fc%3D%3D&name=Krill+Work")
+                .unwrap();
+        assert_eq!(l.key.expose(), "sk-krill-a+b/c==");
+        assert_eq!(l.name.as_deref(), Some("Krill Work"));
+        // A bare `+` is a space, which no key has: refused, never guessed.
+        assert_eq!(
+            ImportLink::parse("superba://import/v1?key=sk-krill-a+b"),
+            Err(LinkError::InvalidKey)
+        );
+        // Unescaped `/` and `=` decode as themselves.
+        let l = ImportLink::parse("superba://import/v1?key=sk-krill-a/b=c").unwrap();
+        assert_eq!(l.key.expose(), "sk-krill-a/b=c");
+        // Superba's own encoding (the single-instance hand-over) is the same.
+        let url = l.to_url();
+        assert_eq!(url, "superba://import/v1?key=sk-krill-a%2Fb%3Dc");
+        for key in ["sk-krill-a+b/c==", "sk-krill-~._-!*()", "sk-krill-%41"] {
+            let raw = format!(
+                "superba://import/v1?key={}",
+                url::form_urlencoded::byte_serialize(key.as_bytes()).collect::<String>()
+            );
+            let l = ImportLink::parse(&raw).unwrap();
+            assert_eq!(l.key.expose(), key);
+            assert_eq!(ImportLink::parse(&l.to_url()).unwrap(), l);
+        }
+    }
+
     #[test]
     fn scheme_and_action_are_case_insensitive_and_round_trip() {
         let l = ImportLink::parse(&format!("SUPERBA://IMPORT/v1?key={KEY}")).unwrap();
