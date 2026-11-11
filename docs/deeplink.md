@@ -18,7 +18,7 @@ superba://import/v1?key=<API key>[&name=<display name>]
 | action (host) | `import` (case-insensitive) |
 | version (path) | exactly `/v1`. Any other version, `/v1/` included, is refused with "update Superba". |
 | query | `application/x-www-form-urlencoded`, as JS `URLSearchParams` writes it: `+` is a space, `%2B` is `+`, `%2F` is `/`, `%3D` is `=` |
-| `key` | required. 8 to 512 visible ASCII characters with no spaces, `"`, `'` or `\` (the same characters the provider form and every Codex config file refuse). `sk-krill-…` keys fit. Surrounding spaces are trimmed. |
+| `key` | required. 8 to 512 visible ASCII characters with no spaces, `"`, `'` or `\` (the same characters the provider form and every Codex config file refuse). Krill keys (`nb_` followed by 43 URL-safe characters) fit. Surrounding spaces are trimmed. |
 | `name` | optional. The provider's display name: 1 to 64 characters, no control characters, trimmed. The website always sends `Krill`. |
 | anything else | refused: unknown parameters (including the earlier draft's `line` and `code`), a parameter given twice, a fragment (`#…`), user info, a port, or a link longer than 2048 bytes. A new parameter needs a new version. |
 
@@ -39,7 +39,7 @@ button.addEventListener("click", async () => {
 Navigate from the click handler. Don't put the link in a static `href`, a
 QR code, an e-mail or a chat message.
 
-Sample: `superba://import/v1?key=sk-krill-FAKE0000example&name=Krill`.
+Sample (a made-up key): `superba://import/v1?key=nb_FAKE-example-000000000000000000000000000000&name=Krill`.
 
 ## What Superba does
 
