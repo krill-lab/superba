@@ -1238,6 +1238,18 @@ impl SwitchService for Switcher {
         self.analytics_reapply_delivered_impl().await
     }
 
+    // One-off alpha.16 PAT→API-key migration (user bug 139).
+    async fn pat_migration(&self) -> Result<Vec<superba_core::Notice>> {
+        self.refuse_elevated()?;
+        self.pat_migration_run().await
+    }
+
+    // One-off alpha.16 PAT→API-key migration (user bug 139).
+    async fn pat_migration_delivered(&self) -> Result<()> {
+        self.refuse_elevated()?;
+        self.pat_migration_settle().await
+    }
+
     async fn plan(&self, request: SwitchRequest) -> Result<SwitchPlan> {
         self.plan_with_events(request, Arc::new(superba_core::NoEvents))
             .await

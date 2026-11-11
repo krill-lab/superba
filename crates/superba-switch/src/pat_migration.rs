@@ -25,6 +25,12 @@
 //!   written; a notice asks for one switch. A failure is tried once more at the
 //!   next start, then given up with a notice.
 //! - Every outcome is settled once its notice was shown; nothing runs twice.
+//! - It runs from Superba's window (once per start, with the bug 137 re-apply)
+//!   and from `spb` (before each command that may write, see
+//!   `superba-cli`'s `run_pat_migration`); they share
+//!   [`superba_core::Settings::pat_migration`], so whichever runs first settles
+//!   it. `pat-migration.lock` in the data directory serialises the two: the
+//!   one that waits finds the state settled (or the notice owed) afterwards.
 
 use superba_core::{
     AuthShape, BlockReason, Error, ExecuteOptions, KeyResolution, LocalizedText, NoEvents, Notice,
@@ -48,25 +54,71 @@ enum Skip {
     Failed(LocalizedText),
 }
 
-impl Switcher {
-    /// The migration, at most one attempt per call (the window calls it once
-    /// per start, with the bug 137 re-apply). Its notice stays undelivered
-    /// until [`Self::pat_migration_delivered`].
-    pub(crate) async fn pat_migration(&self) -> Vec<Notice> {
-        let d = &self.deps;
-        let mut set = match d.profiles.load().await {
-            Ok(set) => set,
-            Err(e) => {
-                tracing::warn!(error = %e, "PAT migration: the profile store cannot be read");
-                return Vec::new();
+/// How long a second Superba process waits for the migration lock before it
+/// leaves the migration to the one holding it.
+const LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Holds `pat-migration.lock` (exclusive) while alive.
+struct MigrationLock {
+    _file: std::fs::File,
+}
+
+impl MigrationLock {
+    /// `Ok(None)`: another process holds it longer than [`LOCK_WAIT`].
+    async fn acquire(data_dir: &superba_core::DataDir) -> superba_core::Result<Option<Self>> {
+        std::fs::create_dir_all(data_dir.root()).map_err(|e| Error::io(data_dir.root(), &e))?;
+        let path = data_dir.root().join("pat-migration.lock");
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(&path)
+            .map_err(|e| Error::io(&path, &e))?;
+        let deadline = std::time::Instant::now() + LOCK_WAIT;
+        loop {
+            match file.try_lock() {
+                Ok(()) => return Ok(Some(Self { _file: file })),
+                Err(std::fs::TryLockError::WouldBlock) if std::time::Instant::now() < deadline => {
+                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                }
+                Err(std::fs::TryLockError::WouldBlock) => return Ok(None),
+                Err(std::fs::TryLockError::Error(e)) => return Err(Error::io(&path, &e)),
             }
+        }
+    }
+}
+
+impl Switcher {
+    /// The window's call (with the bug 137 re-apply): problems are logged, the
+    /// next start tries again.
+    pub(crate) async fn pat_migration_window(&self) -> Vec<Notice> {
+        match self.pat_migration_run().await {
+            Ok(notes) => notes,
+            Err(e) => {
+                tracing::warn!(error = %e, "PAT migration (user bug 139) did not run");
+                Vec::new()
+            }
+        }
+    }
+
+    /// The migration, at most one attempt per call. Its notice stays
+    /// undelivered until [`Self::pat_migration_settle`]. An error (the
+    /// profile store or the lock cannot be read) leaves everything for the
+    /// next call.
+    pub(crate) async fn pat_migration_run(&self) -> superba_core::Result<Vec<Notice>> {
+        let d = &self.deps;
+        let Some(_lock) = MigrationLock::acquire(&d.ctx.data_dir).await? else {
+            // The other Superba process runs it now and settles it.
+            return Ok(Vec::new());
         };
+        let mut set = d.profiles.load().await?;
         let state = set.settings.pat_migration.clone().unwrap_or_default();
         if state.settled {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         if let Some(n) = &state.undelivered {
-            return vec![n.clone()];
+            return Ok(vec![n.clone()]);
         }
         let label = |id: &ProfileId| {
             set.profile(id)
@@ -74,7 +126,7 @@ impl Switcher {
                 .unwrap_or_else(|| id.to_string())
         };
         let note = match self.pat_reapply(&set).await {
-            Err((_, Skip::Unchecked)) => return Vec::new(),
+            Err((_, Skip::Unchecked)) => return Ok(Vec::new()),
             Ok(None) => None,
             Ok(Some((id, running))) => Some(Notice::info(
                 text(if running {
@@ -120,13 +172,17 @@ impl Switcher {
         for n in &notes {
             tracing::info!(note = %n.text.render_fallback(), "PAT migration (user bug 139)");
         }
-        notes
+        Ok(notes)
     }
 
     /// The window showed the notice: settle it (a first failure stays owed
     /// for one retry at the next start).
-    pub(crate) async fn pat_migration_delivered(&self) -> superba_core::Result<()> {
+    pub(crate) async fn pat_migration_settle(&self) -> superba_core::Result<()> {
         let d = &self.deps;
+        let Some(_lock) = MigrationLock::acquire(&d.ctx.data_dir).await? else {
+            // Shown again next time: nothing is written twice.
+            return Ok(());
+        };
         let mut set = d.profiles.load().await?;
         let Some(state) = set.settings.pat_migration.as_mut() else {
             return Ok(());

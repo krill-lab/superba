@@ -1468,3 +1468,7 @@ channel = "要跟随的渠道（Claude Code：latest、stable；dsh：latest、n
 yes = "不再询问（不在终端里运行时必须加）"
 remove_data = "同时删除工具的设置和数据（仅 opencode；默认从不删除）"
 state = "on 或 off"
+
+# 一次性的 alpha.16 PAT→API Key 迁移（用户问题 139），随迁移一起删除。
+[cli.pat_migration]
+failed = "Superba 暂时未能把当前供应商从个人访问令牌改成 API Key：{reason} 下一个命令会再试。"

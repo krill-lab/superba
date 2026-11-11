@@ -1468,3 +1468,7 @@ channel = "Channel to follow (Claude Code: latest, stable; dsh: latest, next, al
 yes = "Do not ask (required when not in a terminal)"
 remove_data = "Also remove the tool's settings and data (opencode only; never by default)"
 state = "on or off"
+
+# One-off alpha.16 PAT→API-key migration (user bug 139); remove with it.
+[cli.pat_migration]
+failed = "Superba could not move the applied provider from a personal access token to an API key yet: {reason} It tries again with the next command."

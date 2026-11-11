@@ -40,7 +40,7 @@ impl Switcher {
     pub(crate) async fn analytics_reapply_impl(&self) -> Vec<Notice> {
         // One-off alpha.16 PAT→API-key migration (user bug 139): it rides on
         // this once-per-start call; remove with `crate::pat_migration`.
-        let mut notes = self.pat_migration().await;
+        let mut notes = self.pat_migration_window().await;
         notes.extend(self.analytics_reapply_owed().await);
         notes
     }
@@ -112,7 +112,7 @@ impl Switcher {
     /// for one retry at the next start).
     pub(crate) async fn analytics_reapply_delivered_impl(&self) -> superba_core::Result<()> {
         // One-off alpha.16 PAT→API-key migration (user bug 139).
-        self.pat_migration_delivered().await?;
+        self.pat_migration_settle().await?;
         let d = &self.deps;
         let mut set = d.profiles.load().await?;
         let Some(owed) = set.settings.analytics_reapply.as_mut() else {

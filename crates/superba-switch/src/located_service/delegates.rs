@@ -634,6 +634,18 @@ impl SwitchService for LocatedService {
         service.analytics_reapply_delivered().await
     }
 
+    // One-off alpha.16 PAT→API-key migration (user bug 139).
+    async fn pat_migration(&self) -> Result<Vec<Notice>> {
+        let (service, _lock) = self.read().await?;
+        service.pat_migration().await
+    }
+
+    // One-off alpha.16 PAT→API-key migration (user bug 139).
+    async fn pat_migration_delivered(&self) -> Result<()> {
+        let (service, _lock) = self.read().await?;
+        service.pat_migration_delivered().await
+    }
+
     async fn plan(&self, request: SwitchRequest) -> Result<SwitchPlan> {
         let (service, _lock) = self.read().await?;
         service.plan(request).await

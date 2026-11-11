@@ -190,3 +190,95 @@ async fn an_unshown_notice_comes_back_without_writing_again() {
     sw.analytics_reapply_delivered().await.unwrap();
     assert!(sw.analytics_reapply().await.unwrap().is_empty());
 }
+
+/// `spb` before a command: its notices are printed, then settled.
+async fn spb(sw: &superba_switch::Switcher) -> Vec<(Severity, String)> {
+    let notes = SwitchService::pat_migration(sw).await.unwrap();
+    if !notes.is_empty() {
+        SwitchService::pat_migration_delivered(sw).await.unwrap();
+    }
+    notes
+        .into_iter()
+        .map(|n| (n.severity, n.text.key))
+        .collect()
+}
+
+fn applies(w: &World) -> usize {
+    w.writes().iter().filter(|c| *c == "config.apply").count()
+}
+
+#[tokio::test]
+async fn spb_migrates_once_and_a_later_window_start_does_not_again() {
+    let w = alpha15();
+    let sw = w.switcher();
+    assert_eq!(
+        spb(&sw).await,
+        [(
+            Severity::Info,
+            "switch.pat_migration.done_restart".to_owned()
+        )]
+    );
+    assert_eq!(applies(&w), 1);
+    assert!(!w.writes().iter().any(|c| c.starts_with("app.")));
+    assert!(spb(&sw).await.is_empty());
+    // The window starts later (the token back in auth.json changes nothing).
+    w.config.state.lock().unwrap().auth = AuthShape::Pat {
+        key_last4: "1111".into(),
+    };
+    assert!(start(&w.switcher()).await.is_empty());
+    assert_eq!(applies(&w), 1, "{:?}", w.writes());
+}
+
+#[tokio::test]
+async fn a_window_start_first_leaves_nothing_for_spb() {
+    let w = alpha15();
+    assert_eq!(start(&w.switcher()).await.len(), 1);
+    assert_eq!(applies(&w), 1);
+    w.config.state.lock().unwrap().auth = AuthShape::Pat {
+        key_last4: "1111".into(),
+    };
+    assert!(spb(&w.switcher()).await.is_empty());
+    assert_eq!(applies(&w), 1);
+}
+
+#[tokio::test]
+async fn an_spb_failure_is_retried_once_then_given_up() {
+    let w = alpha15();
+    *w.config.fail_apply.lock().unwrap() = Some(Error::other("disk full"));
+    let sw = w.switcher();
+    assert_eq!(
+        spb(&sw).await,
+        [(Severity::Danger, "switch.pat_migration.retry".to_owned())]
+    );
+    assert_eq!(
+        spb(&sw).await,
+        [(Severity::Danger, "switch.pat_migration.given_up".to_owned())]
+    );
+    assert!(spb(&sw).await.is_empty());
+    assert!(start(&sw).await.is_empty(), "the window does not try again");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_window_and_spb_at_the_same_time_migrate_once() {
+    for _ in 0..8 {
+        let w = alpha15();
+        let (window, cli) = (w.switcher(), w.switcher());
+        let (a, b) = tokio::join!(async { window.analytics_reapply().await.unwrap() }, async {
+            SwitchService::pat_migration(&cli).await.unwrap()
+        },);
+        assert_eq!(applies(&w), 1, "{:?}", w.writes());
+        // Both may show the one owed notice (the second reads it owed); it is
+        // settled once shown.
+        assert!(a.len() + b.len() >= 1);
+        assert!(
+            a.iter()
+                .chain(&b)
+                .all(|n| n.text.key == "switch.pat_migration.done_restart"),
+            "{a:?} {b:?}"
+        );
+        SwitchService::pat_migration_delivered(&cli).await.unwrap();
+        assert!(spb(&cli).await.is_empty());
+        assert!(start(&window).await.is_empty());
+        assert_eq!(applies(&w), 1);
+    }
+}

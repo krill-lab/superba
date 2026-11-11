@@ -290,6 +290,15 @@ impl Output {
         )
     }
 
+    /// One line on stderr, also for JSON invocations (stdout stays the JSON).
+    pub(crate) fn stderr_line(&mut self, value: &LocalizedText) -> Result<()> {
+        let line = self.render(value);
+        self.finish_progress()?;
+        writeln!(self.stderr, "{line}")
+            .and_then(|()| self.stderr.flush())
+            .map_err(|e| Error::io("stderr", &e))
+    }
+
     /// Write progress to stderr. JSON invocations suppress progress entirely.
     pub fn progress(&mut self, value: LocalizedText) -> Result<()> {
         if self.json {
