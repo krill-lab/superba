@@ -55,6 +55,7 @@ pub mod codex_files;
 pub mod compaction;
 pub mod config;
 pub mod data;
+pub mod deeplink;
 pub mod env;
 pub mod error;
 pub mod fdlimit;
@@ -111,6 +112,7 @@ pub use codex_files::{
 };
 pub use compaction::*;
 pub use config::*;
+pub use deeplink::{ImportLink, LinkError};
 pub use env::{
     EnvApplied, EnvEdit, EnvEditAction, EnvLocation, EnvObservation, EnvOp, EnvPlan, EnvReport,
     EnvSnapshot, PersistedValue, RcLine, ShellKind,

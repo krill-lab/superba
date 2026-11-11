@@ -56,6 +56,7 @@ pub mod settings;
 mod stash;
 mod state;
 pub mod toml_keys;
+pub mod url_handler;
 mod vault;
 pub mod version;
 

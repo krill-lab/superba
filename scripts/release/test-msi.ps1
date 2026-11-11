@@ -146,6 +146,12 @@ Start-Sleep -Seconds 3
 $routerAlive = -not $proc.HasExited
 Write-Host "router process alive before the upgrade: $routerAlive"
 
+# Feature 140: superba:// links open the installed superba.exe.
+$urlKey = 'HKCU:\Software\Classes\superba'
+$superbaExe = Join-Path $installDir 'superba.exe'
+Check ((Get-ItemProperty $urlKey -ErrorAction SilentlyContinue).'URL Protocol' -eq '') 'superba: is a URL protocol'
+Check ((Get-ItemProperty (Join-Path $urlKey 'shell\open\command') -ErrorAction SilentlyContinue).'(default)' -eq "`"$superbaExe`" `"%1`"") 'superba: links open superba.exe'
+
 # GUI startup is opt-in and independent from the router's value.
 Check ($null -eq (Get-ItemProperty $runKey -ErrorAction SilentlyContinue).Superba) 'GUI login startup defaults off'
 & (Join-Path $installDir 'spb.exe') autostart on
@@ -195,6 +201,7 @@ Check (-not ((UserPathDirs) -contains $installDir)) 'PATH entry removed'
 Check (@(ArpEntries).Count -eq 0) 'ARP entry removed'
 Check (-not (Test-Path $lnk)) 'Start menu shortcut removed'
 Check (-not (Test-Path -LiteralPath $chatLnk)) 'ChatGPT (Superba) shortcut removed'
+Check (-not (Test-Path $urlKey)) 'superba: URL protocol removed'
 Check ($null -eq (Get-ItemProperty $runKey -ErrorAction SilentlyContinue).SuperbaRouter) 'login-startup entry removed'
 Check (@(RouterProcs).Count -eq 0) 'no router process left'
 

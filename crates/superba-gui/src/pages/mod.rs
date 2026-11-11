@@ -38,6 +38,7 @@ pub mod claude;
 pub mod data;
 pub mod hosts;
 pub mod import;
+pub mod link_import;
 pub mod models;
 pub mod notify;
 pub mod overview;

@@ -134,11 +134,26 @@
                      Type="string" Value="$(DisplayVersion)" />
     </Component>
 
+    <!-- Feature 140: superba:// links (one-click import from the Krill website)
+         open superba.exe "<link>"; a running window takes the link. Per-user
+         class under HKCU\Software\Classes (HKCR merges it), removed on
+         uninstall. -->
+    <Component Id="UrlProtocol" Directory="INSTALLFOLDER">
+      <RegistryKey Root="HKCU" Key="Software\Classes\superba">
+        <RegistryValue Type="string" Value="URL:Superba Protocol" KeyPath="yes" />
+        <RegistryValue Name="URL Protocol" Type="string" Value="" />
+        <RegistryValue Key="DefaultIcon" Type="string" Value="&quot;[INSTALLFOLDER]superba.exe&quot;,0" />
+        <RegistryValue Key="shell\open\command" Type="string"
+                       Value="&quot;[INSTALLFOLDER]superba.exe&quot; &quot;%1&quot;" />
+      </RegistryKey>
+    </Component>
+
     <Feature Id="Main" Title="Superba" Level="1">
       <ComponentGroupRef Id="Programs" />
       <ComponentRef Id="StartMenuShortcut" />
       <ComponentRef Id="ChatGptShortcut" />
       <ComponentRef Id="InstallRegistry" />
+      <ComponentRef Id="UrlProtocol" />
     </Feature>
 
     <!-- Removal: take the router's login startup out, stop its process, and

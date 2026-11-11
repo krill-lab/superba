@@ -53,6 +53,9 @@ pub struct AppOptions {
     /// overview has loaded (screenshot and e2e tooling; the command palette
     /// that used to reach these is gone, user request 118).
     pub command: Option<String>,
+    /// A `superba://import` link this start was opened with (feature 140):
+    /// its confirmation dialog opens at once. `Debug` never shows the key.
+    pub link: Option<Result<superba_core::ImportLink, superba_core::LinkError>>,
 }
 
 /// Build a [`Cx`] from the app's fields without borrowing the whole app (page
@@ -343,6 +346,10 @@ pub struct SuperbaApp {
     instance: Option<crate::instance::Listener>,
     /// Requests other starts handed over, not handled yet.
     instance_requests: Arc<std::sync::Mutex<Vec<crate::instance::Request>>>,
+    /// A `superba://import` link waiting for its dialog (feature 140).
+    pending_link: Option<Result<superba_core::ImportLink, superba_core::LinkError>>,
+    /// The confirmation dialog of a `superba://import` link.
+    link_import: Option<pages::link_import::LinkImportDialog>,
     /// The start-up preference "Open ChatGPT through Superba" was looked at.
     startup_launch_checked: bool,
     /// The tray icon (item 70).
@@ -431,6 +438,8 @@ impl SuperbaApp {
             ack_selfupdate_problem: false,
             instance: None,
             instance_requests: Arc::default(),
+            pending_link: None,
+            link_import: None,
             startup_launch_checked: false,
             tray: crate::tray::Tray::disabled(),
             life: crate::tray::WindowLife::new(),
@@ -458,6 +467,7 @@ impl SuperbaApp {
             app.listen_for_other_starts(&ctx);
         }
         app.start_tray(&ctx);
+        app.pending_link = app.opts.link.take();
         if app.opts.launch_chatgpt {
             // The start-up preference has nothing more to do.
             app.startup_launch_checked = true;
@@ -477,7 +487,11 @@ impl SuperbaApp {
         let queue = Arc::clone(&self.instance_requests);
         let repaint = ctx.clone();
         #[cfg(target_os = "macos")]
-        crate::macos::install_reopen(Arc::clone(&queue), repaint.clone());
+        {
+            crate::macos::install_reopen(Arc::clone(&queue), repaint.clone());
+            crate::macos::wake_on_links(repaint.clone());
+            crate::macos::install_url_handler();
+        }
         match crate::instance::listen(&dir, move |request| {
             queue
                 .lock()
@@ -494,12 +508,16 @@ impl SuperbaApp {
 
     /// Handle what later starts handed over ([`crate::instance::Request`]).
     fn handle_instance_requests(&mut self) {
-        let requests = std::mem::take(
+        #[allow(unused_mut)]
+        let mut requests = std::mem::take(
             &mut *self
                 .instance_requests
                 .lock()
                 .unwrap_or_else(|p| p.into_inner()),
         );
+        // Feature 140: links macOS delivered as Apple events.
+        #[cfg(target_os = "macos")]
+        requests.extend(crate::macos::take_links());
         for request in requests {
             match request {
                 crate::instance::Request::LaunchChatGpt => {
@@ -518,6 +536,12 @@ impl SuperbaApp {
                     self.life.show();
                 }
                 crate::instance::Request::Autostart => {}
+                crate::instance::Request::Link(link) => {
+                    // Feature 140: the confirmation needs the user, so the
+                    // window comes forward (also out of the tray).
+                    self.pending_link = Some(*link);
+                    self.life.show();
+                }
             }
         }
     }
@@ -2226,7 +2250,32 @@ impl eframe::App for SuperbaApp {
             );
             crate::external::show(&ctx, &cx, &mut self.external, &mut actions);
             crate::lost_projects::show(&ctx, &cx, &mut self.lost_projects, &mut actions);
-            if let Some(w) = self.wizard.as_mut() {
+            // Feature 140: a link's confirmation, over everything else (the
+            // setup wizard waits behind it). A newer link replaces a dialog
+            // that is not importing yet.
+            if let Some(link) = self.pending_link.take() {
+                if self.link_import.as_ref().is_some_and(|d| d.importing()) {
+                    self.pending_link = Some(link);
+                } else {
+                    self.link_import = Some(pages::link_import::LinkImportDialog::open(&cx, link));
+                }
+            }
+            if let Some(d) = self.link_import.as_mut() {
+                use pages::link_import::LinkImportOutcome;
+                match pages::link_import::show_dialog(&ctx, &cx, d, &mut actions) {
+                    LinkImportOutcome::Continue => {}
+                    LinkImportOutcome::Close => self.link_import = None,
+                    done @ LinkImportOutcome::Done { .. } => {
+                        pages::link_import::finished_actions(&cx, &done, &mut actions);
+                        self.link_import = None;
+                        // The provider is set up: the first-run wizard has
+                        // nothing left to do in this run.
+                        if self.wizard.take().is_some() {
+                            self.wizard_dismissed = true;
+                        }
+                    }
+                }
+            } else if let Some(w) = self.wizard.as_mut() {
                 match pages::wizard::show(&ctx, &cx, w, &mut actions) {
                     WizardOutcome::Continue => {}
                     WizardOutcome::Close => {

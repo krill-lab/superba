@@ -7,9 +7,13 @@
 //!
 //! The window listens on a loopback TCP port and writes [`FILE`] (its pid, the
 //! port and a random token) into Superba's data directory, which only its user
-//! can read. A request is one line, `superba-gui/1 <token> <command>`, answered
-//! with `ok`. A file left behind by a window that is gone fails to connect; the
-//! caller then does the work itself.
+//! can read. A request is one line, `superba-gui/1 <token> <command> [<arg>]`,
+//! answered with `ok`. A file left behind by a window that is gone fails to
+//! connect; the caller then does the work itself.
+//!
+//! A `superba://import` link (feature 140) travels as `import <link>`: the
+//! link holds an API key, so it only ever goes over this authenticated
+//! loopback connection, never into a file, and nothing here logs a request.
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
@@ -31,11 +35,13 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(1);
 /// How long either side waits for the other's line.
 const IO_TIMEOUT: Duration = Duration::from_secs(3);
 
-/// Longest request line read.
-const MAX_LINE: u64 = 512;
+/// Longest request line read (an import link is at most
+/// [`superba_core::deeplink::MAX_LINK_LEN`] bytes, plus the header).
+const MAX_LINE: u64 = 4096;
 
-/// What a second start asks the running window to do.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+/// What a second start asks the running window to do. `Debug` never shows a
+/// link's key.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Request {
     /// Open ChatGPT through Superba (or reopen it, or bring it forward).
     LaunchChatGpt,
@@ -44,19 +50,40 @@ pub enum Request {
     Show,
     /// A login start only acknowledges the existing process; never shows it.
     Autostart,
+    /// A `superba://import` link (feature 140), or why it was refused: show
+    /// the window and the import confirmation (or the refusal).
+    Link(Box<Result<superba_core::ImportLink, superba_core::LinkError>>),
 }
 
 impl Request {
+    /// A link request.
+    pub fn link(link: Result<superba_core::ImportLink, superba_core::LinkError>) -> Self {
+        Request::Link(Box::new(link))
+    }
+
     /// The command word on the wire.
-    pub fn as_str(self) -> &'static str {
+    pub fn as_str(&self) -> &'static str {
         match self {
             Request::LaunchChatGpt => "launch-chatgpt",
             Request::Show => "show",
             Request::Autostart => "autostart",
+            Request::Link(link) if link.is_ok() => "import",
+            Request::Link(_) => "import-refused",
         }
     }
 
-    /// Parse a command word.
+    /// The command and its argument as sent (holds a link's key).
+    fn wire(&self) -> String {
+        match self {
+            Request::Link(link) => match link.as_ref() {
+                Ok(l) => format!("{} {}", self.as_str(), l.to_url()),
+                Err(e) => format!("{} {}", self.as_str(), e.to_wire()),
+            },
+            _ => self.as_str().to_owned(),
+        }
+    }
+
+    /// Parse a command word (requests without an argument).
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "launch-chatgpt" => Some(Request::LaunchChatGpt),
@@ -204,10 +231,19 @@ fn answer(stream: TcpStream, token: &str) -> Option<Request> {
 pub fn parse_line(line: &str, token: &str) -> Option<Request> {
     let mut parts = line.trim_end_matches(['\r', '\n']).split(' ');
     let (protocol, sent, command) = (parts.next()?, parts.next()?, parts.next()?);
+    let arg = parts.next();
     if parts.next().is_some() || protocol != PROTOCOL || !same(sent.as_bytes(), token.as_bytes()) {
         return None;
     }
-    Request::parse(command)
+    match (command, arg) {
+        // The link is validated again here: the window trusts no sender.
+        ("import", Some(link)) => Some(Request::link(superba_core::ImportLink::parse(link))),
+        ("import-refused", Some(why)) => {
+            Some(Request::link(Err(superba_core::LinkError::from_wire(why))))
+        }
+        (_, Some(_)) => None,
+        (command, None) => Request::parse(command),
+    }
 }
 
 /// Constant-time comparison (the token is a secret).
@@ -231,7 +267,7 @@ pub fn forward(data_dir: &Path, request: Request) -> Option<u32> {
         allow_foreground(endpoint.pid);
     }
     stream
-        .write_all(format!("{PROTOCOL} {} {}\n", endpoint.token, request.as_str()).as_bytes())
+        .write_all(format!("{PROTOCOL} {} {}\n", endpoint.token, request.wire()).as_bytes())
         .ok()?;
     let mut reply = String::new();
     BufReader::new((&stream).take(MAX_LINE))
@@ -321,7 +357,7 @@ impl Drop for InstanceLock {
 pub fn claim(data_dir: &Path, request: Request) -> std::io::Result<Option<InstanceLock>> {
     let until = std::time::Instant::now() + Duration::from_secs(15);
     loop {
-        if forward(data_dir, request).is_some() {
+        if forward(data_dir, request.clone()).is_some() {
             return Ok(None);
         }
         if let Some(lock) = InstanceLock::acquire(data_dir)? {

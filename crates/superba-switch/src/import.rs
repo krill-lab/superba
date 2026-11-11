@@ -6,12 +6,22 @@
 //! preview, and the saves of an import, which go through the ordinary
 //! `save_site` / `save_profile` paths (validation, the secret store, router
 //! member resync). Nothing is written to Codex and nothing restarts.
+//!
+//! A `superba://import` link from the Krill website (feature 140,
+//! [`superba_core::SwitchService::import_link`]) takes the same path: its key
+//! becomes a foreign provider of the Krill link source, mapped and planned by
+//! `superba-import` and saved here. The link always means the Krill provider,
+//! so its conflict is the existing Krill provider (not a name or address
+//! match), an update keeps that provider's lines, and the result always uses
+//! API-key auth.
 
+use superba_core::catalog::KRILL_SITE_ID;
 use superba_core::{
-    Error, ImportApplyRequest, ImportItem, ImportOutcome, ImportReport, ImportScan,
-    ImportScanRequest, ImportSource, Result, Site,
+    ActiveState, AuthMode, ConflictAction, Error, ForeignApp, ImportApplyRequest, ImportConflict,
+    ImportItem, ImportOutcome, ImportReport, ImportScan, ImportScanRequest, ImportSelection,
+    ImportSource, LinkImportReport, LinkImportRequest, Profile, ProfileSet, Result, Site,
 };
-use superba_import::{Os, PlannedAction, ScanEnv, SourceRead};
+use superba_import::{ForeignKey, ForeignProvider, Os, PlannedAction, ScanEnv, SourceRead};
 
 use crate::Switcher;
 use crate::planner::all_sites;
@@ -99,57 +109,9 @@ impl Switcher {
                     Vec::new(),
                 ),
             };
-            let outcome = match item.action {
-                PlannedAction::Skip { reason } => ImportOutcome::Skipped { reason },
-                PlannedAction::Create { site, profile, key } => {
-                    let key_stored = key.is_some();
-                    let site_id = site.as_ref().map(|s| s.id.clone());
-                    if request.dry_run {
-                        ImportOutcome::Created {
-                            profile: profile.id.clone(),
-                            profile_name: profile.name.clone(),
-                            site: site_id,
-                            key_stored,
-                        }
-                    } else {
-                        match self.import_create(site, profile, key).await {
-                            Ok(saved) => ImportOutcome::Created {
-                                profile: saved.id,
-                                profile_name: saved.name,
-                                site: site_id,
-                                key_stored,
-                            },
-                            Err(e) => ImportOutcome::Failed {
-                                error: e.to_string(),
-                            },
-                        }
-                    }
-                }
-                PlannedAction::Update { site, profile, key } => {
-                    let key_stored = key.is_some();
-                    if request.dry_run {
-                        ImportOutcome::Updated {
-                            profile: profile.id.clone(),
-                            profile_name: profile.name.clone(),
-                            key_stored,
-                        }
-                    } else {
-                        match self
-                            .import_update(site, profile, key, &set.custom_sites)
-                            .await
-                        {
-                            Ok(saved) => ImportOutcome::Updated {
-                                profile: saved.id,
-                                profile_name: saved.name,
-                                key_stored,
-                            },
-                            Err(e) => ImportOutcome::Failed {
-                                error: e.to_string(),
-                            },
-                        }
-                    }
-                }
-            };
+            let outcome = self
+                .save_planned(item.action, request.dry_run, &set.custom_sites)
+                .await;
             report.items.push(ImportItem {
                 candidate: item.selection.candidate,
                 source,
@@ -159,6 +121,173 @@ impl Switcher {
             });
         }
         Ok(report)
+    }
+
+    pub(crate) async fn import_link_impl(
+        &self,
+        request: LinkImportRequest,
+    ) -> Result<LinkImportReport> {
+        if !request.dry_run {
+            self.refuse_elevated()?;
+        }
+        let set = self.deps.profiles.load().await?;
+        let sites = all_sites(&set, self.deps.ctx.env.as_ref());
+        let krill = sites
+            .iter()
+            .find(|s| s.id.as_str() == KRILL_SITE_ID)
+            .ok_or_else(|| Error::NotFound {
+                what: format!("site {KRILL_SITE_ID}"),
+            })?;
+        let active = self
+            .deps
+            .config
+            .read_state(&self.deps.ctx.codex_home())
+            .await
+            .ok()
+            .and_then(|s| s.active);
+        let existing = existing_krill(&set, active.as_ref());
+        let conflict = existing.map(|p| ImportConflict {
+            profile: p.id.clone(),
+            profile_name: p.name.clone(),
+            same_name: false,
+            same_base_url: true,
+        });
+        let updating = existing.is_some() && request.on_conflict == ConflictAction::Update;
+        // The address the mapping resolves to a Krill line: an update's own
+        // first line (its lines stay as they are), else the requested line,
+        // else the site's default line.
+        let line = match existing.filter(|_| updating) {
+            Some(p) => p.line_id.as_ref().and_then(|l| krill.line(l)),
+            None => request.line.as_ref().and_then(|l| krill.line(l)),
+        }
+        .or_else(|| krill.default_line())
+        .ok_or_else(|| Error::NotFound {
+            what: format!("a line of site {KRILL_SITE_ID}"),
+        })?;
+        let name = request
+            .link
+            .name
+            .clone()
+            .unwrap_or_else(|| krill.name.render_fallback());
+        let mut provider =
+            ForeignProvider::new(ImportSource::KrillLink, "link", name, ForeignApp::Codex);
+        provider.current = true;
+        provider.base_url = Some(line.origin.to_string());
+        provider.key = ForeignKey::Secret(request.link.key.clone());
+        let candidate = provider.candidate_id();
+        let reads = vec![SourceRead {
+            source: ImportSource::KrillLink,
+            stores: Vec::new(),
+            providers: vec![provider],
+        }];
+        let mut scan = superba_import::preview(&reads, &set, &sites);
+        for c in scan
+            .sources
+            .iter_mut()
+            .flat_map(|s| s.candidates.iter_mut())
+        {
+            c.conflict = conflict.clone();
+            if updating && let Some(t) = c.target.as_mut() {
+                // `plan`'s update puts the target's lines first: none, so the
+                // provider's line choice stays.
+                t.lines.clear();
+            }
+        }
+        let make_site: superba_import::MakeSite<'_> =
+            &|id, name, url| superba_net::new_compatible_site(id, name, url);
+        let planned = superba_import::plan(
+            &reads,
+            &scan,
+            &set,
+            &sites,
+            &[ImportSelection::new(candidate.clone(), request.on_conflict)],
+            make_site,
+        )
+        .into_iter()
+        .next()
+        .ok_or_else(|| Error::other("import link: nothing planned"))?;
+        let (notes, display) = match &planned.candidate {
+            Some(c) => (c.notes.clone(), c.name.clone()),
+            None => (Vec::new(), candidate.clone()),
+        };
+        let mut action = planned.action;
+        let mut first_line = None;
+        if let PlannedAction::Create { profile, .. } | PlannedAction::Update { profile, .. } =
+            &mut action
+        {
+            use_api_key(profile);
+            first_line = profile.line_priority().into_iter().next();
+        }
+        let outcome = self
+            .save_planned(action, request.dry_run, &set.custom_sites)
+            .await;
+        Ok(LinkImportReport {
+            existing: conflict,
+            item: ImportItem {
+                candidate,
+                source: ImportSource::KrillLink,
+                name: display,
+                outcome,
+                notes,
+            },
+            line: first_line,
+            masked_key: request.link.key.masked(),
+        })
+    }
+
+    /// Carry out one planned import action (or, as a dry run, report it).
+    async fn save_planned(
+        &self,
+        action: PlannedAction,
+        dry_run: bool,
+        before: &[Site],
+    ) -> ImportOutcome {
+        match action {
+            PlannedAction::Skip { reason } => ImportOutcome::Skipped { reason },
+            PlannedAction::Create { site, profile, key } => {
+                let key_stored = key.is_some();
+                let site_id = site.as_ref().map(|s| s.id.clone());
+                if dry_run {
+                    return ImportOutcome::Created {
+                        profile: profile.id.clone(),
+                        profile_name: profile.name.clone(),
+                        site: site_id,
+                        key_stored,
+                    };
+                }
+                match self.import_create(site, profile, key).await {
+                    Ok(saved) => ImportOutcome::Created {
+                        profile: saved.id,
+                        profile_name: saved.name,
+                        site: site_id,
+                        key_stored,
+                    },
+                    Err(e) => ImportOutcome::Failed {
+                        error: e.to_string(),
+                    },
+                }
+            }
+            PlannedAction::Update { site, profile, key } => {
+                let key_stored = key.is_some();
+                if dry_run {
+                    return ImportOutcome::Updated {
+                        profile: profile.id.clone(),
+                        profile_name: profile.name.clone(),
+                        key_stored,
+                    };
+                }
+                match self.import_update(site, profile, key, before).await {
+                    Ok(saved) => ImportOutcome::Updated {
+                        profile: saved.id,
+                        profile_name: saved.name,
+                        key_stored,
+                    },
+                    Err(e) => ImportOutcome::Failed {
+                        error: e.to_string(),
+                    },
+                }
+            }
+        }
     }
 
     /// Save a new site (if any) and the new profile with its key; a site saved
@@ -209,4 +338,25 @@ impl Switcher {
             }
         }
     }
+}
+
+/// The Krill provider a link updates: the applied one, else the last
+/// selected one, else the first (built-in profiles never).
+fn existing_krill<'a>(set: &'a ProfileSet, active: Option<&ActiveState>) -> Option<&'a Profile> {
+    let krill = |id: Option<&superba_core::ProfileId>| {
+        id.and_then(|id| set.profile(id))
+            .filter(|p| !p.is_builtin() && p.site_id.as_str() == KRILL_SITE_ID)
+    };
+    krill(active.and_then(|a| a.profile_id.as_ref()))
+        .or_else(|| krill(set.last_selected.as_ref()))
+        .or_else(|| {
+            set.profiles
+                .iter()
+                .find(|p| !p.is_builtin() && p.site_id.as_str() == KRILL_SITE_ID)
+        })
+}
+
+/// A link's key is an API key: the provider uses API-key auth.
+fn use_api_key(profile: &mut Profile) {
+    profile.auth_mode = AuthMode::ApiKey;
 }

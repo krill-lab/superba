@@ -72,7 +72,11 @@ pub fn service() -> anyhow::Result<Arc<dyn SwitchService>> {
 /// any retry in [its GUI log](startup::Reporter::gui_log).
 pub fn run(args: GuiArgs, report: &startup::Reporter) -> anyhow::Result<()> {
     #[cfg(target_os = "macos")]
-    macos::set_application_name();
+    {
+        macos::set_application_name();
+        // Feature 140: macOS hands superba:// links over as Apple events.
+        macos::install_url_handler();
+    }
     let service = service()?;
     // Item 70: the window choices are needed before the window opens (start
     // hidden; on Wayland, a window that must hide opens through XWayland).
@@ -110,6 +114,7 @@ pub fn run(args: GuiArgs, report: &startup::Reporter) -> anyhow::Result<()> {
         tray: tray::TrayOption::System,
         start_in_tray,
         command: args.command.clone(),
+        link: args.link.clone(),
     };
     let gpu = startup::Gpu::from_env_value(std::env::var(startup::ENV_SUPERBA_GPU).ok().as_deref());
     let mut result = run_window(&viewport, gpu, x11, &service, &opts, report);
