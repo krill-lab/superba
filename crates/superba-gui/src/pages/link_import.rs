@@ -294,7 +294,14 @@ pub fn show_dialog(
             out.push(Action::Probe(krill()));
         }
     }
-    let response = dialog(ctx, egui::Id::unique("link-import"), 520.0, |ui| {
+    // A refused link gets its own (small) dialog: a modal keeps the size it
+    // measured under its id.
+    let id = if d.link.is_ok() {
+        egui::Id::unique("link-import")
+    } else {
+        egui::Id::unique("link-import-refused")
+    };
+    let response = dialog(ctx, id, 520.0, |ui| {
         outcome = body(ui, cx, d);
     });
     if outcome == LinkImportOutcome::Continue && response.should_close() && d.apply_task.is_none() {

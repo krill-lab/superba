@@ -43,7 +43,20 @@ pub fn render(executable: &Path) -> Result<String> {
             "the Superba executable path contains a control character",
         ));
     }
-    let exec = crate::autostart::desktop_exec(text)?;
+    // A plain path goes in as it is: the generic `xdg-open` of xdg-utils
+    // (no desktop environment) takes the first word of `Exec` literally and
+    // does not understand quotes. Paths that need quoting are quoted per the
+    // desktop entry spec.
+    let plain = !text.is_empty()
+        && text.bytes().all(|b| {
+            b.is_ascii_alphanumeric()
+                || matches!(b, b'/' | b'.' | b'_' | b'-' | b'+' | b',' | b':' | b'@')
+        });
+    let exec = if plain {
+        text.to_owned()
+    } else {
+        crate::autostart::desktop_exec(text)?
+    };
     Ok(format!(
         "[Desktop Entry]\nType=Application\nName=Superba\nComment=Opens superba:// import links from the Krill website\nExec={exec} %u\nIcon=superba\nTerminal=false\nNoDisplay=true\nMimeType={MIME_TYPE};\n"
     ))
