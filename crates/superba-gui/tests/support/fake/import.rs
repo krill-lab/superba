@@ -18,6 +18,10 @@ pub(super) struct State {
     /// Usage history per source (previews answer it, imports mark it imported).
     usage: std::collections::BTreeMap<ImportSource, UsageImportReport>,
     usage_requests: Vec<UsageImportRequest>,
+    /// The Krill provider a `superba://import` link updates (feature 140).
+    link_existing: Option<ImportConflict>,
+    /// Link imports requested (dry runs included).
+    link_requests: Vec<LinkImportRequest>,
 }
 
 impl FakeService {
@@ -50,6 +54,24 @@ impl FakeService {
     /// Imports requested.
     pub fn import_requests(&self) -> Vec<ImportApplyRequest> {
         self.areas.import.lock().unwrap().applied.clone()
+    }
+
+    /// The Krill provider link imports find (feature 140).
+    pub fn set_link_existing(&self, existing: Option<ImportConflict>) {
+        self.areas.import.lock().unwrap().link_existing = existing;
+    }
+
+    /// Link imports requested, dry runs included.
+    pub fn link_requests(&self) -> Vec<LinkImportRequest> {
+        self.areas.import.lock().unwrap().link_requests.clone()
+    }
+
+    /// Link imports that would have written (not dry runs).
+    pub fn link_writes(&self) -> Vec<LinkImportRequest> {
+        self.link_requests()
+            .into_iter()
+            .filter(|r| !r.dry_run)
+            .collect()
     }
 
     /// Scans requested.
@@ -144,4 +166,46 @@ pub(super) async fn import_usage(
         area.usage.insert(request.source, later);
     }
     Ok(r)
+}
+
+pub(super) async fn import_link(
+    fake: &FakeService,
+    request: LinkImportRequest,
+) -> Result<LinkImportReport> {
+    let mut area = fake.areas.import.lock().unwrap();
+    area.link_requests.push(request.clone());
+    let existing = area.link_existing.clone();
+    let name = request.link.name.clone().unwrap_or_else(|| "Krill".into());
+    let outcome = match (&existing, request.on_conflict) {
+        (Some(e), ConflictAction::Update) => ImportOutcome::Updated {
+            profile: e.profile.clone(),
+            profile_name: e.profile_name.clone(),
+            key_stored: true,
+        },
+        (Some(e), ConflictAction::Skip) => ImportOutcome::Skipped {
+            reason: LocalizedText::new("", format!("{} left as it is", e.profile_name)),
+        },
+        _ => ImportOutcome::Created {
+            profile: ProfileId::new("krill-link"),
+            profile_name: if existing.is_some() {
+                format!("{name} (Krill link)")
+            } else {
+                name.clone()
+            },
+            site: None,
+            key_stored: true,
+        },
+    };
+    Ok(LinkImportReport {
+        existing,
+        item: ImportItem {
+            candidate: "krill-link:link".into(),
+            source: ImportSource::KrillLink,
+            name,
+            outcome,
+            notes: Vec::new(),
+        },
+        line: request.line.clone(),
+        masked_key: request.link.key.masked(),
+    })
 }

@@ -2317,6 +2317,10 @@ impl SwitchService for FakeService {
         import::apply(self, request).await
     }
 
+    async fn import_link(&self, request: LinkImportRequest) -> Result<LinkImportReport> {
+        import::import_link(self, request).await
+    }
+
     async fn install_codex(&self, request: InstallRequest) -> Result<InstallReport> {
         versions::install_codex(self, request).await
     }

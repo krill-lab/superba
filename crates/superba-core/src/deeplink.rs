@@ -133,6 +133,43 @@ impl LinkError {
     }
 }
 
+impl LinkError {
+    /// One word for the single-instance hand-over (`unknown_action:export`):
+    /// a later start refuses a link and the running window says why. Holds no
+    /// key (see [`LinkError`]).
+    pub fn to_wire(&self) -> String {
+        match self {
+            LinkError::TooLong => "too_long".into(),
+            LinkError::Malformed => "malformed".into(),
+            LinkError::UnknownAction(v) => format!("unknown_action:{v}"),
+            LinkError::UnsupportedVersion(v) => format!("unsupported_version:{v}"),
+            LinkError::UnknownParameter(v) => format!("unknown_parameter:{v}"),
+            LinkError::DuplicateParameter(v) => format!("duplicate_parameter:{v}"),
+            LinkError::MissingParameter(p) => format!("missing_parameter:{p}"),
+            LinkError::InvalidKey => "invalid_key".into(),
+            LinkError::InvalidName => "invalid_name".into(),
+        }
+    }
+
+    /// Read [`LinkError::to_wire`]; anything else is [`LinkError::Malformed`].
+    pub fn from_wire(s: &str) -> Self {
+        let (kind, value) = s.split_once(':').unwrap_or((s, ""));
+        let value = short(value);
+        match kind {
+            "too_long" => LinkError::TooLong,
+            "unknown_action" => LinkError::UnknownAction(value),
+            "unsupported_version" => LinkError::UnsupportedVersion(value),
+            "unknown_parameter" => LinkError::UnknownParameter(value),
+            "duplicate_parameter" => LinkError::DuplicateParameter(value),
+            "missing_parameter" if value == "name" => LinkError::MissingParameter("name"),
+            "missing_parameter" => LinkError::MissingParameter("key"),
+            "invalid_key" => LinkError::InvalidKey,
+            "invalid_name" => LinkError::InvalidName,
+            _ => LinkError::Malformed,
+        }
+    }
+}
+
 impl fmt::Display for LinkError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.text().render_fallback())
@@ -486,6 +523,32 @@ mod tests {
         );
         assert!(!redact_link("superba:%%%sk-12345678").contains("sk-"));
         assert_eq!(redact_link("not a url"), "superba:[unparsable]");
+    }
+
+    #[test]
+    fn errors_cross_the_hand_over_as_one_word() {
+        for e in [
+            LinkError::TooLong,
+            LinkError::Malformed,
+            LinkError::UnknownAction("export".into()),
+            LinkError::UnsupportedVersion("v2".into()),
+            LinkError::UnsupportedVersion(String::new()),
+            LinkError::UnknownParameter("line".into()),
+            LinkError::UnknownParameter("…".into()),
+            LinkError::DuplicateParameter("key".into()),
+            LinkError::MissingParameter("key"),
+            LinkError::InvalidKey,
+            LinkError::InvalidName,
+        ] {
+            let wire = e.to_wire();
+            assert!(!wire.contains(' '), "{wire}");
+            assert_eq!(LinkError::from_wire(&wire), e);
+        }
+        assert_eq!(LinkError::from_wire("nonsense"), LinkError::Malformed);
+        assert_eq!(
+            LinkError::from_wire("unknown_action:sk-krill-0123456789"),
+            LinkError::UnknownAction("…".into())
+        );
     }
 
     #[test]

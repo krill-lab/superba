@@ -10,6 +10,9 @@ use std::process::ExitCode;
 fn main() -> ExitCode {
     // Before any thread starts (user bug 125).
     superba_gui::memory::limit_arenas();
+    // Feature 140: a link handed over by a start that ran itself again; out of
+    // the environment before any thread starts or child inherits it.
+    let pending_link = superba_gui::args::take_pending_link();
     let args: Vec<_> = std::env::args_os().collect();
     // The second stage of an update: swap files, restart the router, start the
     // new Superba, once the process that downloaded it has exited.
@@ -30,7 +33,7 @@ fn main() -> ExitCode {
         println!("{}", superba_gui::args::USAGE);
         return ExitCode::SUCCESS;
     }
-    let gui_args = match superba_gui::GuiArgs::parse(&args) {
+    let mut gui_args = match superba_gui::GuiArgs::parse(&args) {
         Ok(a) => a,
         Err(e) => {
             attach_parent_console();
@@ -38,6 +41,20 @@ fn main() -> ExitCode {
             return ExitCode::from(superba_cli::exit::USAGE);
         }
     };
+    // Feature 140: a superba:// link holds an API key. On Unix every local
+    // user can read a process's command line, so run again at once with the
+    // link in this user's private environment instead.
+    if let Some(link) = &gui_args.link
+        && superba_gui::args::has_link_arg(&args)
+    {
+        let error = superba_gui::args::reexec_without_link(&args, link);
+        if !error.is_empty() {
+            eprintln!("superba: could not restart without the link on the command line: {error}");
+        }
+    }
+    if gui_args.link.is_none() {
+        gui_args.link = pending_link;
+    }
     // Windows: never as another account than the signed-in user (SYSTEM,
     // `runas`, a scheduled task): its files would land in that account's
     // profile. Checked before anything is written (user bug 44).
@@ -75,7 +92,9 @@ fn main() -> ExitCode {
             return ExitCode::from(superba_cli::exit::ERROR);
         }
     };
-    let request = if gui_args.autostart || gui_args.start_in_tray {
+    let request = if let Some(link) = &gui_args.link {
+        superba_gui::instance::Request::link(link.clone())
+    } else if gui_args.autostart || gui_args.start_in_tray {
         superba_gui::instance::Request::Autostart
     } else if gui_args.launch_chatgpt {
         superba_gui::instance::Request::LaunchChatGpt

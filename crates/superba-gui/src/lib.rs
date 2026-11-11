@@ -110,6 +110,7 @@ pub fn run(args: GuiArgs, report: &startup::Reporter) -> anyhow::Result<()> {
         tray: tray::TrayOption::System,
         start_in_tray,
         command: args.command.clone(),
+        link: args.link.clone(),
     };
     let gpu = startup::Gpu::from_env_value(std::env::var(startup::ENV_SUPERBA_GPU).ok().as_deref());
     let mut result = run_window(&viewport, gpu, x11, &service, &opts, report);
