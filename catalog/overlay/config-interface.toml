@@ -290,7 +290,9 @@ zh_basis = "1938c1c8cd355cbb"
 en = "Summarize tool calls and collapse completed turns in the full-screen transcript. Defaults to `false`."
 en_source = "openai/codex rust-v0.169.0-alpha.10: codex-rs/core/config.schema.json"
 en_hash = "dd66adb71c2f837f"
-zh = ""
+zh_name = "折叠轮次详情"
+zh = "依据源码推断，在 Codex 自己管理的全屏会话记录（`tui.fullscreen_transcript`）中，把工具调用归并为可展开的摘要行，并折叠已完成轮次的细节。默认 `false`；也可在终端界面设置面板的“Collapse turn details”开关中修改，普通终端滚动输出模式下不生效。"
+zh_basis = "dd66adb71c2f837f"
 
 ["config:tui.copy_on_select"]
 en = "Copy selected transcript, footer, or composer text when the mouse button is released. Defaults to `auto`: enabled except in direct terminals known to forward their native copy shortcut (Ghostty 1.2+, Kitty on macOS, Windows Terminal, and VS Code on Windows). Unknown terminals, Ghostty without a recognized version, and tmux/Zellij default to copying."
@@ -923,7 +925,9 @@ zh_basis = "b41c1dfc1ebd31d0"
 en = "Close the active sidebar tab."
 en_source = "openai/codex rust-v0.169.0-alpha.10: codex-rs/core/config.schema.json"
 en_hash = "8e4f88b3a90c44b7"
-zh = ""
+zh_name = "关闭侧边标签键"
+zh = "依据源码推断，自定义在终端工作区中关闭当前显示的侧边会话标签的快捷键；已保存的会话仍留在侧边会话列表中。若会停止正在运行的轮次、丢弃未发送的输入或丢失临时会话记录，会先请求确认。未自定义时默认先按前导键（默认 `Ctrl+X`）再按 `w`。"
+zh_basis = "8e4f88b3a90c44b7"
 
 ["config:tui.keymap.global.copy"]
 en = "Copy the last agent response to the clipboard."
@@ -993,7 +997,9 @@ zh_basis = "a1f770b75fcd6e1c"
 en = "Open the sidebar tab chooser."
 en_source = "openai/codex rust-v0.169.0-alpha.10: codex-rs/core/config.schema.json"
 en_hash = "7ee60ad500ff87da"
-zh = ""
+zh_name = "侧边标签选择键"
+zh = "依据源码推断，自定义在终端工作区中打开侧边会话标签选择器的快捷键，用于在侧边会话间挑选要显示的一个。只有侧边标签选择器可用时才响应；未自定义时默认先按前导键（默认 `Ctrl+X`）再按 `t`。"
+zh_basis = "7ee60ad500ff87da"
 
 ["config:tui.keymap.global.hide_pane"]
 en = "Hide the focused sidebar pane."
@@ -1095,13 +1101,17 @@ zh_basis = "ca9100434a367cbc"
 en = "Switch to the next sidebar tab."
 en_source = "openai/codex rust-v0.169.0-alpha.10: codex-rs/core/config.schema.json"
 en_hash = "65f04ef6d873af2a"
-zh = ""
+zh_name = "下一个侧边标签键"
+zh = "依据源码推断，自定义在终端工作区中切换到下一个侧边会话标签的快捷键，仅在侧边窗格获得焦点且标签选择器可用时响应。未自定义时默认先按前导键（默认 `Ctrl+X`）再按 `Tab`、`↓` 或 `j`。"
+zh_basis = "65f04ef6d873af2a"
 
 ["config:tui.keymap.global.sidebar_up"]
 en = "Switch to the previous sidebar tab."
 en_source = "openai/codex rust-v0.169.0-alpha.10: codex-rs/core/config.schema.json"
 en_hash = "04e6a309512309be"
-zh = ""
+zh_name = "上一个侧边标签键"
+zh = "依据源码推断，自定义在终端工作区中切换到上一个侧边会话标签的快捷键，仅在侧边窗格获得焦点且标签选择器可用时响应。未自定义时默认先按前导键（默认 `Ctrl+X`）再按 `Shift+Tab`、`↑` 或 `k`。"
+zh_basis = "04e6a309512309be"
 
 ["config:tui.keymap.global.submit"]
 en = "Submit the current composer draft."

@@ -216,14 +216,14 @@ zh_basis = ""
 en = ""
 en_hash = ""
 zh_name = "代码模式宿主 gRPC"
-zh = "Codex 与自己启动的代码模式宿主进程之间改用基于标准输入输出的 gRPC 通信，替代默认的通信方式。开发中，默认关闭。"
+zh = "Codex 与自己启动的代码模式宿主进程之间改用基于标准输入输出的 gRPC 通信，替代默认的通信方式。0.169.0-alpha.10 起为稳定功能并默认开启，此前为开发中、默认关闭。"
 zh_basis = ""
 
 ["feature:code_mode_host_output_truncation"]
 en = ""
 en_hash = ""
 zh_name = "代码宿主输出截断"
-zh = "依据源码推断，让 Codex 内置的独立代码模式宿主在将输出传回核心进程前执行截断，创建会话时使用服务端截断模式。开发中，默认关闭；外部注入的代码模式会话供应器自行决定其输出设置。"
+zh = "依据源码推断，让 Codex 内置的独立代码模式宿主在将输出传回核心进程前执行截断，创建会话时使用服务端截断模式；外部注入的代码模式会话供应器自行决定其输出设置。0.169.0-alpha.10 起为稳定功能并默认开启，此前为开发中、默认关闭。"
 zh_basis = ""
 
 ["feature:code_mode_interrupt"]
@@ -363,7 +363,7 @@ zh_basis = ""
 en = ""
 en_hash = ""
 zh_name = "自动启动后台服务"
-zh = "交互式启动 `codex` 时自动启动或连接本机共享的后台服务（app-server 守护进程），多个终端会话共用它，可用 `/daemon` 管理。单次启动加 `--no-daemon` 可不使用；远程工作区不会自动启动。0.157 起为稳定功能并默认开启。"
+zh = "交互式启动 `codex` 时自动启动或连接本机共享的后台服务（app-server 守护进程），多个终端会话共用它，可用 `/daemon` 管理。单次启动加 `--no-daemon` 可不使用；远程工作区不会自动启动。0.157 起为稳定功能并默认开启；桌面 app 绑定的 0.167.0-alpha.4.1 中此开关已移除并被忽略，只能用 `--no-daemon` 关闭。"
 zh_basis = ""
 
 ["feature:default_mode_request_user_input"]
@@ -481,7 +481,9 @@ zh_basis = ""
 ["feature:gateway_setup_wizard"]
 en = ""
 en_hash = ""
-zh = ""
+zh_name = "自定义网关配置向导"
+zh = "依据源码推断，在终端界面（TUI）的登录引导中提供“使用自定义供应商或网关”入口：列出已保存的自定义网关供应商，或填写表单新建一个，选中后完成登录。稳定，默认关闭；仅在使用内嵌 app-server、当前供应商为 `openai`、需要登录且允许 API 认证，并且没有被策略或启动参数固定模型供应商时出现。"
+zh_basis = ""
 
 ["feature:gcp_setup_wizard"]
 en = ""
@@ -697,7 +699,7 @@ zh_basis = ""
 en = ""
 en_hash = ""
 zh_name = "执行工具增量目录"
-zh = "依据源码推断，此开关为代码模式执行工具的增量目录预留；Codex 0.168.0-alpha.4 仅登记开关，未发现工具目录生成逻辑读取它。开发中，默认关闭。"
+zh = "依据源码推断，在仅代码模式（CodeModeOnly）下把 `exec` 工具内嵌的工具定义也纳入增量工具目录，变化时只发送差异，不再每次重复整份定义；需模型使用 Responses Lite 格式并启用 `incremental_tools`。0.167 各版本仅登记开关、不起作用；开发中，默认关闭。"
 zh_basis = ""
 
 ["feature:incremental_tools"]
@@ -710,7 +712,9 @@ zh_basis = ""
 ["feature:incremental_tools_legacy"]
 en = ""
 en_hash = ""
-zh = ""
+zh_name = "旧格式增量工具定义"
+zh = "依据源码推断，对不使用 Responses Lite 格式的模型，在内置 Amazon Bedrock 供应商（`amazon-bedrock`、`amazon-bedrock-runtime`）上像 `incremental_tools` 一样跟踪工具定义，新的上下文窗口只发送工具变化的增量更新；0.169.0-alpha.10 起也适用于 Google Cloud 供应商（`gcp`）。开发中，默认关闭；其他供应商不受影响。"
+zh_basis = ""
 
 ["feature:instant_interrupt"]
 en = ""
@@ -787,7 +791,9 @@ zh_basis = ""
 ["feature:mcp_lazy_stdio_startup"]
 en = ""
 en_hash = ""
-zh = ""
+zh_name = "stdio MCP 延迟启动"
+zh = '依据源码推断，新会话启动时，对已有有效工具目录缓存的本地 stdio MCP 服务器先发布缓存中的工具，不立即启动服务器进程，等首次需要实际连接时再启动。被标为 `required` 的服务器（除非 `startup_readiness = "catalog"`）、当前选中插件的服务器、没有缓存的服务器和显式重连仍立即启动。开发中，默认关闭；子代理会话本来就延后有缓存的服务器。'
+zh_basis = ""
 
 ["feature:mcp_oauth_refresh_coordination"]
 en = ""
@@ -828,7 +834,7 @@ zh_basis = ""
 en = ""
 en_hash = ""
 zh_name = "子代理协作（已弃用）"
-zh = "已弃用，原用于启用第一版子代理协作工具；现在使用 `agents.enabled` 设置子代理可用性，多代理版本由模型配置或 `multi_agent_v2` 决定，旧开关仅在缺少版本指定时作为兼容回退（依据源码推断）。"
+zh = "0.168 起已弃用，原用于启用第一版子代理协作工具；现在使用 `agents.enabled` 设置子代理可用性，多代理版本由模型配置或 `multi_agent_v2` 决定，旧开关仅在缺少版本指定时作为兼容回退（依据源码推断）。0.167 各版本中仍为稳定功能。"
 zh_basis = ""
 
 ["feature:multi_agent_mode"]
@@ -914,7 +920,7 @@ zh_basis = ""
 en = ""
 en_hash = ""
 zh_name = "预取插件目录"
-zh = "app-server 启动时在后台预先拉取插件目录、精选插件和推荐列表，旧式插件建议读取这份缓存。只使用已安装插件清单的宿主可以关闭它。0.166 起为稳定功能并默认开启。"
+zh = "app-server 启动时在后台预先拉取插件目录、精选插件和推荐列表，旧式插件建议读取这份缓存；0.166 起为稳定功能并默认开启。0.169.0-alpha.10 起已移除，启动时只刷新已安装插件，该设置被忽略（依据源码推断）。"
 zh_basis = ""
 
 ["feature:plugin_hooks"]
@@ -1079,7 +1085,7 @@ zh_basis = ""
 en = ""
 en_hash = ""
 zh_name = "保留客户端工具输出"
-zh = "依据源码推断，在远程压缩和跨上下文窗口处理时，保留客户端明确标记需要留存的工具输出，避免将它们当作普通旧工具结果改写或丢弃。稳定，默认开启。"
+zh = "依据源码推断，在远程压缩和跨上下文窗口处理时，保留客户端明确标记需要留存的工具输出，避免将它们当作普通旧工具结果改写或丢弃。稳定，默认开启；0.167.0、0.167.1 中仍为开发中、默认关闭。"
 zh_basis = ""
 
 ["feature:rollout_budget"]
@@ -1408,14 +1414,14 @@ zh_basis = ""
 en = ""
 en_hash = ""
 zh_name = "统一图片预算"
-zh = "依据源码推断，按统一的像素与 token 预算预处理图片，而不是仅按旧的图片细节档位选择缩放策略。稳定，默认开启；仅对使用 Responses Lite 格式或支持原始图片细节的模型生效。"
+zh = "依据源码推断，按统一的像素与 token 预算预处理图片，而不是仅按旧的图片细节档位选择缩放策略；仅对使用 Responses Lite 格式或支持原始图片细节的模型生效。0.168 起为稳定功能并默认开启，0.167 各版本中为开发中、默认关闭。"
 zh_basis = ""
 
 ["feature:untrusted_as_tool_output"]
 en = ""
 en_hash = ""
 zh_name = "不可信上下文作为工具输出"
-zh = "客户端随轮次附带的不可信上下文（additional context）改为以单独的具名工具输出交给模型，而不是作为普通消息插入。开发中，默认关闭。"
+zh = "客户端随轮次附带的不可信上下文（additional context）改为以单独的具名工具输出交给模型，而不是作为普通消息插入。0.169.0-alpha.10 起为稳定功能并默认开启，此前为开发中、默认关闭。"
 zh_basis = ""
 
 ["feature:use_agent_identity"]

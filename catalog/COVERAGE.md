@@ -12,10 +12,10 @@ Feature stages from Codex 0.167.1 (linux).
 
 | | Entries | English (official) | English missing | with en_note | Chinese current | Chinese stale | Chinese missing |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| config | 872 | 564 | 308 | 0 | 861 | 1 | 10 |
-| feature | 213 | 5 | 208 | 0 | 210 | 0 | 3 |
+| config | 872 | 564 | 308 | 0 | 872 | 0 | 0 |
+| feature | 213 | 5 | 208 | 0 | 213 | 0 | 0 |
 | value | 59 | 59 | 0 | 0 | 59 | 0 | 0 |
-| **all** | 1144 | 628 | 516 | 0 | 1130 | 1 | 13 |
+| **all** | 1144 | 628 | 516 | 0 | 1144 | 0 | 0 |
 
 Retired entries kept for their written text: 1.
 
@@ -23,13 +23,13 @@ Retired entries kept for their written text: 1.
 
 | | Entries | English (official) | English missing | with en_note | Chinese current | Chinese stale | Chinese missing |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| under development | 86 | 0 | 86 | 0 | 85 | 0 | 1 |
+| under development | 86 | 0 | 86 | 0 | 86 | 0 | 0 |
 | experimental | 5 | 5 | 0 | 0 | 5 | 0 | 0 |
 | stable | 61 | 0 | 61 | 0 | 61 | 0 | 0 |
 | deprecated | 3 | 0 | 3 | 0 | 3 | 0 | 0 |
 | removed | 47 | 0 | 47 | 0 | 47 | 0 | 0 |
-| unknown | 11 | 0 | 11 | 0 | 9 | 0 | 2 |
-| **all features** | 213 | 5 | 208 | 0 | 210 | 0 | 3 |
+| unknown | 11 | 0 | 11 | 0 | 11 | 0 | 0 |
+| **all features** | 213 | 5 | 208 | 0 | 213 | 0 | 0 |
 
 ## By overlay file
 
@@ -40,13 +40,13 @@ Retired entries kept for their written text: 1.
 | `overlay/config-apps.toml` | 73 | 58 | 15 | 0 | 73 | 0 | 0 |
 | `overlay/config-context.toml` | 46 | 44 | 2 | 0 | 46 | 0 | 0 |
 | `overlay/config-features.toml` | 130 | 46 | 84 | 0 | 130 | 0 | 0 |
-| `overlay/config-interface.toml` | 283 | 264 | 19 | 0 | 278 | 0 | 5 |
+| `overlay/config-interface.toml` | 283 | 264 | 19 | 0 | 283 | 0 | 0 |
 | `overlay/config-mcp.toml` | 61 | 30 | 31 | 0 | 61 | 0 | 0 |
 | `overlay/config-model.toml` | 11 | 8 | 3 | 0 | 11 | 0 | 0 |
 | `overlay/config-other.toml` | 6 | 4 | 2 | 0 | 6 | 0 | 0 |
-| `overlay/config-provider.toml` | 80 | 67 | 13 | 0 | 74 | 1 | 5 |
+| `overlay/config-provider.toml` | 80 | 67 | 13 | 0 | 80 | 0 | 0 |
 | `overlay/config-realtime.toml` | 15 | 9 | 6 | 0 | 15 | 0 | 0 |
 | `overlay/config-storage.toml` | 18 | 14 | 4 | 0 | 18 | 0 | 0 |
 | `overlay/config-telemetry.toml` | 79 | 24 | 55 | 0 | 79 | 0 | 0 |
 | `overlay/config-tools.toml` | 67 | 10 | 57 | 0 | 67 | 0 | 0 |
-| `overlay/features.toml` | 213 | 5 | 208 | 0 | 210 | 0 | 3 |
+| `overlay/features.toml` | 213 | 5 | 208 | 0 | 213 | 0 | 0 |

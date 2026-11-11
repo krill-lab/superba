@@ -166,7 +166,7 @@ en = "Experimental full Guardian prompt template containing the tenant policy pl
 en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
 en_hash = "59d5dc998caf3103"
 zh_name = "审核模板（实验）"
-zh = "实验性：完整替换自动审核的提示词模板。模板中应包含 `{{ tenant_policy_config }}` 占位符，运行时会替换为生效的审核策略。"
+zh = "实验性：完整替换自动审核的提示词模板。模板中应包含 `{{ tenant_policy_config }}` 占位符，运行时会替换为生效的审核策略。0.169.0-alpha.10 起已移除，设置会被忽略并提示删除。"
 zh_basis = "59d5dc998caf3103"
 
 ["config:auto_review.extra_policy"]
@@ -174,7 +174,7 @@ en = "Additional policy text inserted into the Guardian template's `{{ extra_pol
 en_source = "openai/codex rust-v0.157.0: codex-rs/core/config.schema.json"
 en_hash = "8cc528ffe1d117b3"
 zh_name = "附加审核策略"
-zh = "插入到自动审核模板 `{{ extra_policy }}` 位置的附加策略文本，与基础策略一起生效；管理员 requirements 中的同类设置优先。"
+zh = "插入到自动审核模板 `{{ extra_policy }}` 位置的附加策略文本，与基础策略一起生效；管理员 requirements 中的同类设置优先。0.169.0-alpha.10 起已从 `config.toml` 移除并被忽略，需强制附加规则时改在托管的 `requirements.toml` 中设置 `guardian_extra_policy`。"
 zh_basis = "8cc528ffe1d117b3"
 
 ["config:auto_review.policy"]

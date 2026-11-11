@@ -1,7 +1,7 @@
 {
   "index_format": 1,
   "catalog_format": 1,
-  "serial": 20,
+  "serial": 21,
   "generated": "2026-11-11",
   "repo": "openai/codex",
   "latest": "0.167.1",
@@ -384,8 +384,8 @@
     },
     {
       "path": "overlay/config-approvals.toml",
-      "sha256": "312f7f5581532fd2adb9fcdcffc2897ff6e20763e52c66669f38ed7820954e77",
-      "size": 22033
+      "sha256": "c93070abab7410f3032e3c45461005987ab643a5198dd6aa0d589a2cbf016459",
+      "size": 22259
     },
     {
       "path": "overlay/config-apps.toml",
@@ -404,8 +404,8 @@
     },
     {
       "path": "overlay/config-interface.toml",
-      "sha256": "fa92eb3be023c2a96f3e407ff284138ba4adfb00d17c80928a47856c9c5c2805",
-      "size": 112434
+      "sha256": "ae3cd33740dc7f757e69aa5f49ff46c3428516f19faf772d3d57d10cc1dac11c",
+      "size": 114210
     },
     {
       "path": "overlay/config-mcp.toml",
@@ -424,8 +424,8 @@
     },
     {
       "path": "overlay/config-provider.toml",
-      "sha256": "834986e08778bc4d9925aa8ed2f72dc799738bf6795f10fc5771d2b0e357a0f3",
-      "size": 37509
+      "sha256": "feaee880242ec1aa432986ecce0d853d251e0528049dcebd87772efc5c2dd435",
+      "size": 39002
     },
     {
       "path": "overlay/config-realtime.toml",
@@ -449,8 +449,8 @@
     },
     {
       "path": "overlay/features.toml",
-      "sha256": "8ce5044a103d03c4fc58027d2f30ad6c1e137c74dd34eb503a7dfbb5e3323064",
-      "size": 69135
+      "sha256": "f2af9b1c4479a6782a7c4f788564fd1ac3ec60c273c7587f67187044c51a1bda",
+      "size": 71205
     }
   ]
 }
