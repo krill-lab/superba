@@ -97,11 +97,59 @@ pub async fn run(cli: &Cli, rt: &Runtime, out: &mut Output) -> u8 {
         cli.verbose,
         resolve_locale(cli.locale.as_deref(), rt.env.as_ref()),
     );
+    if runs_pat_migration(&cli.command) {
+        run_pat_migration(rt, out).await;
+    }
     match commands::dispatch(&cli.command, rt, out).await {
         Ok(code) => code,
         Err(failure) => {
             out.report_error(&failure.error);
             failure.code
+        }
+    }
+}
+
+/// One-off alpha.16 PAT→API-key migration (user bug 139; remove with
+/// `superba-switch`'s `pat_migration`): every command that may write runs it
+/// first (once, shared with the window). Hooks and events called by Codex or
+/// the router, self-update, data relocation, restores, hand-offs, the
+/// uninstall and every `--dry-run` (which writes nothing) do not.
+fn runs_pat_migration(command: &Command) -> bool {
+    // `--dry-run` lives on many nested argument structs; their derived `Debug`
+    // names it the same everywhere (a one-off check, removed with the migration).
+    !format!("{command:?}").contains("dry_run: true")
+        && !matches!(
+            command,
+            Command::Notify { .. }
+                | Command::SelfUpdate { .. }
+                | Command::Data { .. }
+                | Command::Restore(_)
+                | Command::Uninstall { .. }
+                | Command::HandOff(_)
+        )
+}
+
+/// One-off alpha.16 PAT→API-key migration (user bug 139): its notices go to
+/// stderr (one line each); a failure is one warning line and never stops the
+/// command (the migration retries once at the next call).
+async fn run_pat_migration(rt: &Runtime, out: &mut Output) {
+    match rt.service.pat_migration().await {
+        Ok(notes) if notes.is_empty() => {}
+        Ok(notes) => {
+            for n in &notes {
+                let line = text::text("cli.format.notice")
+                    .arg("severity", out.severity(n.severity))
+                    .arg_text("text", n.text.clone());
+                let _ = out.stderr_line(&line);
+            }
+            if let Err(e) = rt.service.pat_migration_delivered().await {
+                tracing::warn!(error = %e, "PAT migration: the notice stays owed");
+            }
+        }
+        Err(e) => {
+            let _ = out.stderr_line(
+                &text::text("cli.pat_migration.failed").arg_text("reason", e.to_text()),
+            );
         }
     }
 }

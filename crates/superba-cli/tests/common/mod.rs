@@ -152,6 +152,16 @@ pub struct FakeService {
     pub self_update: Mutex<FakeSelfUpdate>,
     /// `spb claude`: the page state (`None`: not implemented).
     pub claude: Mutex<Option<superba_core::ClaudeView>>,
+    /// One-off alpha.16 PAT→API-key migration (user bug 139).
+    pub pat_migration: Mutex<FakePatMigration>,
+}
+
+/// What `pat_migration` answers and how often it and its settle ran.
+#[derive(Default)]
+pub struct FakePatMigration {
+    pub answer: Option<Result<Vec<superba_core::Notice>>>,
+    pub runs: usize,
+    pub delivered: usize,
 }
 
 impl FakeService {
@@ -229,6 +239,7 @@ impl FakeService {
             )),
             findings: Mutex::new(Vec::new()),
             v2: Mutex::new(fake_v2()),
+            pat_migration: Mutex::new(FakePatMigration::default()),
             claude: Mutex::new(None),
             self_update: Mutex::new(FakeSelfUpdate::default()),
             v3: Mutex::new(v3::fake_v3()),
@@ -947,6 +958,17 @@ impl SwitchService for FakeService {
         self.record("open_app")?;
         Ok(app_session())
     }
+    async fn pat_migration(&self) -> Result<Vec<superba_core::Notice>> {
+        let mut m = self.pat_migration.lock().unwrap();
+        m.runs += 1;
+        m.answer.clone().unwrap_or(Ok(Vec::new()))
+    }
+
+    async fn pat_migration_delivered(&self) -> Result<()> {
+        self.pat_migration.lock().unwrap().delivered += 1;
+        Ok(())
+    }
+
     async fn recover(&self) -> Result<RecoveryReport> {
         self.record("recover")?;
         Ok(self.recovery.lock().unwrap().clone())

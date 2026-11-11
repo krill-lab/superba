@@ -1838,6 +1838,21 @@ pub trait SwitchService: Send + Sync {
         Ok(())
     }
 
+    /// One-off alpha.16 PAT→API-key migration (user bug 139; remove with
+    /// `superba-switch`'s `pat_migration`): `spb`'s call before a command
+    /// that may write. The window runs the same migration through
+    /// [`Self::analytics_reapply`]; they share one exactly-once state. Notices
+    /// for the user (stay owed until [`Self::pat_migration_delivered`]); an
+    /// error leaves the migration for the next call.
+    async fn pat_migration(&self) -> Result<Vec<crate::Notice>> {
+        Ok(Vec::new())
+    }
+
+    /// The notices of [`Self::pat_migration`] were shown.
+    async fn pat_migration_delivered(&self) -> Result<()> {
+        Ok(())
+    }
+
     /// Compute a plan; never writes.
     async fn plan(&self, request: SwitchRequest) -> Result<SwitchPlan>;
 
