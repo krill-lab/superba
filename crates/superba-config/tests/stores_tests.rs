@@ -62,7 +62,6 @@ fn user_set() -> ProfileSet {
             model: Some("test-model".into()),
             reasoning_effort: Some("high".into()),
         },
-        auth: superba_core::AuthChoice::from_mode(AuthMode::ApiKey),
         backup_lines: Vec::new(),
         disabled_lines: Default::default(),
         codex_settings: Default::default(),
@@ -113,6 +112,7 @@ fn user_set() -> ProfileSet {
         notify: Default::default(),
         analytics_preset_dropped: true,
         analytics_reapply: None,
+        pat_migration: None,
     };
     set
 }

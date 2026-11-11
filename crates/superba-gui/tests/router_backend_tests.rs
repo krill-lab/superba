@@ -9,7 +9,7 @@ mod support;
 use std::collections::BTreeMap;
 
 use pretty_assertions::assert_eq;
-use superba_core::settings::{AuthChoice, CodexSettings};
+use superba_core::settings::CodexSettings;
 use superba_core::{
     AuthMode, KeyRef, LineId, ModelDefaults, Profile, ProfileId, ProfileSet, RouterLineHealth,
     RouterLineView, RouterMemberView, RouterView, Site, SiteId, catalog,
@@ -38,7 +38,6 @@ fn profile(id: &str, site: &str) -> Profile {
         backup_lines: Vec::new(),
         disabled_lines: Default::default(),
         auth_mode: AuthMode::ApiKey,
-        auth: AuthChoice::Auto,
         key_ref: Some(KeyRef::Keyring {
             service: "superba-test".into(),
             account: id.into(),

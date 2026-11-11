@@ -26,8 +26,8 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use superba_core::{
-    AppliedModel, AppliedModels, AuthChoice, AuthMode, BuiltinProfile, CatalogFileStatus,
-    CodexVersion, ConfigState, Error, LocalizedText, MIN_CONTEXT_WINDOW, ModelDefaults, ModelList,
+    AppliedModel, AppliedModels, AuthMode, BuiltinProfile, CatalogFileStatus, CodexVersion,
+    ConfigState, Error, LocalizedText, MIN_CONTEXT_WINDOW, ModelDefaults, ModelList,
     ModelListRequest, ModelListSource, ModelOverride, ModelPicker, ModelSpec, ModelVisibility,
     ModelsEdit, ModelsEditReport, ModelsView, ModelsViewRequest, Notice, Profile, ProfileId,
     ProfileSet, ReasoningLevel, Result, ServiceTierSpec, Site, SiteKind, SpeedEffect, SpeedSupport,
@@ -119,13 +119,9 @@ pub fn profile_speed(profile: &Profile) -> SpeedTier {
 }
 
 /// Whether the tier-suffix model names apply: the site maps them, the tier is
-/// not Standard and the desktop app runs in API-key mode (with PAT the app's own
-/// speed menu works).
+/// not Standard and the desktop app runs with a key.
 pub fn suffix_applies(site: &Site, auth: AuthMode, speed: SpeedTier) -> bool {
-    site.capabilities.tier_model_suffix
-        && speed != SpeedTier::Standard
-        && !auth.needs_authapi_env()
-        && auth.uses_key()
+    site.capabilities.tier_model_suffix && speed != SpeedTier::Standard && auth.uses_key()
 }
 
 /// Reasons a key-based profile needs a catalog file in `auth` mode (empty =
@@ -142,7 +138,7 @@ pub fn catalog_reasons(profile: &Profile, site: &Site, auth: AuthMode) -> Vec<Ca
         out.push(CatalogReason::ProviderPicker);
     }
     let speed = profile_speed(profile);
-    if speed == SpeedTier::Ultrafast && !auth.needs_authapi_env() {
+    if speed == SpeedTier::Ultrafast {
         out.push(CatalogReason::Ultrafast);
     }
     if suffix_applies(site, auth, speed) {
@@ -192,17 +188,16 @@ fn offers(list: &ModelList, model: Option<&str>, tier: SpeedTier) -> bool {
     }
 }
 
-/// Where the profile's speed tier applies (pure): `pat` = the app uses a
-/// personal access token, `official` = the official login.
+/// Where the profile's speed tier applies (pure): `official` = the official
+/// login.
 pub fn speed_support(
     speed: SpeedTier,
     list: &ModelList,
     model: Option<&str>,
     official: bool,
-    pat: bool,
     tier_suffix: bool,
 ) -> SpeedSupport {
-    speed_support_with(speed, list, None, model, official, pat, tier_suffix)
+    speed_support_with(speed, list, None, model, official, tier_suffix)
 }
 
 /// [`speed_support`] when Codex filters the tier with another list than the
@@ -218,7 +213,6 @@ pub fn speed_support_with(
     cli_list: Option<&ModelList>,
     model: Option<&str>,
     official: bool,
-    pat: bool,
     tier_suffix: bool,
 ) -> SpeedSupport {
     let mut offered = list.offered_tiers();
@@ -247,9 +241,7 @@ pub fn speed_support_with(
     } else {
         SpeedEffect::NotOffered
     };
-    let app = if pat {
-        SpeedEffect::AppMenu
-    } else if speed == SpeedTier::Standard {
+    let app = if speed == SpeedTier::Standard {
         SpeedEffect::Applies
     } else if !offered_here {
         SpeedEffect::NotOffered
@@ -281,21 +273,12 @@ pub fn tier_effects<'a>(
     cli_list: impl Fn(SpeedTier) -> Option<&'a ModelList>,
     model: Option<&str>,
     official: bool,
-    pat: bool,
     tier_suffix: bool,
 ) -> Vec<TierEffect> {
     SpeedTier::ALL
         .into_iter()
         .map(|tier| {
-            let s = speed_support_with(
-                tier,
-                list,
-                cli_list(tier),
-                model,
-                official,
-                pat,
-                tier_suffix,
-            );
+            let s = speed_support_with(tier, list, cli_list(tier), model, official, tier_suffix);
             TierEffect {
                 tier,
                 cli: s.cli,
@@ -1111,16 +1094,11 @@ impl Switcher {
     }
 
     /// The auth mode the app would most likely use for `profile` (display only:
-    /// the applied mode when it is applied, else the profile's choice; router
-    /// mode uses a local PAT).
-    fn likely_auth(
-        profile: &Profile,
-        site: &Site,
-        state: Option<&ConfigState>,
-        routed: bool,
-    ) -> AuthMode {
+    /// the applied mode when it is applied, else the profile's; router mode
+    /// uses a local API key).
+    fn likely_auth(profile: &Profile, state: Option<&ConfigState>, routed: bool) -> AuthMode {
         if routed {
-            return AuthMode::Pat;
+            return AuthMode::ApiKey;
         }
         if let Some(a) = state.and_then(|s| s.active.as_ref())
             && a.profile_id.as_ref() == Some(&profile.id)
@@ -1128,12 +1106,7 @@ impl Switcher {
         {
             return m;
         }
-        match profile.auth_choice() {
-            AuthChoice::ApiKey => AuthMode::ApiKey,
-            AuthChoice::Pat => AuthMode::Pat,
-            _ if site.supports(AuthMode::Pat) => AuthMode::Pat,
-            _ => AuthMode::ApiKey,
-        }
+        profile.auth_mode
     }
 
     pub(crate) async fn models_view_impl(&self, req: ModelsViewRequest) -> Result<ModelsView> {
@@ -1184,7 +1157,6 @@ impl Switcher {
                 &list,
                 profile.model.model.as_deref(),
                 true,
-                false,
                 false,
             );
             return Ok(ModelsView {
@@ -1243,8 +1215,7 @@ impl Switcher {
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .insert(profile.id.clone(), list.clone());
-        let auth = Self::likely_auth(profile, &site, state.as_ref(), routed);
-        let pat = auth.needs_authapi_env();
+        let auth = Self::likely_auth(profile, state.as_ref(), routed);
         let model = profile
             .model
             .model
@@ -1259,8 +1230,7 @@ impl Switcher {
             p.model.speed = Some(tier);
             !catalog_reasons(&p, &site, auth).is_empty()
         };
-        let bundled = if !pat
-            && !matches!(list.source, ModelListSource::Bundled { .. })
+        let bundled = if !matches!(list.source, ModelListSource::Bundled { .. })
             && (reasons.is_empty() || SpeedTier::ALL.into_iter().any(|t| !needs_catalog(t)))
         {
             self.bundled_list(app_binary.as_deref()).await
@@ -1273,7 +1243,6 @@ impl Switcher {
             bundled.as_ref().filter(|_| reasons.is_empty()),
             model.as_deref(),
             false,
-            pat,
             site.capabilities.tier_model_suffix,
         );
         speed.tiers = tier_effects(
@@ -1281,7 +1250,6 @@ impl Switcher {
             |tier| bundled.as_ref().filter(|_| !needs_catalog(tier)),
             model.as_deref(),
             false,
-            pat,
             site.capabilities.tier_model_suffix,
         );
         let record = current_record(&d.ctx.data_dir, home.root())
@@ -1440,7 +1408,7 @@ impl Switcher {
             }
             p.model_picker = picker;
         }
-        let auth = Self::likely_auth(&p, &site, state.as_ref(), set.settings.router.enabled);
+        let auth = Self::likely_auth(&p, state.as_ref(), set.settings.router.enabled);
         // The bounds the Models page and `spb models` check (user bug 7): every
         // override this edit stores, and with new all-models values every
         // override that reaches Codex, against the window the model ends up with.

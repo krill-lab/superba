@@ -12,7 +12,7 @@ use crate::i18n::LocalizedText;
 use crate::ids::{LineId, ProfileId, SiteId};
 use crate::origin::{CodexPath, Origin};
 use crate::profile::{BuiltinProfile, ModelDefaults, Profile};
-use crate::settings::{AuthChoice, CodexSettings};
+use crate::settings::CodexSettings;
 use crate::site::{Line, LineSource, Site, SiteCapabilities, SiteEndpoints, SiteKind};
 
 /// Site id of Krill.
@@ -144,7 +144,7 @@ pub fn krill_site() -> Site {
             ),
         ],
         capabilities: SiteCapabilities {
-            auth_modes: vec![AuthMode::Pat, AuthMode::ApiKey],
+            auth_modes: vec![AuthMode::ApiKey],
             codex_paths: vec![CodexPath::BackendApiCodex, CodexPath::CodexV1],
             latency_probe: true,
             key_check: true,
@@ -217,7 +217,6 @@ pub fn builtin_profiles() -> Vec<Profile> {
             backup_lines: Vec::new(),
             disabled_lines: Default::default(),
             auth_mode: AuthMode::OfficialChatGpt,
-            auth: AuthChoice::Auto,
             key_ref: None,
             base_url_override: None,
             model: ModelDefaults::default(),
@@ -237,7 +236,6 @@ pub fn builtin_profiles() -> Vec<Profile> {
             backup_lines: Vec::new(),
             disabled_lines: Default::default(),
             auth_mode: AuthMode::OfficialChatGpt,
-            auth: AuthChoice::Auto,
             key_ref: None,
             base_url_override: None,
             model: ModelDefaults::default(),

@@ -86,9 +86,9 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use superba_core::{
-    AccountSummary, AuthApiHealth, AuthMode, Clock, KeyCheck, Line, LineCaps, LineProber,
-    ModelInfo, ModelList, ModelListRequest, Origin, ResolvedEndpoints, ResponsesProbe, Result,
-    Secret, Site, SystemClock, TransportProbe, UsageQuery, UsageReport,
+    AccountSummary, AuthMode, Clock, KeyCheck, Line, LineCaps, LineProber, ModelInfo, ModelList,
+    ModelListRequest, ResolvedEndpoints, ResponsesProbe, Result, Secret, Site, SystemClock,
+    TransportProbe, UsageQuery, UsageReport,
 };
 use url::Url;
 
@@ -134,9 +134,6 @@ pub struct ProbeConfig {
     pub probe_compact: bool,
     /// Largest model catalog accepted by `list_models`, in bytes.
     pub max_catalog_bytes: usize,
-    /// Report PAT as unavailable on plain-http lines (Codex refuses a plain-http
-    /// `chatgpt_base_url`). Only mock-server tests turn this off.
-    pub pat_requires_https: bool,
 }
 
 impl Default for ProbeConfig {
@@ -153,7 +150,6 @@ impl Default for ProbeConfig {
             use_system_proxy: true,
             probe_compact: true,
             max_catalog_bytes: 8 * 1024 * 1024,
-            pat_requires_https: true,
         }
     }
 }
@@ -238,15 +234,6 @@ impl LineProber for HttpLineProber {
         key: &Secret,
     ) -> Result<KeyCheck> {
         self.check_key_impl(site, line, mode, key).await
-    }
-
-    async fn check_authapi(
-        &self,
-        site: &Site,
-        origin: &Origin,
-        key: &Secret,
-    ) -> Result<AuthApiHealth> {
-        self.check_authapi_impl(site, origin, key).await
     }
 
     async fn list_models_for_site(

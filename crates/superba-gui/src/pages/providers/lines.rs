@@ -46,7 +46,7 @@ use crate::pages::shared::{
     LineToggle, applied_line, disable_and_switch, last_enabled, ordered_lines, reorder_action,
     route_text, switch_action, toggle_action,
 };
-use crate::pages::{Action, Cx, divider, elided, error_text, note, pat_status};
+use crate::pages::{Action, Cx, divider, elided, error_text, line_status, note};
 use crate::runtime::ReadTask;
 
 /// Height of a line row on one line (wide) and on two (narrow).
@@ -600,18 +600,13 @@ fn slot_ui(ui: &mut Ui, cx: &Cx<'_>, width: f32, slot: &Slot) -> bool {
     .inner
 }
 
-/// Per-line notices (edge interception, PAT unavailable), one line each.
+/// Per-line notices (edge interception, no Codex path), one line each.
 fn notices(ui: &mut Ui, cx: &Cx<'_>, p: &Provider, lines: &[superba_core::Line]) {
     let site = &p.site;
-    let primary = lines.first().map(|l| l.id.clone());
     for caps in lines
         .iter()
         .filter_map(|l| cx.data.site_caps(&site.id, &l.id))
         .filter(|c| c.detail.as_ref().is_some_and(|d| d.key != "probe.ok"))
-        .filter(|c| {
-            Some(&c.line_id) != primary.as_ref()
-                || !c.detail.as_ref().is_some_and(|d| is_pat_detail(&d.key))
-        })
     {
         let name = site
             .line(&caps.line_id)
@@ -623,7 +618,7 @@ fn notices(ui: &mut Ui, cx: &Cx<'_>, p: &Provider, lines: &[superba_core::Line])
             .map(|d| cx.localize(d))
             .unwrap_or_default();
         ui.horizontal(|ui| {
-            ui.add(StatusDot::new(pat_status(caps)));
+            ui.add(StatusDot::new(line_status(caps)));
             let text = cx.tr.f(
                 "providers.lines.note",
                 &[("line", &name), ("detail", &detail)],
@@ -632,14 +627,6 @@ fn notices(ui: &mut Ui, cx: &Cx<'_>, p: &Provider, lines: &[superba_core::Line])
                 .on_hover_text(text);
         });
     }
-}
-
-/// Probe details that only say why PAT is unavailable on a line.
-fn is_pat_detail(key: &str) -> bool {
-    matches!(
-        key,
-        "probe.pat_edge_blocked" | "probe.pat_unavailable" | "probe.pat_needs_https"
-    )
 }
 
 /// The switch that enables or disables `line` (on = enabled); named per line

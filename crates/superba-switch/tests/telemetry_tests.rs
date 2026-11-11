@@ -144,7 +144,7 @@ impl Rig {
 }
 
 #[tokio::test]
-async fn a_pat_switch_leaves_openai_telemetry_on_by_default() {
+async fn a_key_switch_leaves_openai_telemetry_on_by_default() {
     let rig = Rig::new(ORIGINAL);
     assert!(
         !CodexSettings::krill_recommended().openai_telemetry_off(),
@@ -152,7 +152,7 @@ async fn a_pat_switch_leaves_openai_telemetry_on_by_default() {
     );
     rig.apply("work").await;
     let config = rig.config();
-    assert!(config.contains("chatgpt_base_url"), "{config}");
+    assert!(config.contains("openai_base_url"), "{config}");
     assert!(config.contains("[features]"), "{config}");
     assert!(!config.contains("analytics"), "{config}");
     rig.apply("original").await;
@@ -176,7 +176,7 @@ async fn the_toggle_writes_analytics_off_and_turning_it_off_removes_it_at_the_ne
     assert_eq!(rig.analytics(), None, "{after}");
     assert!(!after.contains("analytics"), "{after}");
     for kept in [
-        "chatgpt_base_url",
+        "openai_base_url",
         "[features]",
         "fast_mode = true",
         "web_search",

@@ -15,7 +15,7 @@ use crate::i18n::Locale;
 use crate::ids::{LineId, ProfileId, SiteId, TargetId};
 use crate::models::{ModelOverride, ModelPicker, SpeedTier};
 use crate::secret::KeyRef;
-use crate::settings::{AuthChoice, CodexSettings};
+use crate::settings::CodexSettings;
 use crate::site::Site;
 use crate::time::Timestamp;
 use crate::versions::AppCodexPin;
@@ -52,13 +52,10 @@ pub struct Profile {
     /// lines stays enabled ([`Profile::set_line_disabled`]).
     #[serde(default, skip_serializing_if = "std::collections::BTreeSet::is_empty")]
     pub disabled_lines: std::collections::BTreeSet<LineId>,
-    /// Auth mode. For key-based profiles it mirrors [`Profile::auth`]
-    /// ([`AuthChoice::representative_mode`]); built-in profiles use
-    /// [`AuthMode::OfficialChatGpt`].
+    /// Auth mode: [`AuthMode::ApiKey`] for key-based profiles (profiles saved
+    /// with the former PAT mode read as an API key; their former `auth` choice
+    /// is ignored); built-in profiles use [`AuthMode::OfficialChatGpt`].
     pub auth_mode: AuthMode,
-    /// Auth choice of a key-based profile: `Auto` (default) or a manual mode.
-    #[serde(default)]
-    pub auth: AuthChoice,
     /// Where the key is stored; required when `auth_mode.uses_key()`.
     #[serde(default)]
     pub key_ref: Option<KeyRef>,
@@ -207,21 +204,6 @@ impl Profile {
         self.set_line_priority(order);
         Ok(())
     }
-
-    /// Set the auth choice and mirror it into the `auth_mode` field (key-based
-    /// profiles only; built-in profiles are left alone). Writers should use this
-    /// instead of assigning [`Profile::auth`] directly.
-    pub fn set_auth(&mut self, choice: AuthChoice) {
-        self.auth = choice;
-        if self.builtin.is_none() && self.auth_mode.uses_key() {
-            self.auth_mode = choice.representative_mode();
-        }
-    }
-
-    /// The auth choice of the profile.
-    pub fn auth_choice(&self) -> AuthChoice {
-        self.auth
-    }
 }
 
 /// Built-in profile kinds.
@@ -310,10 +292,8 @@ pub struct Settings {
     pub countdown_secs: u8,
     /// Safe mode: never launch the app with a CDP port (no hot switching).
     pub safe_mode: bool,
-    /// Default auth mode for new Krill profiles. New profiles take
-    /// [`AuthChoice::from_mode`] of it, so the default `Pat` gives `Auto`
-    /// (decision 3: auth is Auto unless changed under Advanced); UIs should not
-    /// offer it as a separate preference any more.
+    /// Default auth mode for new Krill profiles: always [`AuthMode::ApiKey`]
+    /// (a saved `"pat"` reads as one); UIs do not offer it.
     pub default_auth_mode: AuthMode,
     /// UI language; `None` follows the system.
     pub locale: Option<Locale>,
@@ -387,6 +367,32 @@ pub struct Settings {
     /// other writers keep the stored value. Remove after alpha.14+N.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub analytics_reapply: Option<AnalyticsReapply>,
+    /// One-off alpha.16 PAT→API-key migration (user bug 139; remove with
+    /// `superba-switch`'s `pat_migration` module): `None` until the window's
+    /// first start checked whether the applied provider still runs on a
+    /// personal access token. Used and settled by the switch service only;
+    /// other writers keep the stored value.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pat_migration: Option<PatMigration>,
+}
+
+/// State of the one-off alpha.16 PAT→API-key migration
+/// ([`Settings::pat_migration`]). Remove with it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PatMigration {
+    /// Nothing more to do, ever.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub settled: bool,
+    /// The re-apply failed once already: the next failure gives up.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub failed_once: bool,
+    /// The outcome's notice, not yet shown: shown again at the next start
+    /// until the window confirms it was shown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub undelivered: Option<crate::Notice>,
+    /// Settled once [`Self::undelivered`] was shown.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub finished: bool,
 }
 
 /// The re-apply owed after the user bug 137 migration
@@ -434,7 +440,7 @@ impl Default for Settings {
         Self {
             countdown_secs: 5,
             safe_mode: false,
-            default_auth_mode: AuthMode::Pat,
+            default_auth_mode: AuthMode::ApiKey,
             locale: None,
             theme: Theme::System,
             background: Background::Neutral,
@@ -455,6 +461,7 @@ impl Default for Settings {
             notify: crate::NotifySettings::default(),
             analytics_preset_dropped: true,
             analytics_reapply: None,
+            pat_migration: None,
         }
     }
 }

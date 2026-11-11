@@ -49,7 +49,7 @@ pub(super) fn build(
         SwitchIntent::Profile {
             profile_id,
             line_id: answers.line.as_deref().map(LineId::new),
-            auth_mode: answers.auth.map(Into::into),
+            auth_mode: None,
         },
         exec,
     );

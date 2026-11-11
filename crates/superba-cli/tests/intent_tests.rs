@@ -190,8 +190,6 @@ async fn remote_apply_uses_only_remotes_and_profile_resolution() {
                 "ssh:b",
                 "--line",
                 "cdn",
-                "--auth",
-                "apikey",
                 "--dry-run"
             ]
         )
@@ -212,7 +210,7 @@ async fn remote_apply_uses_only_remotes_and_profile_resolution() {
         SwitchIntent::Profile {
             profile_id: ProfileId::new("work"),
             line_id: Some(LineId::new("cdn")),
-            auth_mode: Some(AuthMode::ApiKey)
+            auth_mode: None
         }
     );
     assert_eq!(

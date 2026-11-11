@@ -75,7 +75,7 @@ async fn cc_switch_is_drift_of_the_routing_keys_and_a_removed_credential() {
     // cc-switch leaves chatgpt_base_url alone: still Superba's, no drift.
     assert!(!paths.contains(&k::CHATGPT_BASE_URL), "{paths:?}");
     let a = st.auth_drift.expect("the credential was removed");
-    assert!(matches!(a.written, AuthShape::Pat { .. }));
+    assert!(matches!(a.written, AuthShape::ApiKey { .. }));
     assert_eq!(a.live, AuthShape::Missing);
 
     // A switch does not write over it without an answer (also not when only

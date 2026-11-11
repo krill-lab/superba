@@ -27,7 +27,7 @@ fn hot_plan() -> SwitchPlan {
             profile_id: Some("krill".into()),
             site_id: Some("krill".into()),
             line_id: Some("cdn".into()),
-            auth_mode: Some(AuthMode::Pat),
+            auth_mode: Some(AuthMode::ApiKey),
             label: LocalizedText::new("test.destination", "Krill CDN"),
         },
         primary: RestartKind::AppServerHot {

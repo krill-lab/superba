@@ -22,7 +22,7 @@ fn key_change<'a>(plan: &'a superba_core::ApplyPlan, path: &str) -> &'a superba_
 }
 
 #[tokio::test]
-async fn legacy_takeover_pat_apikey_and_byte_exact_original_restore() {
+async fn legacy_takeover_two_keys_and_byte_exact_original_restore() {
     let env = Env::new();
     env.write_config(LEGACY_CONFIG);
     let e = &env.engine;
@@ -41,10 +41,10 @@ async fn legacy_takeover_pat_apikey_and_byte_exact_original_restore() {
         .unwrap();
     assert_eq!(b, b2);
 
-    // --- PAT on the overseas line.
+    // --- The Krill key on the overseas line.
     let plan = e.plan(&env.home, &pat(OVERSEAS)).await.unwrap();
     assert_eq!(plan.generation, 1);
-    assert_eq!(plan.auth_mode, Some(AuthMode::Pat));
+    assert_eq!(plan.auth_mode, Some(AuthMode::ApiKey));
     let c = key_change(&plan, k::MODEL_PROVIDER);
     assert_eq!(c.before.as_deref(), Some("\"krill\""));
     assert_eq!(c.after.as_deref(), Some("\"openai\""));
@@ -52,9 +52,10 @@ async fn legacy_takeover_pat_apikey_and_byte_exact_original_restore() {
         key_change(&plan, k::OPENAI_BASE_URL).after.as_deref(),
         Some("\"https://api.kbsfdxc.net/backend-api/codex\"")
     );
-    assert_eq!(
-        key_change(&plan, k::CHATGPT_BASE_URL).after.as_deref(),
-        Some("\"https://api.kbsfdxc.net/backend-api/\"")
+    assert!(
+        plan.key_changes
+            .iter()
+            .all(|c| c.path != k::CHATGPT_BASE_URL)
     );
     assert_eq!(
         key_change(&plan, "features.context_management")
@@ -65,7 +66,7 @@ async fn legacy_takeover_pat_apikey_and_byte_exact_original_restore() {
     assert!(plan.key_changes.iter().all(|c| c.path != k::MODEL));
     let ac = plan.auth_change.clone().unwrap();
     assert_eq!(ac.before, AuthShape::Missing);
-    assert!(matches!(ac.after, AuthShape::Pat { .. }));
+    assert!(matches!(ac.after, AuthShape::ApiKey { .. }));
     assert!(!ac.stash_login);
     // Planning never writes.
     assert_eq!(env.config(), LEGACY_CONFIG);
@@ -79,7 +80,7 @@ async fn legacy_takeover_pat_apikey_and_byte_exact_original_restore() {
     let cfg = env.config();
     assert!(cfg.contains("model_provider = \"openai\""));
     assert!(cfg.contains("openai_base_url = \"https://api.kbsfdxc.net/backend-api/codex\""));
-    assert!(cfg.contains("chatgpt_base_url = \"https://api.kbsfdxc.net/backend-api/\""));
+    assert!(!cfg.contains("chatgpt_base_url"), "{cfg}");
     // OpenAI telemetry stays on unless the user switches it off (user bug 137).
     assert!(
         plan.key_changes
@@ -101,30 +102,31 @@ async fn legacy_takeover_pat_apikey_and_byte_exact_original_restore() {
     }
     assert!(!cfg.contains("[model_providers.openai]"));
     let auth = env.auth_json();
-    assert_eq!(auth["personal_access_token"], PAT_KEY);
+    assert_eq!(auth["auth_mode"], "apikey");
     assert_eq!(auth["OPENAI_API_KEY"], PAT_KEY);
+    assert!(auth.get("personal_access_token").is_none());
     #[cfg(unix)]
     assert_eq!(mode_of(&env.auth_path()), 0o600);
 
     let st = e.read_state(&env.home).await.unwrap();
     assert_eq!(st.model_provider.as_deref(), Some("openai"));
     assert_eq!(st.active.as_ref().unwrap().generation, 1);
-    assert_eq!(st.active.as_ref().unwrap().auth_mode, Some(AuthMode::Pat));
+    assert_eq!(
+        st.active.as_ref().unwrap().auth_mode,
+        Some(AuthMode::ApiKey)
+    );
     assert!(st.drift.is_empty());
     assert!(!st.journal_pending);
-    assert!(matches!(st.auth, AuthShape::Pat { ref key_last4 } if key_last4 == "0001"));
+    assert!(matches!(st.auth, AuthShape::ApiKey { ref key_last4 } if key_last4 == "0001"));
 
     let creds = e.active_credentials(&env.home).await.unwrap().unwrap();
-    assert_eq!(creds.auth_mode, AuthMode::Pat);
+    assert_eq!(creds.auth_mode, AuthMode::ApiKey);
     assert_eq!(creds.key.expose(), PAT_KEY);
-    assert_eq!(
-        creds.chatgpt_base_url.unwrap().as_str(),
-        "https://api.kbsfdxc.net/backend-api/"
-    );
+    assert_eq!(creds.chatgpt_base_url, None);
 
-    // --- API key on the CDN line (/codex/v1): PAT-only keys go back to baseline.
+    // --- Another key on the CDN line (/codex/v1) without Krill's settings:
+    // they go back to the baseline.
     let plan = e.plan(&env.home, &apikey(CDN)).await.unwrap();
-    assert_eq!(key_change(&plan, k::CHATGPT_BASE_URL).after, None);
     assert_eq!(key_change(&plan, "features.fast_mode").after, None);
     e.apply(&plan).await.unwrap();
     let cfg = env.config();
@@ -435,10 +437,7 @@ async fn drift_is_a_conflict_until_resolved() {
         env.config()
             .contains("https://my-proxy.example/backend-api/codex")
     );
-    assert!(
-        env.config()
-            .contains("chatgpt_base_url = \"https://api.kbsfdxc.com/backend-api/\"")
-    );
+    assert!(!env.config().contains("chatgpt_base_url"));
     // Kept means released: no drift is reported for it any more.
     assert!(e.read_state(&env.home).await.unwrap().drift.is_empty());
 
@@ -679,7 +678,7 @@ async fn rollback_owned_key_edit_leaves_both_files_unchanged() {
     std::fs::write(env.config_path(), doc.to_bytes()).unwrap();
 
     assert_rollback_conflict_unchanged(&env, &report, "config.toml").await;
-    assert_eq!(env.auth_json()["personal_access_token"], PAT_KEY);
+    assert_eq!(env.auth_json()["OPENAI_API_KEY"], PAT_KEY);
 }
 
 #[tokio::test]

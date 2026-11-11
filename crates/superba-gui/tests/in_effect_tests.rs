@@ -116,7 +116,7 @@ fn view() -> RuntimeView {
             profile_id: Some("work".into()),
             site_id: Some("krill".into()),
             line_id: Some("overseas".into()),
-            auth_mode: Some(AuthMode::Pat),
+            auth_mode: Some(AuthMode::ApiKey),
             generation: 5,
             applied_at: Timestamp(T),
         }),
@@ -318,7 +318,7 @@ fn plan() -> SwitchPlan {
             profile_id: Some("krill".into()),
             site_id: Some("krill".into()),
             line_id: None,
-            auth_mode: Some(AuthMode::Pat),
+            auth_mode: Some(AuthMode::ApiKey),
             label: LocalizedText::new("test.destination", "Krill"),
         },
         primary: RestartKind::AppServerHot {

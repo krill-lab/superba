@@ -146,17 +146,15 @@ impl ConfigEngine for FakeEngine {
                 key,
                 ..
             } => {
-                let json = if auth.needs_authapi_env() {
-                    serde_json::json!({"personal_access_token": key.expose(), "OPENAI_API_KEY": key.expose()})
-                } else {
-                    serde_json::json!({"auth_mode": "apikey", "OPENAI_API_KEY": key.expose()})
-                };
+                let _ = auth;
+                let json =
+                    serde_json::json!({"auth_mode": "apikey", "OPENAI_API_KEY": key.expose()});
                 (
                     Some(serde_json::to_vec_pretty(&json).unwrap_or_default()),
                     [
                         Some("openai".into()),
                         Some(endpoints.openai_base_url.to_string()),
-                        endpoints.chatgpt_base_url.as_ref().map(|u| u.to_string()),
+                        None,
                     ],
                 )
             }
@@ -439,7 +437,7 @@ pub fn token_profile(origin: &str, mode: AuthMode, key: &str) -> ResolvedProfile
         mode: ResolvedMode::Token {
             site_kind: SiteKind::Krill,
             auth: mode,
-            endpoints: ResolvedEndpoints::for_line(&origin, CodexPath::BackendApiCodex, mode)
+            endpoints: ResolvedEndpoints::for_line(&origin, CodexPath::BackendApiCodex)
                 .expect("endpoints"),
             key: Secret::new(key),
         },

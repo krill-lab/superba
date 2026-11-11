@@ -509,19 +509,12 @@ async fn speed_control_offers_only_listed_tiers_and_says_where_the_tier_applies(
     );
 }
 
-/// The speed effects of an API-key profile (the fixture's Krill uses a personal
-/// access token), as the service computes them: per tier, with `suffix` = the
+/// The speed effects of an API-key profile, as the service computes them: per tier, with `suffix` = the
 /// site maps tier model names.
 fn api_key_speed(view: &mut ModelsView, suffix: bool) {
     let model = view.defaults.model.clone();
-    view.speed.tiers = superba_switch::models::tier_effects(
-        &view.list,
-        |_| None,
-        model.as_deref(),
-        false,
-        false,
-        suffix,
-    );
+    view.speed.tiers =
+        superba_switch::models::tier_effects(&view.list, |_| None, model.as_deref(), false, suffix);
     let (cli, app) = view.speed.effect(view.defaults.speed.unwrap_or_default());
     (view.speed.cli, view.speed.app) = (cli.clone(), app.clone());
 }
@@ -616,18 +609,6 @@ async fn speed_tooltips_tell_each_tiers_effect_and_label_the_providers_words() {
     pending.model = Some("gpt-6-sol".into());
     let tip = models_page::speed_tooltip(&tr, &view, &pending, SpeedTier::Fast).unwrap();
     assert!(tip.contains("gpt-6-sol-fast"), "{tip}");
-    // A personal access token: the app's own menu.
-    view.speed.tiers = superba_switch::models::tier_effects(
-        &view.list,
-        |_| None,
-        Some("gpt-6-astra"),
-        false,
-        true,
-        false,
-    );
-    let tip = models_page::speed_tooltip(&tr, &view, &defaults, SpeedTier::Fast).unwrap();
-    assert!(tip.contains("在 app 自己的速度菜单中设置"), "{tip}");
-    assert!(!tip.contains(&caveat), "{tip}");
 }
 
 #[tokio::test]

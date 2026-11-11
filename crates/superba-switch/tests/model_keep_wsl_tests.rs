@@ -198,15 +198,6 @@ async fn pat_applied(default: &str) -> (World, Switcher) {
         .lock()
         .unwrap()
         .insert("127.0.0.1:18431".into(), router_health());
-    {
-        let mut set = w.profiles.set.lock().unwrap();
-        let p = set
-            .profiles
-            .iter_mut()
-            .find(|p| p.id.as_str() == "work")
-            .unwrap();
-        p.set_auth(superba_core::AuthChoice::Auto);
-    }
     *w.prober.model_list.lock().unwrap() = Some(Ok(krill_list(default)));
     let sw = switcher(&w);
     let plan = sw
@@ -214,7 +205,7 @@ async fn pat_applied(default: &str) -> (World, Switcher) {
         .await
         .unwrap();
     assert!(!plan.is_blocked(), "{:?}", plan.primary);
-    assert_eq!(plan.to.auth_mode, Some(AuthMode::Pat));
+    assert_eq!(plan.to.auth_mode, Some(AuthMode::ApiKey));
     assert_eq!(planned_wsl_model(&plan), None);
     assert!(
         wsl_notes(&plan, Locale::En).is_empty(),
@@ -223,10 +214,14 @@ async fn pat_applied(default: &str) -> (World, Switcher) {
     );
     execute(&sw, plan).await;
     assert_eq!(wsl_model(&w), None);
-    assert!(matches!(
-        w.remote.auth.lock().unwrap().clone(),
-        Some(AuthShape::Pat { .. })
-    ));
+    // The distribution holds a personal access token (set up before user bug
+    // 139): the key the switch wrote, in the PAT form.
+    let key_last4 = match w.remote.auth.lock().unwrap().clone() {
+        Some(AuthShape::ApiKey { key_last4 }) => key_last4,
+        other => panic!("{other:?}"),
+    };
+    *w.remote.auth.lock().unwrap() = Some(AuthShape::Pat { key_last4 });
+    make_pat_era(&w.ctx);
     sw.router_install(RouterInstallRequest {
         members: vec![ProfileId::new("work")],
     })
@@ -315,68 +310,12 @@ async fn router_on_keeps_the_model_of_a_following_distribution_and_names_it() {
     assert!(w.prober.model_list_calls.lock().unwrap().is_empty());
     execute(&sw, plan).await;
 
-    // Router off: the PAT's own default is the same model, so the key goes
-    // back to the distribution's (absent) value, nothing named.
+    // Router off: an API key on the line again (user bug 139); the model
+    // the distribution runs stays.
     let plan = sw.plan(router(false)).await.unwrap();
     assert!(!plan.is_blocked(), "{:?}", plan.primary);
     assert!(wsl_base_url(&plan).starts_with(OVERSEAS));
-    assert_eq!(planned_wsl_model(&plan), None);
-    let row = model_row(&sw, &plan, &target())
-        .await
-        .expect("the kept model is released");
-    assert_eq!(row.from.as_deref(), Some("\"gpt-6.1-sol\""));
-    assert_eq!(row.to, None);
-    assert_eq!(row.reason, ChangeReason::Released);
-    assert!(
-        wsl_notes(&plan, Locale::En).is_empty(),
-        "{:?}",
-        plan.warnings
-    );
-    execute(&sw, plan).await;
-    assert_eq!(wsl_model(&w), None);
-    let state =
-        superba_core::RemoteHosts::probe(&*w.remote, &wsl_host("Ubuntu", 1, WslNetworking::Nat))
-            .await
-            .unwrap();
-    assert_eq!(
-        kept_host_model(&w.ctx.data_dir, &target(), &state, None),
-        None
-    );
-    let file = std::fs::read_to_string(
-        w.ctx
-            .data_dir
-            .root()
-            .join(superba_switch::model_keep::KEPT_MODEL_FILE),
-    )
-    .unwrap();
-    assert!(!file.contains("remote-wsl"), "{file}");
-}
-
-#[tokio::test]
-async fn router_off_keeps_the_distribution_model_when_the_pat_default_moved_on() {
-    let (w, sw) = pat_applied("gpt-6.1-sol").await;
-    execute(&sw, sw.plan(router(true)).await.unwrap()).await;
-    assert_eq!(wsl_model(&w).as_deref(), Some("gpt-6.1-sol"));
-
-    *w.prober.model_list.lock().unwrap() = Some(Ok(krill_list("gpt-6.2-sol")));
-    let plan = sw.plan(router(false)).await.unwrap();
-    assert!(!plan.is_blocked(), "{:?}", plan.primary);
     assert_eq!(planned_wsl_model(&plan).as_deref(), Some("gpt-6.1-sol"));
-    assert_eq!(
-        model_row(&sw, &plan, &target()).await,
-        None,
-        "the value stays"
-    );
-    let notes = wsl_notes(&plan, Locale::En);
-    assert_eq!(notes.len(), 1, "{notes:?}");
-    assert_eq!(notes[0].0, "switch.models.keep_pat_default");
-    assert!(
-        notes[0].1.starts_with(
-            "WSL: Ubuntu: Codex keeps gpt-6.1-sol, the model it runs with now; with the personal \
-             access token it would change to gpt-6.2-sol"
-        ),
-        "{notes:?}"
-    );
     execute(&sw, plan).await;
     assert_eq!(wsl_model(&w).as_deref(), Some("gpt-6.1-sol"));
 }
@@ -427,20 +366,16 @@ async fn the_distributions_own_model_is_never_replaced_by_this_computers() {
 }
 
 #[tokio::test]
-async fn a_distribution_that_stays_direct_keeps_nothing() {
-    // The router is not reachable from the distribution: it stays on its PAT
-    // line, so its Codex keeps choosing from the provider's list.
+async fn a_distribution_that_stays_direct_keeps_its_model_on_the_api_key() {
+    // The router is not reachable from the distribution: it stays on its
+    // line, now with the key as an API key (user bug 139), so the model its
+    // personal access token ran is kept.
     let (w, sw) = pat_applied("gpt-6.1-sol").await;
     w.remote.http.lock().unwrap().clear();
     let plan = sw.plan(router(true)).await.unwrap();
     assert!(!plan.is_blocked(), "{:?}", plan.primary);
     assert!(wsl_base_url(&plan).starts_with(OVERSEAS));
-    assert_eq!(planned_wsl_model(&plan), None);
-    assert!(
-        wsl_notes(&plan, Locale::En).is_empty(),
-        "{:?}",
-        plan.warnings
-    );
+    assert_eq!(planned_wsl_model(&plan).as_deref(), Some("gpt-6.1-sol"));
     // This computer is routed and keeps its model.
     assert_eq!(local_keys(&plan), ["switch.models.keep_router"]);
 }
@@ -549,14 +484,6 @@ async fn run_codex_in_wsl_names_the_model_kept_for_its_distribution() {
     execute(&sw, plan).await;
     let config = std::fs::read_to_string(&path).unwrap();
     assert!(config.contains("model = \"gpt-6.1-sol\""), "{config}");
-
-    // Without a model kept, nothing is said about the distribution.
-    let plan = sw.plan(router(false)).await.unwrap();
-    assert!(
-        !local_keys(&plan).contains(&"switch.models.keep_legacy_wsl".to_owned()),
-        "{:?}",
-        plan.warnings
-    );
 }
 
 // ---------------------------------------------------------------------------
@@ -616,15 +543,24 @@ fn a_distribution_is_on_the_site_of_its_line_or_of_the_router() {
 fn the_rule_is_the_same_for_a_distribution() {
     let facts = ScopeFacts {
         same_site: true,
-        auth: Some(AuthMode::Pat),
+        auth: Some(AuthMode::ApiKey),
         dest_auth: AuthMode::ApiKey,
         model: None,
         kept: None,
         dest_sets_model: false,
         left: None,
     };
-    let scope = scope_of(facts).expect("in scope");
-    assert_eq!(scope.kept, None);
+    // The same form on both sides (an API key; a personal access token is
+    // read from the distribution's auth.json, not from these facts): only a
+    // kept model is in scope.
+    assert_eq!(scope_of(facts), None);
+    let scope = scope_of(ScopeFacts {
+        kept: Some("gpt-6.1-sol"),
+        model: Some("gpt-6.1-sol"),
+        ..facts
+    })
+    .expect("in scope");
+    assert_eq!(scope.kept.as_deref(), Some("gpt-6.1-sol"));
     // Another site, a model of its own, a model the profile sets, no auth Superba
     // knows: out of scope.
     assert_eq!(

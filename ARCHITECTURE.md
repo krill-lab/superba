@@ -7,7 +7,7 @@ SSH remote hosts the app is connected to — for the Krill relay
 to the official ChatGPT login. Its core features are hot switching of line and auth
 mode through the desktop app's app-server restart, restore of the original
 configuration, unified profiles (connection plus the Codex settings Superba manages,
-checked against a per-version settings catalog; auth Auto / PAT / API key), and
+checked against a per-version settings catalog; keys are API keys), and
 session provider migration.
 
 Three binaries ship from this workspace, always side by side (section 12):
@@ -158,68 +158,24 @@ its default). `profiles.json` schema 2; schema 1 files are migrated on load (v1 
 -> `AuthChoice::Auto`, API key stays manual, v1 recommended keys of Krill PAT
 profiles become ordinary settings) and the first save keeps `profiles.v1.json`.
 
-- **Auth.** `AuthChoice::decide(AuthContext)` (`superba-core`) picks PAT when the
-  site and line allow it, else an API key, always with an `AuthReason` (line without
-  PAT endpoints, http line, custom base URL, router mode, Codex too old). The
-  planner feeds it the line probe, router mode and `pat_version_ok`
-  (`rules::pat_version_ok` over `rules::local_versioned_consumers`: the app's
-  bundled Codex and the CLI first on the PATH; one known version without PAT makes
-  Automatic use an API key; unknown versions are left to the version gate;
-  remote-only switches ignore local versions). Manual PAT / API key (Advanced)
-  never fall back; a manual PAT on a too-old Codex is blocked by the version gate.
-  The GUI shows the same decision (`pages::connection::decision_with` +
-  `auto_facts`) but sends no mode with a switch. `Profile::auth_choice()` is what
-  planners read; `auth_mode` remains as a mirror.
-- **Settings engine** (`superba_config::settings`, pure): `plan_settings` filters a
-  profile's settings for one Codex home against the catalog snapshot of every Codex
-  reading it (app-bundled Codex + CLI for the local home, the host's Codex for a
-  remote, with that home's `config.toml` and the keys Superba wrote there: the
-  active profile's settings locally, `RemoteState::config_toml` / `owned_paths`
-  for a host), validates values and returns `SettingsPlan { apply, skipped (with
-  SkipReason), support per consumer, migrations on offer, notes }`. Reserved paths
-  (routing, `model`, provider tables, profiles, credentials store) are never
-  settings. Removals are never version-filtered; unknown versions filter nothing.
-  `find_migrations` / `apply_migrations` handle legacy keys (aliases, curated
-  replacements, ignored keys) as profile edits; `preview_changes` turns an apply
-  plan's key changes into `(key, from, to, target, reason)` rows;
-  `cross_check_features` compares `codex features list` (`FeaturesList::parse`)
-  with the catalog, runtime data winning.
-- **Ownership.** `ResolvedProfile::settings` (= `SettingsPlan::apply`) is rendered as
-  owned keys: Superba owns exactly the keys a profile manages; a key the profile
-  stops managing is restored to the value it had before Superba last took it over;
-  drift needs an explicit `KeyResolution`; a setting colliding with a user value of
-  another shape is skipped with a note.
-- **Catalog.** `superba_core::CatalogSource` returns a `CatalogSnapshot` for an exact
-  Codex version (else nearest older = approximate, newer = outdated, below floor);
-  `superba-catalog`'s `SnapshotSource` implements it (section 10). There is one
-  loader, `superba_switch::settings_catalog(data_dir)`: the planner, `spb
-  settings` (through the service), remote hosts (`for_os`), the Chinese
-  explanations and the GUI settings page all read the same store.
-- **Krill's recommended keys** are ordinary settings: new Krill profiles (wizard,
-  Connection page, `spb profile add` unless `--no-recommended-keys`) start with
-  `CodexSettings::krill_recommended()`. They are written whatever auth mode the
-  line resolves to (also when Automatic falls back to an API key).
-
-## 3. Facts the design rests on (Codex 0.162, desktop app 26.1013)
-
-- Codex never watches `config.toml`/`auth.json`; provider, base URLs, auth and feature
-  gates are fixed per app-server process, env vars read at start. Every switch needs
-  an app-server restart.
-- The app main process handles IPC `codex-app-server-restart`; from the main
-  renderer (`app://-/index.html`, excluding avatar-overlay and quick-chat-prewarm
-  targets) call `window.electronBridge.sendMessageFromView({type, hostId:'local',
-  intent:'restart'})`; SSH hosts pass their `hostId` plus `killCodexProcess:true`.
-  The only way in is `--remote-debugging-port`, so hot switching requires that
-  Superba launched the app (loopback only, `--remote-allow-origins`).
-- The new app-server is up in ~1 s; window, open thread and recents survive; a turn
-  in flight loses its output. It inherits the main process env, so
-  `CODEX_AUTHAPI_BASE_URL` stays what it was at app launch.
+- **Auth.** Key-based profiles always authenticate with an API key, directly and
+  through the router (user bug 139: desktop app 26.1106 never confirms an
+  account for a personal access token, so queued messages fail with "Account is
+  not confirmed"). `key_auth(site, caps)` (`superba-core`) only says whether the
+  site and the probed line take the key (`AuthReason::LineUnavailable` /
+  `NoKeyMode` block the switch). A former `"pat"` deserializes as
+  `AuthMode::ApiKey` and the old `auth` choice field is ignored, so such a
+  profile gets API-key auth the next time it is applied. `AuthShape::Pat` stays
+  as an observation of an `auth.json` written before. One-off alpha.16
+  migration (`superba-switch::pat_migration`, remove with
+  `Settings::pat_migration`): at the window's first start the applied profile
+  still on Superba's token is written once more, write-only, with the same key
+  as an API key (a line that refuses it gets a notice asking for a key).
 - Config shapes:
 
 | Mode | config.toml (owned keys) | auth.json | env |
 |---|---|---|---|
-| Krill PAT | `model_provider="openai"`, `openai_base_url="<line>/backend-api/codex"`, `chatgpt_base_url="<line>/backend-api/"`, the profile's Codex settings | `{"personal_access_token":K,"OPENAI_API_KEY":K}` | `CODEX_AUTHAPI_BASE_URL=<line origin>` |
-| Krill API key | `model_provider="openai"`, `openai_base_url` (`/backend-api/codex` or `/codex/v1` per `LineCaps`), `chatgpt_base_url` restored, the profile's Codex settings | `{"auth_mode":"apikey","OPENAI_API_KEY":K}` | none needed |
+| Krill API key | `model_provider="openai"`, `openai_base_url` (`/backend-api/codex` or `/codex/v1` per `LineCaps`), `chatgpt_base_url` restored, the profile's Codex settings | `{"auth_mode":"apikey","OPENAI_API_KEY":K}` | none; a `CODEX_AUTHAPI_BASE_URL` Superba persisted for a PAT before is cleared |
 | Compatible site | `model_provider="openai"`, `openai_base_url=<base>`, the profile's Codex settings | API key form | none |
 | Official | owned keys removed | stashed ChatGPT login restored | may stay |
 
@@ -231,10 +187,6 @@ profiles become ordinary settings) and the first save keeps `profiles.v1.json`.
   files (`thread_turns.rollout_byte_offset` / `rollout_end_byte_offset`,
   `thread_history_projection_state.next_rollout_byte_offset`). Any rewrite of a
   rollout line must shift them; `superba-sessions` does.
-- PAT needs an `https` line: Codex rejects a plain-http `chatgpt_base_url`
-  ("workspace backend must use an HTTPS origin") at the first turn, also on
-  loopback. `ResolvedEndpoints::for_line` refuses it and the prober reports
-  `pat_ok = false` (`probe.pat_needs_https`).
 - At start-up the app runs the user's interactive login shell once and merges its
   environment over its own. With zsh an `rc` export of `CODEX_AUTHAPI_BASE_URL`
   (`~/.zshenv`) wins over the value Superba injects at launch; with
@@ -305,8 +257,7 @@ UI selects a profile / line (auth: the profile's choice, Automatic by default)
 
 The restart decision (first match wins) is documented on
 `superba_core::RestartKind`: blocked → session migration → cross auth family → app
-not running → no CDP / no bridge → PAT without authapi env → PAT with unhealthy
-authapi → hot. CLI processes get `NextLaunch`, the daemon `DaemonRestart`, remotes
+not running → no CDP / no bridge → hot. CLI processes get `NextLaunch`, the daemon `DaemonRestart`, remotes
 `AppServerHot { host_id, kill_remote: true }`.
 
 The state machine is split: `Idle`, `Planning`, `Blocked`, `Armed`,

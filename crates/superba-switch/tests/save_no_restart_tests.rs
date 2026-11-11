@@ -17,8 +17,8 @@ use std::time::Duration;
 
 use fakes::*;
 use superba_core::{
-    AuthChoice, AuthMode, ExecuteOptions, LineId, NoEvents, OutcomeStatus, ProfileId, SafeDefaults,
-    Secret, SettingValue, SiteId, SwitchPlan, SwitchRequest, SwitchService,
+    AuthMode, ExecuteOptions, LineId, NoEvents, OutcomeStatus, ProfileId, SafeDefaults, Secret,
+    SettingValue, SiteId, SwitchPlan, SwitchRequest, SwitchService,
 };
 use superba_switch::{Switcher, Tuning};
 
@@ -105,7 +105,6 @@ async fn applied_world() -> (World, Switcher) {
             .find(|p| p.id.as_str() == "work")
             .unwrap();
         p.auth_mode = AuthMode::ApiKey;
-        p.set_auth(AuthChoice::ApiKey);
     }
     let sw = switcher(&w);
     let plan = sw.plan(req("work")).await.unwrap();
@@ -139,7 +138,6 @@ async fn saving_providers_other_than_the_applied_one_never_touches_codex() {
         .unwrap();
     second.name = "Second".into();
     second.set_line_priority([LineId::new("cn-fast"), LineId::new("overseas")]);
-    second.set_auth(AuthChoice::ApiKey);
     second.model.model = Some("gpt-6-astra".into());
     second
         .codex_settings
@@ -160,7 +158,6 @@ async fn saving_providers_other_than_the_applied_one_never_touches_codex() {
     sw.save_site(site).await.unwrap();
     let mut custom = krill_profile("my-api", None, AuthMode::ApiKey);
     custom.site_id = SiteId::new("my-api");
-    custom.set_auth(AuthChoice::ApiKey);
     sw.save_profile(custom, Some(Secret::new("sk-custom-4444")))
         .await
         .unwrap();

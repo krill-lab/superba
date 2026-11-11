@@ -74,7 +74,7 @@ async fn data() -> Data {
     let mut applied = first.clone();
     applied.id = "e2e-active".into();
     applied.line_id = Some("c".into());
-    applied.auth_mode = AuthMode::Pat;
+    applied.auth_mode = AuthMode::ApiKey;
     let mut builtin = first.clone();
     builtin.id = "e2e-builtin".into();
     builtin.builtin = Some(BuiltinProfile::Original);
@@ -97,7 +97,7 @@ fn apply_test_site(data: &mut Data) {
     a.site_id = Some("krill-e2e".into());
     a.profile_id = Some("e2e-active".into());
     a.line_id = Some("c".into());
-    a.auth_mode = Some(AuthMode::Pat);
+    a.auth_mode = Some(AuthMode::ApiKey);
 }
 
 fn with_cx<T>(data: &Data, locale: Locale, f: impl FnOnce(&Cx<'_>) -> T) -> T {
@@ -178,7 +178,7 @@ async fn site_and_profile_follow_the_applied_test_site() {
     assert_eq!(profile.id.as_str(), "e2e-active");
     assert_eq!(profile.site_id.as_str(), "krill-e2e");
     assert_eq!(profile.line_id.as_ref().unwrap().as_str(), "c");
-    assert_eq!(profile.auth_mode, AuthMode::Pat);
+    assert_eq!(profile.auth_mode, AuthMode::ApiKey);
 }
 
 #[tokio::test]
@@ -226,7 +226,6 @@ fn caps(site: &str, line: &str, latency_ms: u32) -> LineCaps {
         checked_at: Timestamp::EPOCH,
         reachable: true,
         latency_ms: Some(latency_ms),
-        pat_ok: true,
         apikey_ok: true,
         codex_path: Some(CodexPath::BackendApiCodex),
         blocked_by_edge: false,
@@ -282,7 +281,7 @@ async fn builtin_lines_and_the_translated_active_label_are_kept() {
                     "{} · {} · {}",
                     cx.tr.t("site.krill"),
                     cx.tr.t("line.krill.overseas"),
-                    cx.tr.t("auth.short.pat"),
+                    cx.tr.t("auth.short.apikey"),
                 )),
             );
         });
@@ -299,7 +298,7 @@ async fn active_label_uses_test_site_and_line_names() {
                 cx.active_label(),
                 Some(format!(
                     "Krill e2e · E2E line C · {}",
-                    cx.tr.t("auth.short.pat")
+                    cx.tr.t("auth.short.apikey")
                 )),
             );
             assert_eq!(cx.line_name(&"c".into()), "E2E line C");
@@ -341,7 +340,7 @@ async fn active_label_falls_back_only_for_unknown_sites_or_lines() {
         with_cx(&data, Locale::En, |cx| {
             assert_eq!(
                 cx.active_label(),
-                Some(format!("{expected} · {}", cx.tr.t("auth.short.pat"))),
+                Some(format!("{expected} · {}", cx.tr.t("auth.short.apikey"))),
             );
         });
     }
@@ -391,7 +390,7 @@ async fn line_ids_and_english_names_localize_on_the_effective_site() {
             cx.active_label(),
             Some(format!(
                 "Krill e2e · {name} · {}",
-                cx.tr.t("auth.short.pat")
+                cx.tr.t("auth.short.apikey")
             )),
         );
         for line in ["c", "E2E line C"] {
@@ -411,7 +410,7 @@ fn destination(site: &str, line: &str) -> PlanDestination {
         profile_id: None,
         site_id: Some(site.into()),
         line_id: Some(line.into()),
-        auth_mode: Some(AuthMode::Pat),
+        auth_mode: Some(AuthMode::ApiKey),
         label: LocalizedText::new("", "Backend destination label"),
     }
 }
@@ -425,14 +424,14 @@ async fn destination_resolves_the_target_krill_kind_site_even_when_inactive() {
             let tr = Tr::new(locale);
             assert_eq!(
                 dest_text(&tr, &data, &destination("krill-e2e", "c")),
-                format!("Krill e2e · E2E line C · {}", tr.t("auth.short.pat")),
+                format!("Krill e2e · E2E line C · {}", tr.t("auth.short.apikey")),
             );
             assert_eq!(
                 dest_text(&tr, &data, &destination("krill", "overseas")),
                 format!(
                     "Krill · {} · {}",
                     tr.t("line.krill.overseas"),
-                    tr.t("auth.short.pat")
+                    tr.t("auth.short.apikey")
                 ),
             );
         }
@@ -451,7 +450,7 @@ async fn destination_uses_label_for_other_kinds_and_id_for_unknown_krill_line() 
     }
     assert_eq!(
         dest_text(&tr, &data, &destination("krill-e2e", "unknown")),
-        format!("Krill e2e · unknown · {}", tr.t("auth.short.pat")),
+        format!("Krill e2e · unknown · {}", tr.t("auth.short.apikey")),
     );
 }
 

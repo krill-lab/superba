@@ -53,7 +53,7 @@ max = "max {max}"
 not_applied = "Saved, not used by Codex yet: {n}"
 official_readonly = "The official login uses ChatGPT's own model list; Superba doesn't change it."
 per_model_unavailable = "Per-model settings are unavailable for this profile."
-catalog_scope = "PAT and API key: per-model settings override All models defaults."
+catalog_scope = "Per-model settings override All models defaults."
 picker_mode = "Show this site's models in Codex's model list"
 picker_mode_tip = "Superba writes model_catalog_json from the site's /v1/models list, so the app's model picker shows the site's real models (metadata from the built-in list where the name matches)."
 provider = "Provider"
@@ -102,7 +102,7 @@ edit_compact = "Type tokens (300k) or a share of the window (80%), below the con
 edit_window = "Type 400000, 400k or 1m; clear the field for the default."
 max = "Maximum: {value}"
 model_default = "Model default: {value}"
-unused = "The saved custom value {value} is not used with a personal access token."
+unused = "The saved custom value {value} is not used here."
 usable = "Codex uses up to {percent}% of it per turn: {value}"
 
 [models.invalid]

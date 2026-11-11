@@ -72,7 +72,7 @@ running.title = "Switching to “{dest}”"
 shared_home = "{hosts} share one home directory; it is written once and every one of them restarts."
 show_changes = "Show {n} {n|change|changes}"
 switch_now = "Switch now"
-unknown_version = "The Codex version of {consumer} is unknown, so PAT support can't be verified."
+unknown_version = "The Codex version of {consumer} is unknown, so its support can't be verified."
 waiting.body = "Switching now loses these turns' output, and commands the agent is running are stopped too."
 waiting.force = "Force switch"
 waiting.this_computer = "This computer"
@@ -87,7 +87,6 @@ waiting.will_switch = "Will switch when they finish"
 
 [caps]
 key_only = "API key only"
-pat_and_key = "PAT · API key"
 unavailable = "Unavailable"
 
 [confirm]

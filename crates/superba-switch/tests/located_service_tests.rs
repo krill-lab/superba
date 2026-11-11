@@ -30,14 +30,13 @@ async fn fixture() -> (tempfile::TempDir, LocalContext, Arc<dyn SwitchService>) 
 #[tokio::test]
 async fn catalog_is_saved_and_model_probe_holds_the_data_lock_until_the_reply() {
     let (_temp, ctx, service) = fixture().await;
-    let mut profile: superba_core::Profile = serde_json::from_value(serde_json::json!({
+    let profile: superba_core::Profile = serde_json::from_value(serde_json::json!({
         "id": "provider",
         "name": "Test provider",
         "site_id": superba_core::catalog::KRILL_SITE_ID,
         "auth_mode": superba_core::AuthMode::ApiKey,
     }))
     .unwrap();
-    profile.set_auth(superba_core::AuthChoice::ApiKey);
     let profile = service
         .save_profile(profile, Some(Secret::new("delegates-test-key")))
         .await

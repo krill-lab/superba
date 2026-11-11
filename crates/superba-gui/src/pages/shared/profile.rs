@@ -1,12 +1,12 @@
 //! Profile helpers shared by the provider pages and the wizard.
 
-use superba_core::{AuthChoice, AuthMode, ModelDefaults, Profile, ProfileId, Site};
+use superba_core::{AuthMode, ModelDefaults, Profile, ProfileId, Site};
 
-/// A new key-based profile for `site` (Automatic authentication, default lines).
+/// A new key-based profile for `site` (API key, default lines).
 /// Krill profiles start with Krill's recommended Codex settings, like the wizard
 /// and `spb profile add`.
 pub fn new_profile(site: &Site, name: String) -> Profile {
-    let mut p = Profile {
+    Profile {
         model_overrides: Default::default(),
         model_picker: Default::default(),
         compaction: Default::default(),
@@ -19,8 +19,7 @@ pub fn new_profile(site: &Site, name: String) -> Profile {
         line_id: None,
         backup_lines: Vec::new(),
         disabled_lines: Default::default(),
-        auth_mode: AuthMode::Pat,
-        auth: AuthChoice::Auto,
+        auth_mode: AuthMode::ApiKey,
         key_ref: None,
         base_url_override: None,
         model: ModelDefaults::default(),
@@ -29,16 +28,7 @@ pub fn new_profile(site: &Site, name: String) -> Profile {
         } else {
             Default::default()
         },
-    };
-    // On a site without PAT, Automatic and API key are the same; the profile
-    // stores the plain API-key form so every reader of `auth_mode` agrees.
-    if site.supports(AuthMode::Pat) {
-        p.set_auth(AuthChoice::Auto);
-    } else {
-        p.auth_mode = AuthMode::ApiKey;
-        p.set_auth(AuthChoice::ApiKey);
     }
-    p
 }
 
 /// What flipping "Disable OpenAI telemetry" of `profile` asks for (user bug

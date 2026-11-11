@@ -471,11 +471,7 @@ async fn the_overview_empty_state_starts_the_wizard() {
 /// by hand.
 async fn data_with_caps(service: &FakeService, manual_pat: bool) -> Data {
     let mut data = data_of(service).await;
-    if manual_pat && let Some(set) = data.profiles.value.as_mut() {
-        for p in &mut set.profiles {
-            p.set_auth(superba_core::AuthChoice::Pat);
-        }
-    }
+    let _ = manual_pat;
     let site = superba_core::SiteId::from("krill");
     let caps = service.probe_lines(&site).await.unwrap();
     data.caps.entry(site).or_default().finish(Ok(caps));
@@ -559,9 +555,9 @@ async fn the_fastest_line_is_preselected_only_on_a_first_run() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_rerun_keeps_the_auth_choice_and_confirm_shows_old_and_new_values() {
-    // Review ux-visual #6: Confirm said "Automatic → API key" with nothing
-    // showing that line and auth change, and Apply reset a manual PAT choice.
+async fn a_rerun_confirm_shows_old_and_new_values() {
+    // Review ux-visual #6: Confirm showed nothing of what changes. Keys are
+    // API keys (user bug 139).
     let service = fake(false);
     let data = data_with_caps(&service, true).await;
     let dyn_service: Arc<dyn SwitchService> = service.clone();
@@ -570,11 +566,11 @@ async fn a_rerun_keeps_the_auth_choice_and_confirm_shows_old_and_new_values() {
     let tr = Tr::new(Locale::ZhCn);
     let name = |id: &str| tr.text(&site.line(&id.into()).unwrap().name);
 
-    // Same line: the manual PAT choice is kept, Confirm says nothing changes.
+    // Same line: Confirm says nothing changes.
     let mut w = Wizard::start(&data);
     w.step = Step::Confirm;
     let texts = wizard_frames(&harness, &data, &dyn_service, &mut w, Locale::ZhCn, 4);
-    for want in ["与现在相比", "认证方式：PAT（手动选择）"] {
+    for want in ["与现在相比", "认证方式：API Key"] {
         assert!(texts.iter().any(|t| t.contains(want)), "{want}: {texts:?}");
     }
     assert_eq!(
@@ -588,11 +584,10 @@ async fn a_rerun_keeps_the_auth_choice_and_confirm_shows_old_and_new_values() {
     let WizardOutcome::Finish { profile, .. } = outcome else {
         panic!("{outcome:?}");
     };
-    assert_eq!(profile.auth_choice(), superba_core::AuthChoice::Pat, "kept");
+    assert_eq!(profile.auth_mode, superba_core::AuthMode::ApiKey, "kept");
     assert_eq!(profile.line_priority()[0], "overseas");
 
-    // China Express blocks PAT: the manual choice cannot work there, so Apply
-    // uses Automatic (an API key) and Confirm shows each change as old → new.
+    // Another line and model: Confirm shows each change as old → new.
     let mut w = Wizard::start(&data);
     w.line = Some("cn-fast".into());
     w.line_chosen = true;
@@ -602,22 +597,24 @@ async fn a_rerun_keeps_the_auth_choice_and_confirm_shows_old_and_new_values() {
     for want in [
         name("overseas"),
         name("cn-fast"),
-        "PAT".to_owned(),
-        "自动（API Key）".to_owned(),
         "Codex 默认".to_owned(),
         "gpt-6-luna".to_owned(),
     ] {
         assert!(texts.contains(&want), "{want}: {texts:?}");
     }
-    assert_eq!(texts.iter().filter(|t| *t == "→").count(), 3, "{texts:?}");
-    assert!(!texts.iter().any(|t| t == "不变"), "{texts:?}");
+    assert_eq!(texts.iter().filter(|t| *t == "→").count(), 2, "{texts:?}");
+    assert_eq!(
+        texts.iter().filter(|t| *t == "不变").count(),
+        1,
+        "the auth stays: {texts:?}"
+    );
     let outcome = with_cx(&data, &dyn_service, Locale::ZhCn, |cx| {
         wizard::finish(cx, &w, &mut Vec::new())
     });
     let WizardOutcome::Finish { profile, .. } = outcome else {
         panic!("{outcome:?}");
     };
-    assert_eq!(profile.auth_choice(), superba_core::AuthChoice::Auto);
+    assert_eq!(profile.auth_mode, superba_core::AuthMode::ApiKey);
     assert_eq!(profile.line_priority()[0], "cn-fast");
 }
 

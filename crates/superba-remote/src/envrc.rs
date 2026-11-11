@@ -225,6 +225,17 @@ fn utf8(f: &RcFile) -> Result<&str> {
         .map_err(|_| Error::parse(f.path.clone(), "not UTF-8 text; Superba will not edit it"))
 }
 
+/// True if one of `files` still holds a Superba marker block (the
+/// `CODEX_AUTHAPI_BASE_URL` Superba set for a personal access token before
+/// user bug 139, or the router certificate).
+pub fn has_block(files: &[RcFile]) -> bool {
+    files
+        .iter()
+        .filter_map(|f| f.content.as_deref())
+        .filter_map(|b| std::str::from_utf8(b).ok())
+        .any(|t| find_block(t).is_some())
+}
+
 fn remove_block(text: &str) -> String {
     let mut out = text.to_owned();
     // Remove every block (a file may hold a duplicate from manual copying).

@@ -4,8 +4,7 @@ use std::collections::BTreeMap;
 
 use pretty_assertions::assert_eq;
 use superba_core::{
-    AuthChoice, AuthMode, Error, KeyRef, LineId, ModelDefaults, Profile, ProfileId, Site, SiteId,
-    SiteKind,
+    AuthMode, Error, KeyRef, LineId, ModelDefaults, Profile, ProfileId, Site, SiteId, SiteKind,
 };
 use superba_gui::pages::providers::form::*;
 use superba_switch::new_compatible_site;
@@ -53,7 +52,6 @@ fn existing() -> (Site, Profile) {
         backup_lines: vec![LineId::new("backup")],
         disabled_lines: Default::default(),
         auth_mode: AuthMode::ApiKey,
-        auth: AuthChoice::ApiKey,
         key_ref: Some(KeyRef::Keyring {
             service: "test-service".into(),
             account: "saved-profile".into(),
@@ -254,7 +252,6 @@ fn prepare_add_builds_a_compatible_site_and_api_key_profile() {
     assert_eq!(prepared.profile.site_id, prepared.site.id);
     assert_eq!(prepared.profile.name, "Example Relay");
     assert_eq!(prepared.profile.auth_mode, AuthMode::ApiKey);
-    assert_eq!(prepared.profile.auth, AuthChoice::ApiKey);
     assert_eq!(
         prepared.profile.model.model.as_deref(),
         Some("example-model")

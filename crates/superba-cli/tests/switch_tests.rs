@@ -17,8 +17,6 @@ async fn explicit_profile_and_every_answer_become_a_request() {
             "ignored",
             "--line",
             "cdn",
-            "--auth",
-            "apikey",
             "--model",
             "test-model",
             "--migrate-legacy-sessions",
@@ -52,7 +50,7 @@ async fn explicit_profile_and_every_answer_become_a_request() {
         SwitchIntent::Profile {
             profile_id: ProfileId::new("explicit"),
             line_id: Some(LineId::new("cdn")),
-            auth_mode: Some(AuthMode::ApiKey)
+            auth_mode: None
         }
     );
     assert_eq!(
@@ -190,8 +188,6 @@ async fn profile_use_is_identical_to_explicit_switch() {
     let flags = [
         "--line",
         "cdn",
-        "--auth",
-        "pat",
         "--model",
         "test-model",
         "--skip-legacy-sessions",
@@ -625,7 +621,7 @@ async fn alternatives_are_runnable_commands_preserving_targets_and_answers() {
     service.script(|request| {
         let mut plan = plan(request);
         plan.primary = RestartKind::FullAppRestart {
-            reason: FullRestartReason::AuthApiUnhealthy,
+            reason: FullRestartReason::NoCdp,
         };
         let mut alternative = plan.request.clone();
         if let SwitchIntent::Profile { auth_mode, .. } = &mut alternative.intent {
@@ -643,8 +639,6 @@ async fn alternatives_are_runnable_commands_preserving_targets_and_answers() {
         "work",
         "--line",
         "c",
-        "--auth",
-        "pat",
         "--model",
         "test-model",
         "--no-local",
@@ -672,17 +666,22 @@ async fn alternatives_are_runnable_commands_preserving_targets_and_answers() {
         .and_then(|rest| rest.split_once(" — ").map(|(_, command)| command))
         .unwrap();
     assert!(
-        command.starts_with("spb switch --profile work --line c --auth apikey"),
+        command.starts_with("spb switch --profile work --line c --model test-model"),
         "{command}"
     );
     let words = command.split_whitespace().skip(1).collect::<Vec<_>>();
     assert_eq!(invoke(service.clone(), &words).await.0, 0);
     let calls = service.calls();
+    // The alternative's API-key mode needs no --auth flag (keys are API keys).
     let mut expected = calls.plans[0].clone();
     if let SwitchIntent::Profile { auth_mode, .. } = &mut expected.intent {
-        *auth_mode = Some(AuthMode::ApiKey);
+        *auth_mode = None;
     }
-    assert_eq!(calls.plans[1], expected);
+    let mut ran = calls.plans[1].clone();
+    if let SwitchIntent::Profile { auth_mode, .. } = &mut ran.intent {
+        *auth_mode = None;
+    }
+    assert_eq!(ran, expected);
     assert!(calls.executions.is_empty());
 }
 

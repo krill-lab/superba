@@ -1,30 +1,26 @@
-//! Authenticated requests: key checks, auth API health, model catalogs and the
-//! Responses probe (account data is in [`crate::fetch`]).
+//! Authenticated requests: key checks, model catalogs and the Responses probe
+//! (account data is in [`crate::fetch`]).
 //!
 //! Key scoping: a site's key is only sent to the origins of that site's lines
 //! (`check_key`, `probe_with_key` and the account requests verify that the line belongs
-//! to the site; `check_authapi` refuses foreign origins before sending anything),
-//! only over https or loopback http, and never along a redirect.
+//! to the site), only over https or loopback http, and never along a redirect.
 
-use superba_core::catalog::is_krill_host;
 use superba_core::{
     AccountIdentity, AuthApiHealth, AuthMode, CodexPath, Error, KeyAccess, KeyCheck, Line,
-    LineCaps, ModelInfo, Origin, ResolvedEndpoints, ResponsesProbe, Result, Secret, Site, SiteKind,
+    LineCaps, ModelInfo, Origin, ResolvedEndpoints, ResponsesProbe, Result, Secret, Site,
 };
 use url::Url;
 
 use crate::HttpLineProber;
 use crate::classify::{
     Whoami, edge_detail, edge_intercepted, edge_intercepted_stream, error_message, key_access,
-    parse_whoami, status_detail, transport_detail, wham_lists_accounts,
+    parse_whoami, status_detail, transport_detail,
 };
 use crate::http::{
     ACCEPT_SSE, Answer, Request, Transport, TransportKind, display_url, ensure_key_target, redact,
 };
 use crate::models::parse_models;
-use crate::probe::{
-    PROBE_BODY_LIMIT, pat_edge_blocked, pat_unavailable, summarize, with_client_version,
-};
+use crate::probe::{PROBE_BODY_LIMIT, summarize, with_client_version};
 use crate::responses::{
     compact_body, judge_compact, judge_responses, responses_body, stream_finished,
 };
@@ -38,8 +34,6 @@ pub(crate) struct WhoamiOutcome {
     pub health: AuthApiHealth,
     pub info: Option<Whoami>,
     pub status: Option<u16>,
-    pub edge: bool,
-    pub transport: bool,
 }
 
 impl WhoamiOutcome {
@@ -56,15 +50,11 @@ pub(crate) fn whoami_outcome(res: &std::result::Result<Answer, Transport>) -> Wh
             health: unhealthy(transport_detail(t)),
             info: None,
             status: None,
-            edge: false,
-            transport: true,
         },
         Ok(a) if edge_intercepted(a) => WhoamiOutcome {
             health: unhealthy(edge_detail(a)),
             info: None,
             status: Some(a.status),
-            edge: true,
-            transport: false,
         },
         Ok(a) if a.is_success() => {
             let parsed = parse_whoami(&a.body);
@@ -75,99 +65,14 @@ pub(crate) fn whoami_outcome(res: &std::result::Result<Answer, Transport>) -> Wh
                 },
                 info: parsed.ok(),
                 status: Some(a.status),
-                edge: false,
-                transport: false,
             }
         }
         Ok(a) => WhoamiOutcome {
             health: unhealthy(status_detail(a)),
             info: None,
             status: Some(a.status),
-            edge: false,
-            transport: false,
         },
     }
-}
-
-/// Outcome of an authenticated `wham/accounts/check`.
-#[derive(Debug, Clone)]
-pub(crate) struct WhamOutcome {
-    pub ok: bool,
-    pub edge: bool,
-    pub transport: bool,
-    pub status: Option<u16>,
-    pub detail: String,
-}
-
-/// Classify an authenticated `wham/accounts/check` answer.
-pub(crate) fn wham_outcome(res: &std::result::Result<Answer, Transport>) -> WhamOutcome {
-    match res {
-        Err(t) => WhamOutcome {
-            ok: false,
-            edge: false,
-            transport: true,
-            status: None,
-            detail: transport_detail(t),
-        },
-        Ok(a) if edge_intercepted(a) => WhamOutcome {
-            ok: false,
-            edge: true,
-            transport: false,
-            status: Some(a.status),
-            detail: edge_detail(a),
-        },
-        Ok(a) if a.is_success() => {
-            let ok = wham_lists_accounts(&a.body);
-            WhamOutcome {
-                ok,
-                edge: false,
-                transport: false,
-                status: Some(a.status),
-                detail: if ok {
-                    String::new()
-                } else {
-                    "the answer lists no account".to_owned()
-                },
-            }
-        }
-        Ok(a) => WhamOutcome {
-            ok: false,
-            edge: false,
-            transport: false,
-            status: Some(a.status),
-            detail: status_detail(a),
-        },
-    }
-}
-
-/// Access of a key in PAT mode: the models result first (key, plan, quota,
-/// channel), then the PAT endpoints (edge interception, whoami contract).
-pub(crate) fn combine_pat(models: KeyAccess, who: &WhoamiOutcome, wham: &WhamOutcome) -> KeyAccess {
-    if who.status == Some(401) || wham.status == Some(401) {
-        return KeyAccess::InvalidKey;
-    }
-    if !models.is_ok() {
-        return models;
-    }
-    if who.edge || wham.edge {
-        return KeyAccess::EdgeBlocked;
-    }
-    if who.transport || wham.transport {
-        return KeyAccess::Unreachable;
-    }
-    if let AuthApiHealth::Unhealthy { reason } = &who.health {
-        return KeyAccess::Unknown {
-            status: who.status,
-            message: format!("whoami: {reason}"),
-        };
-    }
-    if !wham.ok {
-        return KeyAccess::Unknown {
-            status: wham.status,
-            message: format!("accounts/check: {}", wham.detail),
-        };
-    }
-    KeyAccess::Ok
 }
 
 /// Result of the authenticated models request(s) of a key check.
@@ -230,16 +135,6 @@ impl HttpLineProber {
             *reason = redact(reason, Some(key));
         }
         tracing::debug!(origin = %origin, status = ?out.status, healthy = out.healthy(), "whoami");
-        out
-    }
-
-    /// Authenticated accounts check, with diagnostics redacted before use.
-    async fn wham(&self, origin: &Origin, path: &str, key: &Secret) -> WhamOutcome {
-        let res = self
-            .get_with_key(origin.join(path), key, PROBE_BODY_LIMIT, false)
-            .await;
-        let mut out = wham_outcome(&res);
-        out.detail = redact(&out.detail, Some(key));
         out
     }
 
@@ -309,16 +204,6 @@ impl HttpLineProber {
         out
     }
 
-    /// Codex paths to try for `mode` on `site` (PAT only works on backend-api).
-    fn paths_for(site: &Site, mode: AuthMode) -> Vec<CodexPath> {
-        site.capabilities
-            .codex_paths
-            .iter()
-            .copied()
-            .filter(|p| !mode.writes_chatgpt_base_url() || *p == CodexPath::BackendApiCodex)
-            .collect()
-    }
-
     /// See [`superba_core::LineProber::check_key`].
     pub(crate) async fn check_key_impl(
         &self,
@@ -343,11 +228,10 @@ impl HttpLineProber {
             site.allows_plain_http_for(line.origin.url()),
         )?;
         Self::ensure_key(key)?;
-        let pat = mode.writes_chatgpt_base_url() || mode.needs_authapi_env();
         let relay = site.capabilities.key_check;
-        let paths = Self::paths_for(site, mode);
+        let paths = site.capabilities.codex_paths.clone();
         let e = &site.endpoints;
-        let (who, wham, models) = tokio::join!(
+        let (who, models) = tokio::join!(
             async {
                 if relay {
                     Some(self.whoami(&line.origin, &e.whoami, key).await)
@@ -355,30 +239,16 @@ impl HttpLineProber {
                     None
                 }
             },
-            async {
-                if pat && relay {
-                    Some(self.wham(&line.origin, &e.accounts_check, key).await)
-                } else {
-                    None
-                }
-            },
             self.models_access(site, line, key, &paths),
         );
-        let access = match (&who, &wham) {
-            (Some(w), Some(h)) if pat => combine_pat(models.access.clone(), w, h),
-            _ => models.access.clone(),
-        };
         Ok(KeyCheck {
             site_id: site.id.clone(),
             line_id: line.id.clone(),
             checked_at: self.clock.now(),
             key_last4: key.last4(),
-            whoami: who
-                .as_ref()
-                .filter(|_| mode.needs_authapi_env())
-                .map(|w| w.health.clone()),
+            whoami: None,
             identity: who.as_ref().and_then(|w| w.info.as_ref()).map(identity),
-            access,
+            access: models.access,
             codex_path: models.path,
         })
     }
@@ -402,28 +272,9 @@ impl HttpLineProber {
         if !caps.reachable || !key_modes {
             return Ok(caps);
         }
-        let relay = site.capabilities.key_check;
-        let pat = relay && site.supports(AuthMode::Pat);
         // The API-key view of the models request: all of the site's paths.
         let paths = site.capabilities.codex_paths.clone();
-        let e = &site.endpoints;
-        let (who, wham, models) = tokio::join!(
-            async {
-                if pat {
-                    Some(self.whoami(&line.origin, &e.whoami, key).await)
-                } else {
-                    None
-                }
-            },
-            async {
-                if pat {
-                    Some(self.wham(&line.origin, &e.accounts_check, key).await)
-                } else {
-                    None
-                }
-            },
-            self.models_access(site, line, key, &paths),
-        );
+        let models = self.models_access(site, line, key, &paths).await;
         caps.key_access = Some(models.access.clone());
         caps.blocked_by_edge |= models.edge;
         if models.access.is_ok() && models.path.is_some() && models.path != caps.codex_path {
@@ -432,61 +283,8 @@ impl HttpLineProber {
             caps.codex_path = models.path;
             caps.apikey_ok = site.supports(AuthMode::ApiKey);
         }
-        // A PAT failure seen only with the key is not visible in the unauthenticated
-        // checks `summarize` reads, so it gets its own message.
-        let mut keyed_pat_detail = None;
-        if let (Some(w), Some(h)) = (&who, &wham) {
-            caps.blocked_by_edge |= w.edge || h.edge;
-            // The keyed PAT requests are what Codex itself sends, so they decide:
-            // they can also restore PAT after a transient unauthenticated failure.
-            let keyed_pat = w.healthy() && h.ok;
-            caps.pat_ok = keyed_pat;
-            if !keyed_pat {
-                keyed_pat_detail = Some(if w.edge {
-                    pat_edge_blocked(&e.whoami)
-                } else if h.edge {
-                    pat_edge_blocked(&e.accounts_check)
-                } else if !w.healthy() {
-                    let reason = match &w.health {
-                        AuthApiHealth::Unhealthy { reason } => reason.clone(),
-                        AuthApiHealth::Healthy => String::new(),
-                    };
-                    pat_unavailable(&e.whoami, &reason)
-                } else {
-                    pat_unavailable(&e.accounts_check, &h.detail)
-                });
-            }
-            caps.pat_ok &= caps.codex_path == Some(CodexPath::BackendApiCodex);
-        }
-        caps.detail = Some(keyed_pat_detail.unwrap_or_else(|| summarize(site, &caps)));
-        if self.config.pat_requires_https {
-            crate::probe::require_https_for_pat(site, line, &mut caps);
-        }
+        caps.detail = Some(summarize(site, &caps));
         Ok(caps)
-    }
-
-    /// See [`superba_core::LineProber::check_authapi`].
-    pub(crate) async fn check_authapi_impl(
-        &self,
-        site: &Site,
-        origin: &Origin,
-        key: &Secret,
-    ) -> Result<AuthApiHealth> {
-        let on_line = site.lines.iter().any(|l| &l.origin == origin);
-        let krill = site.kind == SiteKind::Krill
-            && origin.url().scheme() == "https"
-            && is_krill_host(origin.host());
-        if !(on_line || krill) {
-            return Err(Error::invalid(format!(
-                "refusing to send the key of site {} to {origin}: not one of its origins",
-                site.id
-            )));
-        }
-        Self::ensure_key(key)?;
-        Ok(self
-            .whoami(origin, &site.endpoints.whoami, key)
-            .await
-            .health)
     }
 
     /// See [`superba_core::LineProber::list_models`].
@@ -643,80 +441,7 @@ pub(crate) fn models_url_for_base(base: &Url, client_version: &str) -> Url {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
     use super::*;
-
-    fn answer(status: u16, body: &str) -> Answer {
-        Answer {
-            status,
-            edge_header: None,
-            content_type: None,
-            cors: false,
-            location: None,
-            body: body.as_bytes().to_vec(),
-            truncated: false,
-            elapsed: Duration::from_millis(1),
-            retry_after: None,
-            etag: None,
-        }
-    }
-
-    const WHOAMI: &str = r#"{"chatgpt_user_id":"u","chatgpt_account_id":"a","chatgpt_plan_type":"pro","chatgpt_account_is_fedramp":false}"#;
-    const WHAM: &str = r#"{"accounts":[{"id":"a"}]}"#;
-
-    #[test]
-    fn pat_access_prefers_models_reasons_then_pat_endpoints() {
-        let who_ok = whoami_outcome(&Ok(answer(200, WHOAMI)));
-        let wham_ok = wham_outcome(&Ok(answer(200, WHAM)));
-        assert!(who_ok.healthy() && wham_ok.ok);
-        assert_eq!(combine_pat(KeyAccess::Ok, &who_ok, &wham_ok), KeyAccess::Ok);
-        assert_eq!(
-            combine_pat(KeyAccess::QuotaExhausted, &who_ok, &wham_ok),
-            KeyAccess::QuotaExhausted
-        );
-
-        let mut blocked = answer(200, "");
-        blocked.edge_header = Some("x".into());
-        let wham_edge = wham_outcome(&Ok(blocked));
-        assert!(wham_edge.edge);
-        assert_eq!(
-            combine_pat(KeyAccess::Ok, &who_ok, &wham_edge),
-            KeyAccess::EdgeBlocked
-        );
-        assert_eq!(
-            combine_pat(KeyAccess::AccessPointDenied, &who_ok, &wham_edge),
-            KeyAccess::AccessPointDenied
-        );
-
-        let who_401 = whoami_outcome(&Ok(answer(401, r#"{"error":{"message":"invalid token"}}"#)));
-        assert_eq!(
-            combine_pat(KeyAccess::Ok, &who_401, &wham_ok),
-            KeyAccess::InvalidKey
-        );
-
-        let who_bad = whoami_outcome(&Ok(answer(200, r#"{"chatgpt_user_id":"u"}"#)));
-        match combine_pat(KeyAccess::Ok, &who_bad, &wham_ok) {
-            KeyAccess::Unknown { status, message } => {
-                assert_eq!(status, Some(200));
-                assert!(message.starts_with("whoami: "), "{message}");
-            }
-            other => panic!("{other:?}"),
-        }
-        let wham_empty = wham_outcome(&Ok(answer(200, r#"{"accounts":[]}"#)));
-        assert!(matches!(
-            combine_pat(KeyAccess::Ok, &who_ok, &wham_empty),
-            KeyAccess::Unknown { .. }
-        ));
-        let down = wham_outcome(&Err(Transport {
-            kind: TransportKind::Timeout,
-            message: "timed out".into(),
-        }));
-        assert_eq!(
-            combine_pat(KeyAccess::Ok, &who_ok, &down),
-            KeyAccess::Unreachable
-        );
-    }
 
     #[test]
     fn base_urls_are_joined_without_losing_their_path() {

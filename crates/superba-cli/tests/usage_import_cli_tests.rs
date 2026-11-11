@@ -158,7 +158,6 @@ async fn profile_compaction_shows_the_effective_value_and_the_choice_is_saved() 
         backup_lines: Vec::new(),
         disabled_lines: Default::default(),
         auth_mode: AuthMode::ApiKey,
-        auth: AuthChoice::ApiKey,
         key_ref: None,
         base_url_override: None,
         model: Default::default(),

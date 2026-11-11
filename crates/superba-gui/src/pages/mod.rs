@@ -858,16 +858,6 @@ pub fn auth_last4(auth: &AuthShape) -> Option<&str> {
     }
 }
 
-/// The mode Automatic authentication uses on a line: PAT unless the probe says
-/// the line cannot do PAT but takes an API key.
-pub fn auth_mode_for_line(preferred: AuthMode, caps: Option<&LineCaps>) -> AuthMode {
-    if preferred == AuthMode::Pat && caps.is_some_and(|c| !c.allows(AuthMode::Pat)) {
-        AuthMode::ApiKey
-    } else {
-        preferred
-    }
-}
-
 /// Shared severity for key checks on both the wizard and Lines page.
 pub fn key_access_status(access: &KeyAccess) -> Status {
     match access {
@@ -879,9 +869,9 @@ pub fn key_access_status(access: &KeyAccess) -> Status {
     }
 }
 
-/// Shared PAT severity for the table and its explanatory notes.
-pub fn pat_status(caps: &LineCaps) -> Status {
-    if caps.allows(AuthMode::Pat) {
+/// Severity of a line's probe for its notes.
+pub fn line_status(caps: &LineCaps) -> Status {
+    if caps.allows(AuthMode::ApiKey) && !caps.blocked_by_edge {
         Status::Ok
     } else if caps.allows(AuthMode::ApiKey) || caps.blocked_by_edge {
         Status::Warn
@@ -1043,9 +1033,7 @@ pub fn dest_text(tr: &Tr, data: &Data, to: &superba_core::PlanDestination) -> St
                 .line(line)
                 .map(|l| tr.text(&l.name))
                 .unwrap_or_else(|| line.to_string());
-            let auth = if mode == AuthMode::Pat {
-                tr.t("auth.short.pat")
-            } else if mode.uses_key() {
+            let auth = if mode.uses_key() {
                 tr.t("auth.short.apikey")
             } else {
                 tr.t("auth.short.chatgpt")
@@ -1190,11 +1178,9 @@ impl Cx<'_> {
         Some(parts.join(" · "))
     }
 
-    /// Short auth label ("PAT", "API key", "Official login").
+    /// Short auth label ("API key", "Official login").
     pub fn auth_short(&self, mode: AuthMode) -> String {
-        if mode == AuthMode::Pat {
-            self.tr.t("auth.short.pat")
-        } else if mode.uses_key() {
+        if mode.uses_key() {
             self.tr.t("auth.short.apikey")
         } else {
             self.tr.t("auth.short.chatgpt")

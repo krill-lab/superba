@@ -38,7 +38,7 @@ fn apikey_endpoints(
     let path = path
         .or_else(|| site.capabilities.codex_paths.first().copied())
         .unwrap_or(CodexPath::BackendApiCodex);
-    ResolvedEndpoints::for_line(&line.origin, path, AuthMode::ApiKey)
+    ResolvedEndpoints::for_line(&line.origin, path)
 }
 
 impl Switcher {
@@ -90,13 +90,8 @@ impl Switcher {
         let Some(key) = key else {
             return Ok(report);
         };
-        let mode = if site.supports(AuthMode::ApiKey) {
-            AuthMode::ApiKey
-        } else {
-            AuthMode::Pat
-        };
         let (check, account) = tokio::join!(
-            prober.check_key(&site, &line, mode, &key),
+            prober.check_key(&site, &line, AuthMode::ApiKey, &key),
             prober.account_summary(&site, &line, &key),
         );
         let check = check?;

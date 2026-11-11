@@ -83,16 +83,17 @@ pub fn shape(bytes: Option<&[u8]>) -> AuthShape {
     }
 }
 
-/// The token credential in auth.json (PAT or API key), if any.
+/// The key in auth.json, if any: an API key, or the key of a personal access
+/// token (the PAT form Superba wrote before user bug 139), which is the same
+/// key used as an API key.
 pub fn token_credentials(bytes: &[u8]) -> Option<(AuthMode, Secret)> {
     let m = parse_object(bytes).ok()?;
     if m.get(f::TOKENS).is_some_and(Value::is_object) {
         return None;
     }
-    if let Some(k) = non_empty_str(&m, f::PERSONAL_ACCESS_TOKEN) {
-        return Some((AuthMode::Pat, Secret::new(k)));
-    }
-    non_empty_str(&m, f::OPENAI_API_KEY).map(|k| (AuthMode::ApiKey, Secret::new(k)))
+    non_empty_str(&m, f::PERSONAL_ACCESS_TOKEN)
+        .or_else(|| non_empty_str(&m, f::OPENAI_API_KEY))
+        .map(|k| (AuthMode::ApiKey, Secret::new(k)))
 }
 
 /// A digest of what Codex authenticates with in `auth.json` (`None` = file
@@ -181,15 +182,6 @@ fn render_fields(fields: &[(&str, &str)]) -> SecretBytes {
     bytes
 }
 
-/// PAT form: `{"personal_access_token":K,"OPENAI_API_KEY":K}`.
-pub fn render_pat(key: &Secret) -> Result<SecretBytes> {
-    check_key(key)?;
-    Ok(render_fields(&[
-        (f::PERSONAL_ACCESS_TOKEN, key.expose()),
-        (f::OPENAI_API_KEY, key.expose()),
-    ]))
-}
-
 /// API-key form: `{"auth_mode":"apikey","OPENAI_API_KEY":K}`.
 pub fn render_apikey(key: &Secret) -> Result<SecretBytes> {
     check_key(key)?;
@@ -201,9 +193,7 @@ pub fn render_apikey(key: &Secret) -> Result<SecretBytes> {
 
 /// The auth.json Superba writes for a token mode.
 pub fn render_token(mode: AuthMode, key: &Secret) -> Result<SecretBytes> {
-    if mode.writes_chatgpt_base_url() && mode.needs_authapi_env() {
-        render_pat(key)
-    } else if mode.uses_key() {
+    if mode.uses_key() {
         render_apikey(key)
     } else {
         Err(Error::Unsupported {

@@ -9,8 +9,8 @@ mod support;
 use std::collections::BTreeSet;
 
 use superba_core::{
-    AccountReport, AccountSummary, AuthChoice, BillingSummary, DailyUsage, LineId, Locale,
-    ModelUsage, ProfileId, SiteId, SwitchService, Timestamp, UsageReport, Usd,
+    AccountReport, AccountSummary, BillingSummary, DailyUsage, LineId, Locale, ModelUsage,
+    ProfileId, SiteId, SwitchService, Timestamp, UsageReport, Usd,
 };
 use superba_gui::design::{Palette, fonts, style};
 use superba_gui::i18n::{Tr, ui_files};
@@ -224,20 +224,19 @@ async fn the_overview_renders_real_account_data_in_both_themes_and_languages() {
 
 #[test]
 fn the_wizard_keeps_an_existing_krill_profile_and_seeds_a_new_one() {
-    use superba_core::{CodexSettings, KeyRef};
+    use superba_core::{AuthMode, CodexSettings, KeyRef};
     use superba_gui::pages::wizard::wizard_profile;
     let krill = superba_core::catalog::krill_site();
 
     let new = wizard_profile(None, &krill, Some(LineId::new("cdn")), None);
     assert_eq!(new.line_priority(), vec![LineId::new("cdn")]);
-    assert_eq!(new.auth_choice(), AuthChoice::Auto);
+    assert_eq!(new.auth_mode, AuthMode::ApiKey);
     assert_eq!(new.codex_settings, CodexSettings::krill_recommended());
 
     let mut existing = new.clone();
     existing.name = "Work".into();
     existing.key_ref = Some(KeyRef::Env { var: "K".into() });
     existing.set_line_priority([LineId::new("overseas"), LineId::new("cdn")]);
-    existing.set_auth(AuthChoice::ApiKey);
     existing.codex_settings = CodexSettings::new();
     existing
         .codex_settings
@@ -256,8 +255,7 @@ fn the_wizard_keeps_an_existing_krill_profile_and_seeds_a_new_one() {
         again.line_priority(),
         vec![LineId::new("cdn"), LineId::new("overseas")]
     );
-    // A re-run keeps the provider's authentication choice (review ux-visual #6).
-    assert_eq!(again.auth_choice(), AuthChoice::ApiKey);
+    assert_eq!(again.auth_mode, AuthMode::ApiKey);
     assert_eq!(
         again.codex_settings, existing.codex_settings,
         "settings kept"

@@ -223,7 +223,7 @@ async fn after_another_profiles_model_the_users_own_model_is_mapped() {
             profile_id: Some(ProfileId::new("work")),
             site_id: Some(SiteId::new("krill")),
             line_id: None,
-            auth_mode: Some(AuthMode::Pat),
+            auth_mode: Some(AuthMode::ApiKey),
             generation: 1,
             applied_at: superba_core::Timestamp(0),
         });

@@ -2567,7 +2567,6 @@ mod tests {
                 checked_at: Timestamp::EPOCH,
                 reachable: true,
                 latency_ms: Some(38),
-                pat_ok: true,
                 apikey_ok: true,
                 codex_path: Some(CodexPath::BackendApiCodex),
                 blocked_by_edge: false,

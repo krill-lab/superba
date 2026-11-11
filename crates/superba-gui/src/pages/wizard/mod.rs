@@ -25,7 +25,7 @@ use std::collections::HashSet;
 
 use egui::{Align, Area, Id, Layout, Order, Rect, ScrollArea, Sense, Ui, UiBuilder, pos2, vec2};
 use superba_core::{
-    AuthChoice, AuthMode, KeyInput as KeyRefInput, LegacySessionChoice, LineId, Profile, ProfileId,
+    AuthMode, KeyInput as KeyRefInput, LegacySessionChoice, LineId, Profile, ProfileId,
     RestoreTarget, Secret, Site, SiteId, SiteKind, SiteProbeReport, SiteProbeRequest,
     SwitchRequest,
     catalog::{self, Preset},
@@ -637,56 +637,30 @@ pub fn wizard_profile(
         lines.extend(profile.line_priority().into_iter().filter(|l| l != &line));
         profile.set_line_priority(lines);
     }
-    if existing.is_none() && site.supports(AuthMode::Pat) {
-        profile.set_auth(AuthChoice::Auto);
-    }
     if model.is_some() {
         profile.model.model = model;
     }
     profile
 }
 
-/// What the profile's authentication choice resolves to on the wizard's line.
+/// Whether the API key can be used on the wizard's line.
 pub(crate) fn auth_decision(
     cx: &Cx<'_>,
     site: &Site,
     line: Option<&LineId>,
-    profile: Option<&Profile>,
 ) -> superba_core::AuthDecision {
-    let line = line.and_then(|l| site.line(l));
-    super::shared::decision_with(
-        site,
-        line,
-        line.and_then(|l| cx.data.site_caps(&site.id, &l.id)),
-        profile,
-        super::shared::AutoFacts {
-            router: false,
-            ..super::shared::auto_facts(cx.data)
-        },
-    )
+    super::shared::decision(site, line.and_then(|l| cx.data.site_caps(&site.id, l)))
 }
 
-/// The profile Apply saves for a preset with lines ([`wizard_profile`]). A
-/// re-run keeps the provider's authentication choice; a manual one the chosen
-/// line cannot use would only block the switch, so it becomes Automatic there
-/// (Confirm shows the change).
+/// The profile Apply saves for a preset with lines ([`wizard_profile`]).
 pub fn planned_profile(cx: &Cx<'_>, w: &Wizard) -> Option<Profile> {
     let site = w.site.as_ref()?;
-    let mut profile = wizard_profile(
+    Some(wizard_profile(
         w.editing_profile(cx.data),
         site,
         w.line.clone(),
         w.model.clone(),
-    );
-    if !profile.auth_choice().is_auto()
-        && site.supports(AuthMode::Pat)
-        && auth_decision(cx, site, w.line.as_ref(), Some(&profile))
-            .mode
-            .is_none()
-    {
-        profile.set_auth(AuthChoice::Auto);
-    }
-    Some(profile)
+    ))
 }
 
 /// Apply (the last step): the profile, key and switch to plan, or the official

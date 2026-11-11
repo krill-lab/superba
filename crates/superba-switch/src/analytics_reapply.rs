@@ -38,6 +38,14 @@ impl Switcher {
     /// [`Self::analytics_reapply_delivered_impl`]: a start whose window never
     /// showed it shows the same notice again (nothing is written again).
     pub(crate) async fn analytics_reapply_impl(&self) -> Vec<Notice> {
+        // One-off alpha.16 PAT→API-key migration (user bug 139): it rides on
+        // this once-per-start call; remove with `crate::pat_migration`.
+        let mut notes = self.pat_migration().await;
+        notes.extend(self.analytics_reapply_owed().await);
+        notes
+    }
+
+    async fn analytics_reapply_owed(&self) -> Vec<Notice> {
         let d = &self.deps;
         let mut set = match d.profiles.load().await {
             Ok(set) => set,
@@ -103,6 +111,8 @@ impl Switcher {
     /// The window showed the notice: settle it (a first failure stays owed
     /// for one retry at the next start).
     pub(crate) async fn analytics_reapply_delivered_impl(&self) -> superba_core::Result<()> {
+        // One-off alpha.16 PAT→API-key migration (user bug 139).
+        self.pat_migration_delivered().await?;
         let d = &self.deps;
         let mut set = d.profiles.load().await?;
         let Some(owed) = set.settings.analytics_reapply.as_mut() else {

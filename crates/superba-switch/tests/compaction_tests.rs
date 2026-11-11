@@ -14,11 +14,11 @@ use async_trait::async_trait;
 use fakes::*;
 use pretty_assertions::assert_eq;
 use superba_core::{
-    AccountSummary, AuthApiHealth, AuthMode, Clock, CompactionCheck, CompactionChoice,
-    CompactionRequest, CompactionSource, CompactionSupport, Error, GenerationRecord, KeyCheck,
-    Line, LineCaps, LineProber, ModelInfo, ModelList, ModelListRequest, Origin, ProfileId,
-    ResolvedEndpoints, ResponsesProbe, Result, Secret, Site, SiteId, SwitchPlan, SwitchService,
-    Timestamp, TransportRefresh, UsageQuery, UsageReport,
+    AccountSummary, AuthMode, Clock, CompactionCheck, CompactionChoice, CompactionRequest,
+    CompactionSource, CompactionSupport, Error, GenerationRecord, KeyCheck, Line, LineCaps,
+    LineProber, ModelInfo, ModelList, ModelListRequest, ProfileId, ResolvedEndpoints,
+    ResponsesProbe, Result, Secret, Site, SiteId, SwitchPlan, SwitchService, Timestamp,
+    TransportRefresh, UsageQuery, UsageReport,
 };
 use superba_router::config::RouterConfig;
 use superba_router::watchdog::Liveness;
@@ -53,9 +53,6 @@ impl LineProber for CompactionProber {
     }
     async fn check_key(&self, _: &Site, _: &Line, _: AuthMode, _: &Secret) -> Result<KeyCheck> {
         Err(Error::not_implemented("check_key"))
-    }
-    async fn check_authapi(&self, _: &Site, _: &Origin, _: &Secret) -> Result<AuthApiHealth> {
-        Err(Error::not_implemented("check_authapi"))
     }
     async fn list_models(&self, _: &Url, _: &Secret) -> Result<Vec<ModelInfo>> {
         Ok(vec![ModelInfo {
@@ -353,7 +350,7 @@ async fn conversations_compacted_on_another_site_are_counted_before_the_switch()
         profile_id: Some(work()),
         site_id: Some(SiteId::new(superba_core::catalog::KRILL_SITE_ID)),
         line_id: None,
-        auth_mode: Some(AuthMode::Pat),
+        auth_mode: Some(AuthMode::ApiKey),
         generation: 1,
         applied_at: Timestamp(T0 - 7_200_000),
     });

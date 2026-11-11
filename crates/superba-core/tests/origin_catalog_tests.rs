@@ -141,37 +141,17 @@ fn codex_paths_and_chatgpt_base_url_preserve_required_slashes() {
 }
 
 #[test]
-fn resolved_line_endpoints_only_add_auth_endpoints_for_pat() {
+fn resolved_line_endpoints_point_openai_base_url_at_the_path() {
     let origin = Origin::parse("https://api.example.com").unwrap();
-    let pat =
-        ResolvedEndpoints::for_line(&origin, CodexPath::BackendApiCodex, AuthMode::Pat).unwrap();
-    assert_eq!(pat.origin, origin);
-    assert_eq!(pat.codex_path, CodexPath::BackendApiCodex);
-    assert_eq!(
-        pat.openai_base_url.as_str(),
-        "https://api.example.com/backend-api/codex"
-    );
-    assert_eq!(
-        pat.chatgpt_base_url.unwrap().as_str(),
-        "https://api.example.com/backend-api/"
-    );
-    assert_eq!(pat.authapi_origin, Some(origin.clone()));
-    // PAT is only valid on the backend-api path; `/codex/v1` is an API-key fallback.
-    for path in [CodexPath::CodexV1, CodexPath::AsIs] {
-        let err = ResolvedEndpoints::for_line(&origin, path, AuthMode::Pat).unwrap_err();
-        assert_eq!(err.code(), "invalid");
-    }
     for path in [
         CodexPath::BackendApiCodex,
         CodexPath::CodexV1,
         CodexPath::AsIs,
     ] {
-        let apikey = ResolvedEndpoints::for_line(&origin, path, AuthMode::ApiKey).unwrap();
-        assert_eq!(apikey.origin, origin);
-        assert_eq!(apikey.codex_path, path);
-        assert_eq!(apikey.openai_base_url, path.base_url(&origin));
-        assert_eq!(apikey.chatgpt_base_url, None);
-        assert_eq!(apikey.authapi_origin, None);
+        let e = ResolvedEndpoints::for_line(&origin, path).unwrap();
+        assert_eq!(e.origin, origin);
+        assert_eq!(e.codex_path, path);
+        assert_eq!(e.openai_base_url, path.base_url(&origin));
     }
 }
 
@@ -189,8 +169,6 @@ fn compatible_endpoints_preserve_the_full_base_url() {
             base.origin().ascii_serialization()
         );
         assert_eq!(endpoints.codex_path, CodexPath::AsIs);
-        assert_eq!(endpoints.chatgpt_base_url, None);
-        assert_eq!(endpoints.authapi_origin, None);
     }
     for input in [
         "http://compatible.example/v1",
@@ -224,7 +202,7 @@ fn krill_catalog_has_exactly_the_three_expected_lines_and_overseas_default() {
         "https://api.kbsfdxc.com"
     );
     assert!(site.line(&LineId::from("missing")).is_none());
-    assert!(site.supports(AuthMode::Pat));
+    assert!(site.supports(AuthMode::ApiKey));
     assert!(site.supports(AuthMode::ApiKey));
     assert!(!site.supports(AuthMode::OfficialChatGpt));
 }
@@ -239,7 +217,7 @@ fn official_site_and_builtin_profile_identities_are_stable() {
     assert!(site.default_line().is_none());
     assert!(site.supports(AuthMode::OfficialChatGpt));
     assert!(!site.supports(AuthMode::ApiKey));
-    assert!(!site.supports(AuthMode::Pat));
+    assert!(!site.supports(AuthMode::ApiKey));
     let profiles = builtin_profiles();
     assert_eq!(
         profiles.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(),
@@ -283,22 +261,6 @@ fn krill_host_matching_respects_domain_boundaries_and_normalization() {
     ] {
         assert!(!is_krill_host(host), "accepted {host}");
     }
-}
-
-#[test]
-fn pat_endpoints_need_an_https_origin() {
-    // Codex refuses a plain-http chatgpt_base_url, even on loopback.
-    let http = Origin::parse("http://127.0.0.1:18001").unwrap();
-    assert!(!http.is_https());
-    let err =
-        ResolvedEndpoints::for_line(&http, CodexPath::BackendApiCodex, AuthMode::Pat).unwrap_err();
-    assert!(err.to_string().contains("https"), "{err}");
-    assert!(
-        ResolvedEndpoints::for_line(&http, CodexPath::BackendApiCodex, AuthMode::ApiKey).is_ok()
-    );
-    let https = Origin::parse("https://127.0.0.1:18001").unwrap();
-    assert!(https.is_https());
-    assert!(ResolvedEndpoints::for_line(&https, CodexPath::BackendApiCodex, AuthMode::Pat).is_ok());
 }
 
 /// Configs written up to 0.1.1-alpha.9 still name the old Krill origins: each
@@ -363,15 +325,8 @@ fn parsing_http_does_not_authorize_keys_or_builtin_lines() {
     ] {
         let origin = Origin::parse(input).unwrap();
         assert!(superba_core::ResolvedEndpoints::for_base_url(origin.url()).is_err());
-        for mode in [AuthMode::ApiKey, AuthMode::Pat] {
-            assert!(
-                superba_core::ResolvedEndpoints::for_line(
-                    &origin,
-                    CodexPath::BackendApiCodex,
-                    mode
-                )
-                .is_err()
-            );
-        }
+        assert!(
+            superba_core::ResolvedEndpoints::for_line(&origin, CodexPath::BackendApiCodex).is_err()
+        );
     }
 }

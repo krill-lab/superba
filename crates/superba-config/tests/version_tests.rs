@@ -4,7 +4,7 @@ use std::collections::{BTreeSet, HashSet};
 use pretty_assertions::assert_eq;
 use superba_config::version::{
     AppVersion, Confidence, Gate, bundled_codex_for_app, check, min_version_table,
-    parse_codex_version_output, required_capabilities,
+    parse_codex_version_output,
 };
 use superba_core::Error;
 use superba_core::codex::{CodexVersion, VersionCapability};
@@ -162,11 +162,7 @@ fn capability_gates_cover_supported_too_old_unknown_and_prerelease_floor() {
     let required = CodexVersion::new(0, 160, 0);
     let old = CodexVersion::new(0, 159, 99);
     let alpha = CodexVersion::parse("0.160.0-alpha.1").unwrap();
-    for capability in [
-        VersionCapability::TopLevelOpenaiBaseUrl,
-        VersionCapability::PersonalAccessToken,
-        VersionCapability::WhamAccountsCheck,
-    ] {
+    for capability in [VersionCapability::TopLevelOpenaiBaseUrl] {
         for version in [&required, &alpha, &CodexVersion::new(0, 162, 0)] {
             let gate = check(capability, Some(version));
             assert_eq!(gate, Gate::Supported);
@@ -191,35 +187,10 @@ fn capability_gates_cover_supported_too_old_unknown_and_prerelease_floor() {
         assert!(!unknown.is_supported());
     }
     let table = min_version_table();
-    assert_eq!(table.len(), 3);
-    assert_eq!(
-        table
-            .iter()
-            .find(|r| r.capability == VersionCapability::WhamAccountsCheck)
-            .unwrap()
-            .confidence,
-        Confidence::Verified
-    );
+    assert_eq!(table.len(), 1);
     assert!(
         table
             .iter()
-            .filter(|r| r.capability != VersionCapability::WhamAccountsCheck)
             .all(|r| r.confidence == Confidence::Provisional)
-    );
-}
-
-#[test]
-fn token_capabilities_include_pat_only_requirements_exactly_once() {
-    assert_eq!(
-        required_capabilities(false),
-        vec![VersionCapability::TopLevelOpenaiBaseUrl]
-    );
-    assert_eq!(
-        required_capabilities(true),
-        vec![
-            VersionCapability::TopLevelOpenaiBaseUrl,
-            VersionCapability::PersonalAccessToken,
-            VersionCapability::WhamAccountsCheck
-        ]
     );
 }

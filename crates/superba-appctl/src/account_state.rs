@@ -25,6 +25,16 @@
 //! folds the stashed entries back into the top-level state (current values
 //! win, nothing is overwritten), removes the key, and keeps a copy of the
 //! original file in `backups/app-state/` of its data directory.
+//!
+//! App 26.1106 instead keeps one owner, [`OWNER_KEY`], and holds the
+//! account-scoped state back until the sign-in confirms it (user bug 139).
+//! An API key confirms the owner `"signed-out"` (the app's own value for no
+//! account). When the file has no owner yet (a home a personal access token or
+//! app 26.1103 used), that first confirmation counts as switching accounts and
+//! the app drops every persisted atom that is not global (sidebar, composer
+//! and model choices, ...). So Superba also names that owner before such a
+//! launch; the app then moves those atoms into the owner's namespace and keeps
+//! them.
 
 use std::fs;
 use std::io::Write;
@@ -37,6 +47,11 @@ use superba_core::{CodexHome, Error, Result, Timestamp};
 pub const ACCOUNT_STATE_KEY: &str = "electron-account-renderer-state-v1";
 /// Top-level key of the app's persisted atoms.
 const ATOMS: &str = "electron-persisted-atom-state";
+/// Top-level key naming whose account-scoped state the file holds (app
+/// 26.1106).
+pub const OWNER_KEY: &str = "electron-renderer-content-owner";
+/// The owner the app confirms without an account (an API key).
+pub const SIGNED_OUT_OWNER: &str = "signed-out";
 /// Copies of the original state file kept in the backup directory.
 const BACKUPS_KEPT: usize = 10;
 const BACKUP_PREFIX: &str = "global-state-";
@@ -189,11 +204,27 @@ pub fn prepare(home: &CodexHome, backup_dir: &Path, now: Timestamp) -> Result<Ou
     })
 }
 
+/// Name the owner of a file without one (see the module docs): only when it
+/// holds persisted atoms, which the app would otherwise drop at its first
+/// confirmation. Returns whether the state changed.
+pub fn name_signed_out_owner(state: &mut Value) -> bool {
+    let Some(object) = state.as_object_mut() else {
+        return false;
+    };
+    if object.contains_key(OWNER_KEY) || !object.get(ATOMS).is_some_and(Value::is_object) {
+        return false;
+    }
+    object.insert(OWNER_KEY.into(), Value::String(SIGNED_OUT_OWNER.into()));
+    true
+}
+
 /// What [`prepare_launch`] did.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Prepared {
     /// Stashed owners folded in (a token login with account-scoped state).
     pub stashes: Option<usize>,
+    /// The signed-out owner was named ([`name_signed_out_owner`]).
+    pub owner_named: bool,
     /// Projects brought back from the folders the user queued
     /// ([`crate::project_restore`]).
     pub restored: usize,
@@ -244,11 +275,14 @@ pub fn prepare_launch(
                 Error::invalid("desktop account-scoped state has an unknown shape")
             })?);
     }
+    if token {
+        done.owner_named = name_signed_out_owner(&mut state);
+    }
     if let Some(p) = &pending {
         done.restored = crate::project_restore::apply(&mut state, &p.items, now)
             .ok_or_else(|| Error::invalid("desktop project list has an unknown shape"))?;
     }
-    if done.stashes.is_some() || done.restored > 0 {
+    if done.stashes.is_some() || done.owner_named || done.restored > 0 {
         done.backup = Some(write_backup(backup_dir, &bytes, now)?);
         replace(home, &path, &state)?;
     }
@@ -299,11 +333,13 @@ pub(crate) fn seed(home: &CodexHome, backup_dir: &Path, app_state_dir: &Path) {
         Ok(Prepared { backup: None, .. }) => {}
         Ok(Prepared {
             stashes,
+            owner_named,
             restored,
             backup: Some(backup),
         }) => tracing::info!(
             path = %home.global_state_json().display(),
             stashes = stashes.unwrap_or(0),
+            owner_named,
             restored,
             backup = %backup.display(),
             "updated the desktop's project state before the launch"

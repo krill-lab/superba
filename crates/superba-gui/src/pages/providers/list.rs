@@ -24,7 +24,7 @@ use crate::design::icons::Icon;
 use crate::design::tokens::{size, space};
 use crate::design::widgets::{Button, PagedTable, RowContent, Status, Table, list_row, paint_row};
 use crate::pages::shared::providers::{Provider, ProviderKind};
-use crate::pages::shared::{auto_facts, decision_with, ordered_lines};
+use crate::pages::shared::{decision, ordered_lines};
 use crate::pages::{Action, Cx, Page};
 
 /// Display name of a provider.
@@ -39,14 +39,14 @@ pub(super) fn name(cx: &Cx<'_>, p: &Provider) -> String {
     }
 }
 
-/// The auth a provider resolves to on its primary line ("PAT", "API key").
+/// The auth a provider uses on its primary line ("API key"; none when the
+/// line cannot take the key).
 pub(super) fn auth_label(cx: &Cx<'_>, p: &Provider) -> Option<String> {
     let profile = p.profile.as_ref()?;
     let lines = ordered_lines(&p.site, Some(profile));
     let primary = lines.first();
     let caps = primary.and_then(|l| cx.data.site_caps(&p.site.id, &l.id));
-    let d = decision_with(&p.site, primary, caps, Some(profile), auto_facts(cx.data));
-    d.mode.map(|m| cx.auth_short(m))
+    decision(&p.site, caps).mode.map(|m| cx.auth_short(m))
 }
 
 /// The secondary line of a row.

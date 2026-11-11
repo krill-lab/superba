@@ -125,20 +125,6 @@ async fn the_overview_offers_open_or_reopen_only_where_it_helps() {
             Reopen,
             Nothing,
         ),
-        (
-            unavailable(FullRestartReason::AuthApiMissing),
-            true,
-            Some(AppLaunch::Reopen(FullRestartReason::AuthApiMissing)),
-            Reopen,
-            Nothing,
-        ),
-        (
-            unavailable(FullRestartReason::AuthApiUnhealthy),
-            true,
-            Some(AppLaunch::Reopen(FullRestartReason::AuthApiUnhealthy)),
-            Reopen,
-            Nothing,
-        ),
         // A reopen changes nothing here: bring it forward.
         (
             unavailable(FullRestartReason::NoBridge),

@@ -948,7 +948,7 @@ fn remote_restart_note(key: &str) -> bool {
 }
 
 fn routine_restart_note(key: &str) -> bool {
-    cli_restart_note(key) || remote_restart_note(key) || key == "switch.warn.authapi_line"
+    cli_restart_note(key) || remote_restart_note(key)
 }
 
 /// Situational notes: CLI processes, remote hosts, warnings, key changes. The

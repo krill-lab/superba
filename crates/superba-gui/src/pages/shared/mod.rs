@@ -16,7 +16,7 @@ pub mod providers;
 pub mod tool_label;
 pub mod values;
 
-pub use auth::{AutoFacts, auto_facts, decision, decision_with, switch_action};
+pub use auth::{decision, switch_action};
 pub use format::{compact, group_thousands, nice_axis};
 pub use lines::{
     LineToggle, applied_line, disable_and_switch, last_enabled, moved, ordered_lines,

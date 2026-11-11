@@ -122,21 +122,27 @@ impl Env {
     }
 }
 
-pub fn endpoints(origin: &str, path: CodexPath, mode: AuthMode) -> ResolvedEndpoints {
-    ResolvedEndpoints::for_line(&Origin::parse(origin).unwrap(), path, mode).unwrap()
+pub fn endpoints(origin: &str, path: CodexPath, _mode: AuthMode) -> ResolvedEndpoints {
+    ResolvedEndpoints::for_line(&Origin::parse(origin).unwrap(), path).unwrap()
 }
 
+/// A Krill profile with `key`. The profile [`pat`] stands for (the one a
+/// personal access token used before user bug 139, now an API key) is on the
+/// backend-api path with Krill's recommended settings; [`apikey`] is on
+/// `/codex/v1` without settings.
 pub fn token(origin: &str, mode: AuthMode, key: &str) -> ResolvedProfile {
-    let path = if mode == AuthMode::Pat {
+    let recommended = key == PAT_KEY;
+    let path = if recommended {
         CodexPath::BackendApiCodex
     } else {
         CodexPath::CodexV1
     };
     ResolvedProfile {
         model_catalog: None,
-        profile_id: Some(ProfileId::new(match mode {
-            AuthMode::Pat => "krill-pat",
-            _ => "krill-apikey",
+        profile_id: Some(ProfileId::new(if recommended {
+            "krill-pat"
+        } else {
+            "krill-apikey"
         })),
         site_id: Some(SiteId::new("krill")),
         line_id: Some(LineId::new(if origin == CDN { "cdn" } else { "overseas" })),
@@ -148,8 +154,7 @@ pub fn token(origin: &str, mode: AuthMode, key: &str) -> ResolvedProfile {
         },
         model: ModelDefaults::default(),
         key_resolutions: BTreeMap::new(),
-        // A Krill PAT profile starts with Krill's recommended settings.
-        settings: if mode == AuthMode::Pat {
+        settings: if recommended {
             superba_core::CodexSettings::krill_recommended()
         } else {
             Default::default()
@@ -158,7 +163,7 @@ pub fn token(origin: &str, mode: AuthMode, key: &str) -> ResolvedProfile {
 }
 
 pub fn pat(origin: &str) -> ResolvedProfile {
-    token(origin, AuthMode::Pat, PAT_KEY)
+    token(origin, AuthMode::ApiKey, PAT_KEY)
 }
 
 pub fn apikey(origin: &str) -> ResolvedProfile {

@@ -71,7 +71,7 @@ running.title = "正在切换到「{dest}」"
 shared_home = "{hosts} 共享同一个家目录：只写一次，并重启这些主机。"
 show_changes = "查看 {n} 项改动"
 switch_now = "立即切换"
-unknown_version = "{consumer} 的 Codex 版本未知，无法确认是否支持 PAT。"
+unknown_version = "{consumer} 的 Codex 版本未知，无法确认是否支持。"
 waiting.body = "现在切换会丢失这些回合的输出，Agent 正在运行的命令也会被结束。"
 waiting.force = "强制切换"
 waiting.this_computer = "本机"
@@ -86,7 +86,6 @@ waiting.will_switch = "结束后自动切换"
 
 [caps]
 key_only = "仅 API Key"
-pat_and_key = "PAT · API Key"
 unavailable = "不可用"
 
 [confirm]

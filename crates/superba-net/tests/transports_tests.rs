@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use pretty_assertions::assert_eq;
-use superba_core::{AuthMode, CodexPath, LineProber, Origin, ResolvedEndpoints, TransportSupport};
+use superba_core::{CodexPath, LineProber, Origin, ResolvedEndpoints, TransportSupport};
 use support::{KEY, key, prober};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
@@ -157,12 +157,8 @@ async fn start(relay: Relay) -> (String, Arc<Mutex<Vec<Seen>>>) {
 }
 
 fn endpoints(origin: &str) -> ResolvedEndpoints {
-    ResolvedEndpoints::for_line(
-        &Origin::parse(origin).unwrap(),
-        CodexPath::BackendApiCodex,
-        AuthMode::ApiKey,
-    )
-    .unwrap()
+    ResolvedEndpoints::for_line(&Origin::parse(origin).unwrap(), CodexPath::BackendApiCodex)
+        .unwrap()
 }
 
 /// Requests seen once every connection has finished (the upgraded one waits for

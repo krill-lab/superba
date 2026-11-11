@@ -134,13 +134,8 @@ async fn original_restore_round_trips(wsl: bool) {
         let origin = Origin::parse(OVERSEAS).unwrap();
         let mut pat = resolved(ResolvedMode::Token {
             site_kind: SiteKind::Krill,
-            auth: AuthMode::Pat,
-            endpoints: ResolvedEndpoints::for_line(
-                &origin,
-                CodexPath::BackendApiCodex,
-                AuthMode::Pat,
-            )
-            .unwrap(),
+            auth: AuthMode::ApiKey,
+            endpoints: ResolvedEndpoints::for_line(&origin, CodexPath::BackendApiCodex).unwrap(),
             key: Secret::new(KEY),
         });
         pat.settings = superba_core::CodexSettings::krill_recommended();
@@ -198,8 +193,7 @@ fn apikey(model: Option<&str>) -> ResolvedProfile {
     let mut p = resolved(ResolvedMode::Token {
         site_kind: SiteKind::Krill,
         auth: AuthMode::ApiKey,
-        endpoints: ResolvedEndpoints::for_line(&origin, CodexPath::CodexV1, AuthMode::ApiKey)
-            .unwrap(),
+        endpoints: ResolvedEndpoints::for_line(&origin, CodexPath::CodexV1).unwrap(),
         key: Secret::new(KEY),
     });
     p.model.model = model.map(str::to_owned);

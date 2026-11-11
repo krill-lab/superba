@@ -14,14 +14,22 @@ use std::time::Duration;
 use fakes::*;
 use pretty_assertions::assert_eq;
 use superba_core::{
-    AuthApiHealth, CodexProcessKind, Decision, DecisionRequest, Error, ExecuteOptions,
-    FullRestartReason, KeyChange, LegacySessionChoice, NoEvents, OutcomeStatus, ProfileId,
-    QuitOutcome, RendererState, RestartKind, RestoreTarget, SwitchEvent, SwitchIntent,
-    SwitchOutcome, SwitchPhase, SwitchPlan, SwitchRequest, SwitchService, TargetId, ThreadRef,
-    plan::CheckResult,
+    CodexProcessKind, Decision, DecisionRequest, Error, ExecuteOptions, FullRestartReason,
+    KeyChange, LegacySessionChoice, NoEvents, OutcomeStatus, ProfileId, QuitOutcome, RendererState,
+    RestartKind, RestoreTarget, SwitchEvent, SwitchIntent, SwitchOutcome, SwitchPhase, SwitchPlan,
+    SwitchRequest, SwitchService, TargetId, ThreadRef, plan::CheckResult,
 };
 use superba_switch::Switcher;
 use superba_switch::journal::{JournalStatus, StateLock, SwitchJournal};
+
+/// A home where an earlier Superba persisted `CODEX_AUTHAPI_BASE_URL` for a
+/// personal access token: every key switch now clears it (an env write), the
+/// way these tests' switches wrote it before user bug 139.
+fn pat_era_world() -> World {
+    let w = World::new();
+    w.env.report.lock().unwrap().superba_value = Some(OVERSEAS.into());
+    w
+}
 
 fn req(profile: &str) -> SwitchRequest {
     SwitchRequest::profile(ProfileId::new(profile))
@@ -71,7 +79,7 @@ fn journal_status(w: &World) -> Vec<JournalStatus> {
 
 #[tokio::test(start_paused = true)]
 async fn hot_switch_writes_then_restarts_then_verifies() {
-    let w = World::new();
+    let w = pat_era_world();
     let (o, ev) = run(
         &w,
         req("work"),
@@ -88,7 +96,12 @@ async fn hot_switch_writes_then_restarts_then_verifies() {
     let v = o.verification.as_ref().unwrap();
     assert_eq!(v.process, CheckResult::Passed);
     assert_eq!(v.files, CheckResult::Passed);
-    assert_eq!(v.auth, CheckResult::Passed);
+    // An API key has no auth address to check (user bug 139).
+    assert!(
+        matches!(v.auth, CheckResult::Skipped { .. }),
+        "{:?}",
+        v.auth
+    );
     assert_eq!(v.line, CheckResult::Passed);
     assert_eq!(v.renderer, CheckResult::Passed);
     assert_eq!(o.generation, Some(1));
@@ -115,7 +128,7 @@ async fn hot_switch_writes_then_restarts_then_verifies() {
 
 #[tokio::test(start_paused = true)]
 async fn first_takeover_snapshots_the_baseline_before_writing() {
-    let w = World::new();
+    let w = pat_era_world();
     *w.config.baseline.lock().unwrap() = None;
     let (o, _) = run(
         &w,
@@ -136,8 +149,11 @@ async fn first_takeover_snapshots_the_baseline_before_writing() {
 
 #[tokio::test(start_paused = true)]
 async fn released_baseline_captures_fresh_env_legacy_lines_and_sessions_before_takeover() {
-    for auth in [superba_core::AuthMode::Pat, superba_core::AuthMode::ApiKey] {
-        let w = World::new();
+    for auth in [
+        superba_core::AuthMode::ApiKey,
+        superba_core::AuthMode::ApiKey,
+    ] {
+        let w = pat_era_world();
         w.set_session(None);
         w.config.baseline.lock().unwrap().as_mut().unwrap().released = true;
         let location = superba_core::EnvLocation::ShellRc {
@@ -214,7 +230,7 @@ async fn restoring_a_released_original_or_official_keeps_the_saved_baseline() {
         },
         RestoreTarget::Official,
     ] {
-        let w = World::new();
+        let w = pat_era_world();
         w.set_session(None);
         w.config.baseline.lock().unwrap().as_mut().unwrap().released = true;
         let saved = w.config.baseline.lock().unwrap().clone();
@@ -227,49 +243,13 @@ async fn restoring_a_released_original_or_official_keeps_the_saved_baseline() {
     }
 }
 
-#[tokio::test(start_paused = true)]
-async fn restored_pat_generation_is_verified_with_its_saved_credentials() {
-    let w = World::new();
-    w.config.restore_token(superba_core::AuthMode::Pat);
-    let mut r = req("work");
-    r.intent = SwitchIntent::Restore {
-        target: RestoreTarget::Generation { generation: 1 },
-    };
-    let sw = w.switcher();
-    let p = plan_with(&sw, r).await;
-    assert!(p.primary.is_hot());
-    w.prober.authapi.lock().unwrap().insert(
-        OVERSEAS.into(),
-        AuthApiHealth::Unhealthy {
-            reason: "expired".into(),
-        },
-    );
-    let o = sw
-        .execute(
-            p,
-            ExecuteOptions::default(),
-            ScriptedDecider::with(&[("verification_failed", Decision::KeepWritten)]),
-            Arc::new(NoEvents),
-        )
-        .await
-        .unwrap();
-    assert!(matches!(
-        o.verification.as_ref().unwrap().auth,
-        CheckResult::Failed { .. }
-    ));
-    assert!(
-        w.prober.authapi_checks.lock().unwrap().len() >= 2,
-        "both planning and execution must check whoami"
-    );
-}
-
 /// Users of 0.1.1-alpha.9 and earlier have generations on the old Krill origins:
 /// such a generation is still on the overseas line, so its restore stays hot.
 #[tokio::test(start_paused = true)]
 async fn a_generation_on_a_legacy_krill_origin_is_still_on_its_line() {
-    let w = World::new();
+    let w = pat_era_world();
     w.config
-        .restore_token_at(superba_core::AuthMode::Pat, LEGACY_OVERSEAS);
+        .restore_token_at(superba_core::AuthMode::ApiKey, LEGACY_OVERSEAS);
     let mut r = req("work");
     r.intent = SwitchIntent::Restore {
         target: RestoreTarget::Generation { generation: 1 },
@@ -281,8 +261,11 @@ async fn a_generation_on_a_legacy_krill_origin_is_still_on_its_line() {
 
 #[tokio::test(start_paused = true)]
 async fn restored_key_generation_on_the_login_page_fails_verification() {
-    for auth in [superba_core::AuthMode::Pat, superba_core::AuthMode::ApiKey] {
-        let w = World::new();
+    for auth in [
+        superba_core::AuthMode::ApiKey,
+        superba_core::AuthMode::ApiKey,
+    ] {
+        let w = pat_era_world();
         w.config.restore_token(auth);
         w.app.renderer.lock().unwrap().on_login_page = true;
         let mut r = req("work");
@@ -305,7 +288,7 @@ async fn restored_key_generation_on_the_login_page_fails_verification() {
 
 #[tokio::test(start_paused = true)]
 async fn line_and_auth_overrides_are_stored_into_the_profile() {
-    let w = World::new();
+    let w = pat_era_world();
     let mut r = req("work");
     r.intent = SwitchIntent::Profile {
         profile_id: "work".into(),
@@ -322,7 +305,7 @@ async fn line_and_auth_overrides_are_stored_into_the_profile() {
 
 #[tokio::test(start_paused = true)]
 async fn kicked_to_home_returns_to_the_open_thread() {
-    let w = World::new();
+    let w = pat_era_world();
     *w.app.renderer_after_restart.lock().unwrap() = Some(RendererState {
         url: "app://-/index.html#/".into(),
         on_login_page: false,
@@ -353,7 +336,7 @@ async fn kicked_to_home_returns_to_the_open_thread() {
 
 #[tokio::test(start_paused = true)]
 async fn cancel_while_turns_run_writes_nothing() {
-    let w = World::new();
+    let w = pat_era_world();
     let mut lists = vec![vec![]];
     lists.extend(std::iter::repeat_n(vec![busy("local", "Refactor")], 50));
     w.push_turns(lists);
@@ -371,7 +354,7 @@ async fn cancel_while_turns_run_writes_nothing() {
 
 #[tokio::test(start_paused = true)]
 async fn turns_ending_on_their_own_drop_the_question_and_switch() {
-    let w = World::new();
+    let w = pat_era_world();
     // Busy for the plan-time check and three polls, then idle.
     w.push_turns(vec![
         vec![busy("local", "plan")],
@@ -395,13 +378,13 @@ async fn turns_ending_on_their_own_drop_the_question_and_switch() {
 
 #[tokio::test(start_paused = true)]
 async fn force_while_waiting_switches_and_force_option_never_asks() {
-    let w = World::new();
+    let w = pat_era_world();
     w.push_turns(vec![vec![], vec![busy("local", "a")]]);
     let d = ScriptedDecider::with(&[("wait_for_turns", Decision::Force)]);
     let (o, _) = run(&w, req("work"), ExecuteOptions::default(), d.clone()).await;
     assert_eq!(o.status, OutcomeStatus::Switched);
 
-    let w = World::new();
+    let w = pat_era_world();
     w.push_turns(vec![vec![busy("local", "a")]; 10]);
     let d = ScriptedDecider::with(&[]);
     let opts = ExecuteOptions {
@@ -415,7 +398,7 @@ async fn force_while_waiting_switches_and_force_option_never_asks() {
 
 #[tokio::test(start_paused = true)]
 async fn waiting_with_wait_answers_keeps_polling_until_idle() {
-    let w = World::new();
+    let w = pat_era_world();
     let mut lists = vec![vec![]];
     lists.extend(std::iter::repeat_n(vec![busy("local", "a")], 30));
     w.push_turns(lists);
@@ -426,7 +409,7 @@ async fn waiting_with_wait_answers_keeps_polling_until_idle() {
 
 #[tokio::test(start_paused = true)]
 async fn turn_starting_right_before_the_ipc_can_be_cancelled_with_rollback() {
-    let w = World::new();
+    let w = pat_era_world();
     // plan-time: idle; TurnCheck: idle; pre-IPC re-check: busy; then busy.
     w.push_turns(vec![
         vec![],
@@ -450,7 +433,7 @@ async fn turn_starting_right_before_the_ipc_can_be_cancelled_with_rollback() {
 
 #[tokio::test(start_paused = true)]
 async fn ipc_failure_undo_restores_the_files() {
-    let w = World::new();
+    let w = pat_era_world();
     *w.app.fail_hot_restart.lock().unwrap() = 1;
     let d = ScriptedDecider::with(&[("ipc_failed", Decision::Undo)]);
     let (o, ev) = run(&w, req("work"), ExecuteOptions::default(), d.clone()).await;
@@ -462,7 +445,7 @@ async fn ipc_failure_undo_restores_the_files() {
 
 #[tokio::test(start_paused = true)]
 async fn ipc_failure_keep_written_leaves_the_restart_to_the_user() {
-    let w = World::new();
+    let w = pat_era_world();
     *w.app.fail_hot_restart.lock().unwrap() = 1;
     let d = ScriptedDecider::with(&[("ipc_failed", Decision::KeepWritten)]);
     let (o, _) = run(&w, req("work"), ExecuteOptions::default(), d).await;
@@ -473,14 +456,14 @@ async fn ipc_failure_keep_written_leaves_the_restart_to_the_user() {
 
 #[tokio::test(start_paused = true)]
 async fn ipc_failure_full_restart_quits_and_relaunches_with_the_line() {
-    let w = World::new();
+    let w = pat_era_world();
     *w.app.fail_hot_restart.lock().unwrap() = 1;
     let d = ScriptedDecider::with(&[("ipc_failed", Decision::FullRestart)]);
     let (o, ev) = run(&w, req("work"), ExecuteOptions::default(), d).await;
     assert_eq!(o.status, OutcomeStatus::Switched, "{:?}", o.notices);
     let calls = w.calls();
     assert!(calls.contains(&"app.quit force=false".to_owned()));
-    assert!(calls.contains(&format!("app.launch authapi={OVERSEAS}")));
+    assert!(calls.contains(&"app.launch authapi=".to_owned()));
     assert!(ev.phases().contains(&SwitchPhase::Launching));
 }
 
@@ -488,7 +471,7 @@ async fn ipc_failure_full_restart_quits_and_relaunches_with_the_line() {
 
 #[tokio::test(start_paused = true)]
 async fn missing_new_app_server_retries_the_ipc_once_then_rolls_back() {
-    let w = World::new();
+    let w = pat_era_world();
     *w.app.restart_spawns.lock().unwrap() = false;
     let d = ScriptedDecider::with(&[]);
     let (o, ev) = run(&w, req("work"), ExecuteOptions::default(), d.clone()).await;
@@ -513,7 +496,7 @@ async fn missing_new_app_server_retries_the_ipc_once_then_rolls_back() {
 
 #[tokio::test(start_paused = true)]
 async fn login_page_after_restart_fails_verification_and_keep_written_is_honoured() {
-    let w = World::new();
+    let w = pat_era_world();
     *w.app.renderer_after_restart.lock().unwrap() = Some(RendererState {
         url: "app://-/index.html#/login".into(),
         on_login_page: true,
@@ -539,7 +522,7 @@ async fn login_page_after_restart_fails_verification_and_keep_written_is_honoure
 
 #[tokio::test(start_paused = true)]
 async fn file_changed_after_writing_fails_the_hash_check() {
-    let w = World::new();
+    let w = pat_era_world();
     *w.config.tamper_after_apply.lock().unwrap() = true;
     let d = ScriptedDecider::with(&[("verification_failed", Decision::Rollback)]);
     let (o, _) = run(&w, req("work"), ExecuteOptions::default(), d).await;
@@ -554,7 +537,7 @@ async fn file_changed_after_writing_fails_the_hash_check() {
 async fn config_rewritten_outside_owned_keys_still_verifies() {
     // e2e: the desktop app writes `[desktop]` / `[mcp_servers.*]` to config.toml
     // right after the restart; the hash changes, Superba's keys do not.
-    let w = World::new();
+    let w = pat_era_world();
     *w.config.config_rewritten_after_apply.lock().unwrap() = Some(Vec::new());
     let (o, ev) = run(
         &w,
@@ -574,7 +557,7 @@ async fn config_rewritten_outside_owned_keys_still_verifies() {
 
 #[tokio::test(start_paused = true)]
 async fn owned_keys_changed_after_writing_fail_the_files_check() {
-    let w = World::new();
+    let w = pat_era_world();
     *w.config.config_rewritten_after_apply.lock().unwrap() = Some(vec![KeyChange {
         path: "openai_base_url".into(),
         before: Some("\"https://api.kbsfdxc.net/backend-api/codex\"".into()),
@@ -591,35 +574,11 @@ async fn owned_keys_changed_after_writing_fail_the_files_check() {
     }
 }
 
-#[tokio::test(start_paused = true)]
-async fn unhealthy_whoami_after_the_switch_is_reported() {
-    let w = World::new();
-    let sw = w.switcher();
-    let plan = plan_with(&sw, req("work")).await;
-    // The auth address breaks between planning and verification.
-    w.prober.authapi.lock().unwrap().insert(
-        OVERSEAS.into(),
-        AuthApiHealth::Unhealthy {
-            reason: "edge".into(),
-        },
-    );
-    let d = ScriptedDecider::with(&[("verification_failed", Decision::Rollback)]);
-    let o = sw
-        .execute(plan, ExecuteOptions::default(), d, Arc::new(NoEvents))
-        .await
-        .unwrap();
-    assert_eq!(o.status, OutcomeStatus::RolledBack);
-    assert!(matches!(
-        o.verification.as_ref().unwrap().auth,
-        CheckResult::Failed { .. }
-    ));
-}
-
 // --- write failures (plan 7.6 #1) -------------------------------------------------------
 
 #[tokio::test(start_paused = true)]
 async fn env_write_failure_rolls_the_config_back_and_restarts_nothing() {
-    let w = World::new();
+    let w = pat_era_world();
     *w.env.fail_apply.lock().unwrap() = Some(Error::Io {
         path: "/fake/.zshenv".into(),
         kind: "PermissionDenied".into(),
@@ -648,7 +607,7 @@ async fn env_write_failure_rolls_the_config_back_and_restarts_nothing() {
 
 #[tokio::test(start_paused = true)]
 async fn config_write_failure_changes_nothing() {
-    let w = World::new();
+    let w = pat_era_world();
     *w.config.fail_apply.lock().unwrap() = Some(Error::Conflict {
         message: "raced".into(),
     });
@@ -669,7 +628,7 @@ async fn config_write_failure_changes_nothing() {
 
 #[tokio::test(start_paused = true)]
 async fn failed_rollback_is_reported_as_failed() {
-    let w = World::new();
+    let w = pat_era_world();
     *w.env.fail_apply.lock().unwrap() = Some(Error::other("env broken"));
     *w.config.fail_rollback.lock().unwrap() = Some(Error::Conflict {
         message: "edited meanwhile".into(),
@@ -695,7 +654,7 @@ async fn failed_rollback_is_reported_as_failed() {
 
 #[tokio::test(start_paused = true)]
 async fn crash_during_committed_undo_is_recovered_as_rollback() {
-    let w = World::new();
+    let w = pat_era_world();
     // Verification fails after the config and env transaction committed.
     w.app.renderer.lock().unwrap().on_login_page = true;
     *w.env.hang_on_revert.lock().unwrap() = true;
@@ -734,7 +693,7 @@ async fn crash_during_committed_undo_is_recovered_as_rollback() {
 // --- full restart -----------------------------------------------------------------------
 
 fn no_cdp_world() -> World {
-    let w = World::new();
+    let w = pat_era_world();
     w.set_session(Some(session(Some(OVERSEAS), false)));
     w.app
         .processes
@@ -744,15 +703,15 @@ fn no_cdp_world() -> World {
     w
 }
 
-fn unhealthy_authapi_world() -> World {
-    let w = World::new();
+/// An app opened through Superba (CDP) that still needs a full restart: the
+/// switch crosses auth families (the official login to a key).
+fn cross_family_world() -> World {
+    let w = pat_era_world();
     w.set_session(Some(session(Some(CN_FAST), true)));
-    w.prober.authapi.lock().unwrap().insert(
-        CN_FAST.into(),
-        AuthApiHealth::Unhealthy {
-            reason: "timeout".into(),
-        },
-    );
+    w.config.state.lock().unwrap().auth = superba_core::AuthShape::ChatGpt {
+        email: None,
+        account_id: None,
+    };
     w
 }
 
@@ -811,7 +770,7 @@ async fn full_restart_quits_writes_and_relaunches_through_superba() {
             "app.quit force=false".to_owned(),
             "config.apply".to_owned(),
             "env.apply".to_owned(),
-            format!("app.launch authapi={OVERSEAS}"),
+            "app.launch authapi=".to_owned(),
         ]
     );
     let launch = w.app.launches.lock().unwrap()[0].clone();
@@ -831,7 +790,7 @@ async fn full_restart_quits_writes_and_relaunches_through_superba() {
 
 #[tokio::test(start_paused = true)]
 async fn full_restart_returns_to_the_open_thread() {
-    let w = unhealthy_authapi_world();
+    let w = cross_family_world();
     let before = w.app.renderer.lock().unwrap().clone();
     let thread = before.current_thread.clone().unwrap();
     w.app
@@ -846,7 +805,7 @@ async fn full_restart_returns_to_the_open_thread() {
     assert_eq!(
         o.restart,
         RestartKind::FullAppRestart {
-            reason: FullRestartReason::AuthApiUnhealthy
+            reason: FullRestartReason::CrossAuthFamily
         }
     );
     assert_eq!(o.returned_to, Some(thread.clone()));
@@ -871,7 +830,7 @@ async fn full_restart_returns_to_the_open_thread() {
 
 #[tokio::test(start_paused = true)]
 async fn full_restart_waits_for_renderer_before_returning() {
-    let w = unhealthy_authapi_world();
+    let w = cross_family_world();
     let before = w.app.renderer.lock().unwrap().clone();
     let thread = before.current_thread.clone().unwrap();
     let loading = RendererState {
@@ -912,7 +871,7 @@ async fn full_restart_waits_for_renderer_before_returning() {
 
 #[tokio::test(start_paused = true)]
 async fn full_restart_without_an_open_thread_does_not_navigate() {
-    let w = unhealthy_authapi_world();
+    let w = cross_family_world();
     *w.app.renderer.lock().unwrap() = home_renderer();
 
     let (o, ev) = run(&w, req("work"), allow_full(), ScriptedDecider::with(&[])).await;
@@ -923,7 +882,7 @@ async fn full_restart_without_an_open_thread_does_not_navigate() {
 
 #[tokio::test(start_paused = true)]
 async fn full_restart_with_failed_verification_does_not_navigate() {
-    let w = unhealthy_authapi_world();
+    let w = cross_family_world();
     let before = w.app.renderer.lock().unwrap().clone();
     w.app
         .renderer_states
@@ -944,7 +903,7 @@ async fn full_restart_with_failed_verification_does_not_navigate() {
 
 #[tokio::test(start_paused = true)]
 async fn full_restart_stops_waiting_when_renderer_never_becomes_ready() {
-    let w = unhealthy_authapi_world();
+    let w = cross_family_world();
     let before = w.app.renderer.lock().unwrap().clone();
     w.app.renderer_states.lock().unwrap().extend([
         Ok(before),
@@ -971,7 +930,7 @@ async fn full_restart_stops_waiting_when_renderer_never_becomes_ready() {
 
 #[tokio::test(start_paused = true)]
 async fn full_restart_leaves_an_already_open_thread_alone() {
-    let w = unhealthy_authapi_world();
+    let w = cross_family_world();
     let before = w.app.renderer.lock().unwrap().clone();
     let after = RendererState {
         url: "app://-/index.html#/thread/t2".into(),
@@ -997,7 +956,7 @@ async fn full_restart_leaves_an_already_open_thread_alone() {
 
 #[tokio::test(start_paused = true)]
 async fn full_restart_ignores_failure_to_read_the_open_thread() {
-    let w = unhealthy_authapi_world();
+    let w = cross_family_world();
     w.app.renderer_states.lock().unwrap().extend([
         Err(Error::Cdp {
             message: "renderer unavailable before quit".into(),
@@ -1013,7 +972,7 @@ async fn full_restart_ignores_failure_to_read_the_open_thread() {
 
 #[tokio::test(start_paused = true)]
 async fn full_restart_in_safe_mode_does_not_navigate() {
-    let w = unhealthy_authapi_world();
+    let w = cross_family_world();
     w.profiles.set.lock().unwrap().settings.safe_mode = true;
     let before = w.app.renderer.lock().unwrap().clone();
     w.app
@@ -1126,7 +1085,7 @@ async fn the_force_quit_notice_needs_windows_and_an_app_without_cdp() {
     let plan = plan_with(&w.switcher_on(false), req("work")).await;
     assert!(plan.needs_confirmation());
     assert!(!plan.quits_by_force(), "{:?}", plan.warnings);
-    let w = unhealthy_authapi_world();
+    let w = cross_family_world();
     let sw = w.switcher_on(true);
     let plan = plan_with(&sw, req("work")).await;
     assert!(plan.needs_confirmation(), "{:?}", plan.primary);
@@ -1145,7 +1104,7 @@ async fn the_force_quit_notice_needs_windows_and_an_app_without_cdp() {
 
 #[tokio::test(start_paused = true)]
 async fn cancelled_full_restart_does_not_navigate() {
-    let w = unhealthy_authapi_world();
+    let w = cross_family_world();
     w.app
         .quit_outcomes
         .lock()
@@ -1162,7 +1121,7 @@ async fn cancelled_full_restart_does_not_navigate() {
 
 #[tokio::test(start_paused = true)]
 async fn full_restart_with_failed_launch_does_not_navigate() {
-    let w = unhealthy_authapi_world();
+    let w = cross_family_world();
     *w.app.fail_launch.lock().unwrap() = Some(Error::Process {
         message: "exec failed".into(),
     });
@@ -1415,7 +1374,7 @@ async fn failed_launch_keeps_the_new_configuration_and_says_so() {
 // --- session migration ------------------------------------------------------------------
 
 fn legacy_world() -> World {
-    let w = World::new();
+    let w = pat_era_world();
     w.config.state.lock().unwrap().model_provider = Some("krill".into());
     let home = w.ctx.codex_home();
     *w.sessions.report.lock().unwrap() = session_report(home.root(), &[("krill", 12)]);
@@ -1465,7 +1424,7 @@ async fn takeover_migration_stops_everything_then_migrates_and_relaunches() {
             "config.apply".to_owned(),
             "env.apply".to_owned(),
             "sessions.migrate".to_owned(),
-            format!("app.launch authapi={OVERSEAS}"),
+            "app.launch authapi=".to_owned(),
         ]
     );
     let entry = &SwitchJournal::new(&w.ctx.data_dir).entries().unwrap()[0];
@@ -1709,7 +1668,7 @@ async fn check_again_after_a_failed_stop_lists_the_processes_again() {
 /// GH#4: after a local switch the outcome says what every consumer runs.
 #[tokio::test(start_paused = true)]
 async fn the_outcome_reports_which_consumers_still_run_the_previous_configuration() {
-    let w = World::new();
+    let w = pat_era_world();
     w.app.processes.lock().unwrap().push(cli_process(
         300,
         CodexProcessKind::CliTui,
@@ -1836,7 +1795,7 @@ async fn write_only_does_not_migrate_sessions() {
 
 #[tokio::test(start_paused = true)]
 async fn app_not_running_writes_and_says_it_applies_next_time() {
-    let w = World::new();
+    let w = pat_era_world();
     w.set_session(None);
     let (o, ev) = run(
         &w,
@@ -1854,7 +1813,7 @@ async fn app_not_running_writes_and_says_it_applies_next_time() {
 
 #[tokio::test(start_paused = true)]
 async fn restart_app_intent_launches_a_stopped_app() {
-    let w = World::new();
+    let w = pat_era_world();
     w.set_session(None);
     let mut r = req("work");
     r.intent = SwitchIntent::RestartApp { install_id: None };
@@ -1867,7 +1826,7 @@ async fn restart_app_intent_launches_a_stopped_app() {
 
 #[tokio::test(start_paused = true)]
 async fn blocked_plans_and_open_questions_are_refused() {
-    let w = World::new();
+    let w = pat_era_world();
     w.secrets.map.lock().unwrap().clear();
     let sw = w.switcher();
     let plan = plan_with(&sw, req("work")).await;
@@ -1882,7 +1841,7 @@ async fn blocked_plans_and_open_questions_are_refused() {
         .unwrap_err();
     assert_eq!(err.code(), "blocked");
 
-    let w = World::new();
+    let w = pat_era_world();
     w.app.installs.lock().unwrap()[0].bundled_codex_version = None;
     let sw = w.switcher();
     let plan = plan_with(&sw, req("work")).await;
@@ -1901,7 +1860,7 @@ async fn blocked_plans_and_open_questions_are_refused() {
 
 #[tokio::test(start_paused = true)]
 async fn a_plan_executes_once_and_only_on_its_service() {
-    let w = World::new();
+    let w = pat_era_world();
     let sw = w.switcher();
     let plan = plan_with(&sw, req("work")).await;
     sw.execute(
@@ -1940,7 +1899,7 @@ async fn a_plan_executes_once_and_only_on_its_service() {
 
 #[tokio::test(start_paused = true)]
 async fn another_superba_holding_the_state_lock_is_reported() {
-    let w = World::new();
+    let w = pat_era_world();
     let sw = w.switcher();
     let plan = plan_with(&sw, req("work")).await;
     let _held = StateLock::acquire(&w.ctx.data_dir).unwrap();
@@ -1997,7 +1956,7 @@ async fn full_restart_uses_the_fresh_app_session_for_connected_remotes() {
 
 #[tokio::test(start_paused = true)]
 async fn remote_hosts_switch_in_parallel_and_a_failure_is_partial() {
-    let w = World::new();
+    let w = pat_era_world();
     *w.remote.hosts.lock().unwrap() = vec![
         remote_host("devbox", Some("h-dev")),
         remote_host("gpu", Some("h-gpu")),
@@ -2056,7 +2015,7 @@ async fn remote_hosts_switch_in_parallel_and_a_failure_is_partial() {
 
 #[tokio::test(start_paused = true)]
 async fn unknown_remote_activity_asks_and_cancel_writes_nothing() {
-    let w = World::new();
+    let w = pat_era_world();
     *w.remote.hosts.lock().unwrap() = vec![remote_host("devbox", Some("h-dev"))];
     w.remote.incomplete.lock().unwrap().push("devbox".into());
     let d = ScriptedDecider::with(&[]);
@@ -2074,7 +2033,7 @@ async fn unknown_remote_activity_asks_and_cancel_writes_nothing() {
 
 #[tokio::test(start_paused = true)]
 async fn remote_rollback_uses_the_journal_of_the_last_switch() {
-    let w = World::new();
+    let w = pat_era_world();
     *w.remote.hosts.lock().unwrap() = vec![remote_host("devbox", Some("h-dev"))];
     let (o, _) = run(
         &w,
@@ -2106,7 +2065,7 @@ async fn remote_rollback_uses_the_journal_of_the_last_switch() {
 
 #[tokio::test(start_paused = true)]
 async fn terminals_started_before_the_switch_are_reported_stale() {
-    let w = World::new();
+    let w = pat_era_world();
     w.app
         .processes
         .lock()
@@ -2130,7 +2089,7 @@ async fn terminals_started_before_the_switch_are_reported_stale() {
 
 #[tokio::test(start_paused = true)]
 async fn restore_official_with_the_app_running_is_a_confirmed_full_restart() {
-    let w = World::new();
+    let w = pat_era_world();
     let mut r = req("work");
     r.intent = SwitchIntent::Restore {
         target: RestoreTarget::Official,
@@ -2150,7 +2109,7 @@ async fn restore_official_with_the_app_running_is_a_confirmed_full_restart() {
 
 #[tokio::test(start_paused = true)]
 async fn uninstall_restores_the_baseline_and_removes_launcher_entries_and_backups() {
-    let w = World::new();
+    let w = pat_era_world();
     w.set_session(None);
     let backups = w.ctx.data_dir.backups_dir();
     std::fs::create_dir_all(backups.join("switch")).unwrap();
@@ -2220,7 +2179,7 @@ async fn uninstall_restores_the_baseline_and_removes_launcher_entries_and_backup
 
 #[tokio::test(start_paused = true)]
 async fn unobservable_app_servers_skip_the_process_check_instead_of_rolling_back() {
-    let w = World::new();
+    let w = pat_era_world();
     // Process listing never shows app-servers on this system.
     w.app
         .processes
@@ -2304,7 +2263,7 @@ async fn a_failed_relaunch_is_reported_at_once_and_not_as_a_plain_written_switch
 /// the descriptor until its exec) is waited for; one really held is reported.
 #[test]
 fn a_state_lock_busy_for_a_moment_is_waited_for() {
-    let w = World::new();
+    let w = pat_era_world();
     let held = StateLock::acquire(&w.ctx.data_dir).unwrap();
     let release = std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_millis(60));
@@ -2325,7 +2284,7 @@ fn a_state_lock_busy_for_a_moment_is_waited_for() {
 /// plain success.
 #[tokio::test(start_paused = true)]
 async fn a_relaunched_app_without_a_window_is_not_a_plain_success() {
-    let w = unhealthy_authapi_world();
+    let w = cross_family_world();
     let before = w.app.renderer.lock().unwrap().clone();
     let mut states = vec![Ok(before)];
     states.extend((0..2000).map(|_| {

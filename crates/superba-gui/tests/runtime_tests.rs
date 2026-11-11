@@ -45,7 +45,6 @@ fn compatible_pair(id: &str) -> (Site, Profile) {
             model: Some("example-model".into()),
             reasoning_effort: None,
         },
-        auth: superba_core::AuthChoice::from_mode(AuthMode::ApiKey),
         backup_lines: Vec::new(),
         disabled_lines: Default::default(),
         codex_settings: Default::default(),
@@ -330,7 +329,7 @@ fn line_request() -> SwitchRequest {
         intent: SwitchIntent::Profile {
             profile_id: "krill".into(),
             line_id: Some("cdn".into()),
-            auth_mode: Some(AuthMode::Pat),
+            auth_mode: Some(AuthMode::ApiKey),
         },
         ..SwitchRequest::profile("krill".into())
     }

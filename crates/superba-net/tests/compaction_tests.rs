@@ -215,7 +215,6 @@ async fn an_unreachable_provider_is_unknown_and_no_key_leaks() {
     let endpoints = superba_core::ResolvedEndpoints::for_line(
         &superba_core::Origin::parse(&origin).unwrap(),
         superba_core::CodexPath::BackendApiCodex,
-        superba_core::AuthMode::ApiKey,
     )
     .unwrap();
     let c = prober()

@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 use egui::{Event, Key, Pos2, Rect, pos2};
 use pretty_assertions::assert_eq;
 use superba_core::{
-    AuthChoice, AuthMode, Locale, ModelOverride, ModelsEdit, ProfileId, SwitchService, Timestamp,
+    AuthMode, Locale, ModelOverride, ModelsEdit, ProfileId, SwitchService, Timestamp,
 };
 use superba_gui::design::Palette;
 use superba_gui::design::widgets::token_field::{exact_tokens, token_label};
@@ -55,7 +55,6 @@ impl Page {
                 .cloned()
                 .unwrap();
             p.auth_mode = AuthMode::ApiKey;
-            p.set_auth(AuthChoice::ApiKey);
             fake.save_profile(p, None).await.unwrap();
         }
         let mut page = Page {

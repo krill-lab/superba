@@ -15,7 +15,7 @@ use crate::design::widgets::{
     Badge, Button, Card, Choice, Dropdown, KeyInput, Latency, LatencyBadge, Status, StatusDot,
     Text, choice_cards, link_button,
 };
-use crate::pages::{Action, Cx, auth_mode_for_line, key_access_status};
+use crate::pages::{Action, Cx, key_access_status};
 
 // ---------------------------------------------------------------------------
 // Background reads
@@ -174,8 +174,8 @@ fn queue_key_checks(cx: &Cx<'_>, w: &mut Wizard, out: &mut Vec<Action>) {
         let Some(caps) = cx.data.site_caps(&site.id, &line.id) else {
             continue;
         };
-        let mode = auth_mode_for_line(AuthMode::Pat, Some(caps));
-        if key.is_none() && stored.is_none() {
+        let mode = AuthMode::ApiKey;
+        if !caps.allows(mode) || (key.is_none() && stored.is_none()) {
             continue;
         }
         if !w.checked_modes.insert((line.id.clone(), mode)) {
@@ -196,9 +196,7 @@ fn queue_key_checks(cx: &Cx<'_>, w: &mut Wizard, out: &mut Vec<Action>) {
 /// errors and other unclear results do not stop the wizard.
 pub(super) fn rejected_on_line(cx: &Cx<'_>, w: &Wizard) -> Option<KeyAccess> {
     let line = w.line.as_ref()?;
-    let site = w.site.as_ref()?;
-    let mode = auth_mode_for_line(AuthMode::Pat, cx.data.site_caps(&site.id, line));
-    match cx.data.key_checks.get(&(line.clone(), mode)) {
+    match cx.data.key_checks.get(&(line.clone(), AuthMode::ApiKey)) {
         Some(Ok(k))
             if matches!(
                 k.access,
@@ -425,14 +423,9 @@ pub fn field_changes(
         .filter(|a| a.profile_id.as_ref() == Some(&before.id));
     let old_mode = applied
         .and_then(|a| a.auth_mode)
-        .or_else(|| super::auth_decision(cx, site, old_line.as_ref(), Some(before)).mode);
-    let auth = |choice: superba_core::AuthChoice, mode: Option<AuthMode>| {
-        let mode = mode.map_or_else(|| tr.t("wizard.review.none"), |m| cx.auth_short(m));
-        if choice.is_auto() {
-            tr.f("wizard.review.auto_mode", &[("mode", &mode)])
-        } else {
-            mode
-        }
+        .or_else(|| super::auth_decision(cx, site, old_line.as_ref()).mode);
+    let auth = |mode: Option<AuthMode>| {
+        mode.map_or_else(|| tr.t("wizard.review.none"), |m| cx.auth_short(m))
     };
     let model = |m: &Option<String>| {
         m.clone()
@@ -447,8 +440,8 @@ pub fn field_changes(
         },
         FieldChange {
             label: tr.t("wizard.review.field.auth"),
-            old: auth(before.auth_choice(), old_mode),
-            new: auth(after.auth_choice(), decision.mode),
+            old: auth(old_mode),
+            new: auth(decision.mode),
         },
         FieldChange {
             label: tr.t("wizard.review.field.model"),
@@ -1007,7 +1000,7 @@ fn keeps_current_line(cx: &Cx<'_>, w: &Wizard) -> bool {
 
 fn line_card(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard, site: &Site, line: &superba_core::Line) {
     let caps = cx.data.site_caps(&site.id, &line.id);
-    let mode = auth_mode_for_line(AuthMode::Pat, caps);
+    let mode = AuthMode::ApiKey;
     let selected = w.line.as_ref() == Some(&line.id);
     let probing = cx.data.probing_site(&site.id);
     let name = cx.tr.text(&line.name);
@@ -1026,16 +1019,10 @@ fn line_card(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard, site: &Site, line: &super
         ui.add_space(4.0);
         ui.horizontal_wrapped(|ui| {
             let key = (line.id.clone(), mode);
-            let api_only =
-                caps.is_some_and(|c| !c.allows(AuthMode::Pat) && c.allows(AuthMode::ApiKey));
             if cx.data.key_checking.contains(&key) {
                 ui.add(Badge::new(cx.tr.t("wizard.line.checking")).status(Status::Busy));
             } else if let Some(Ok(k)) = cx.data.key_checks.get(&key) {
-                let label = if k.access.is_ok() && api_only {
-                    cx.tr.t("pages.key.api_only")
-                } else {
-                    cx.tr.text(&k.access.text())
-                };
+                let label = cx.tr.text(&k.access.text());
                 ui.add(Badge::new(label).status(key_access_status(&k.access)));
             } else if let Some(c) = caps {
                 ui.add(Badge::new(caps_label(cx, c)));
@@ -1060,8 +1047,6 @@ fn latency(caps: Option<&LineCaps>, probing: bool) -> Latency {
 fn caps_label(cx: &Cx<'_>, c: &LineCaps) -> String {
     if !c.reachable || c.codex_path.is_none() {
         cx.tr.t("caps.unavailable")
-    } else if c.allows(AuthMode::Pat) {
-        cx.tr.t("caps.pat_and_key")
     } else if c.allows(AuthMode::ApiKey) {
         cx.tr.t("caps.key_only")
     } else {
@@ -1255,33 +1240,18 @@ pub(super) fn confirm(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard) {
             dest.push(cx.tr.text(&l.name));
         }
         ui.label(Text::h2(dest.join(" · "), cx.pal));
-        // The authentication of the profile Apply saves (a re-run keeps the
-        // provider's choice; `planned_profile`).
+        // The profile Apply saves (`planned_profile`).
         let planned = if w.custom() {
             w.custom.draft.as_ref().map(|(_, p)| p.clone())
         } else {
             super::planned_profile(cx, w)
         };
-        let decision = super::auth_decision(
-            cx,
-            &site,
-            w.line.as_ref(),
-            planned.as_ref().or(w.editing_profile(cx.data)),
-        );
-        let mode = decision.mode.unwrap_or(AuthMode::ApiKey);
-        let auth_key = if decision.choice.is_auto() {
-            "wizard.review.auth"
-        } else {
-            "wizard.review.auth_manual"
-        };
+        let decision = super::auth_decision(cx, &site, w.line.as_ref());
         ui.add(
             egui::Label::new(Text::small(
                 cx.tr.f(
-                    auth_key,
-                    &[
-                        ("mode", &cx.auth_short(mode)),
-                        ("reason", &cx.localize(&decision.reason.text())),
-                    ],
+                    "wizard.review.auth",
+                    &[("mode", &cx.localize(&decision.text()))],
                 ),
                 cx.pal,
             ))
@@ -1313,9 +1283,6 @@ pub(super) fn confirm(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard) {
         }
         if let Some(model) = &w.model {
             items.push(cx.tr.f("wizard.review.model", &[("model", model)]));
-        }
-        if mode == AuthMode::Pat {
-            items.push(cx.tr.f("wizard.review.env", &[("origin", &origin)]));
         }
         items.push(cx.tr.t(if w.editing.is_some() {
             "wizard.review.edits"

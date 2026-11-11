@@ -1,7 +1,7 @@
 //! Command syntax. Help text comes from the CLI catalog.
 
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
-use superba_core::{AuthMode, ProviderRestore, TargetId, TargetSelection, catalog};
+use superba_core::{ProviderRestore, TargetId, TargetSelection, catalog};
 
 use crate::text::english;
 
@@ -189,40 +189,6 @@ pub enum DataCommand {
     Usage,
 }
 
-/// A profile's auth choice (Auto unless changed under Advanced).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub enum AuthChoiceArg {
-    Auto,
-    Pat,
-    Apikey,
-}
-
-impl From<AuthChoiceArg> for superba_core::AuthChoice {
-    fn from(value: AuthChoiceArg) -> Self {
-        match value {
-            AuthChoiceArg::Auto => Self::Auto,
-            AuthChoiceArg::Pat => Self::Pat,
-            AuthChoiceArg::Apikey => Self::ApiKey,
-        }
-    }
-}
-
-/// Token authentication values.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub enum AuthArg {
-    Pat,
-    Apikey,
-}
-
-impl From<AuthArg> for AuthMode {
-    fn from(value: AuthArg) -> Self {
-        match value {
-            AuthArg::Pat => Self::Pat,
-            AuthArg::Apikey => Self::ApiKey,
-        }
-    }
-}
-
 /// Options shared by all commands that execute a plan.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Args)]
 pub struct ExecArgs {
@@ -262,8 +228,6 @@ impl ExecArgs {
 pub struct SwitchAnswers {
     #[arg(long, help = english("cli.help.line"))]
     pub line: Option<String>,
-    #[arg(long, value_enum, help = english("cli.help.auth"))]
-    pub auth: Option<AuthArg>,
     #[arg(long, help = english("cli.help.model"))]
     pub model: Option<String>,
     #[arg(long, conflicts_with = "skip_legacy_sessions", help = english("cli.help.migrate_legacy_sessions"))]
@@ -420,8 +384,6 @@ pub struct KeyCheckArgs {
     pub site: Option<String>,
     #[arg(long, help = english("cli.help.line"))]
     pub line: Option<String>,
-    #[arg(long, value_enum, help = english("cli.help.auth"))]
-    pub auth: Option<AuthArg>,
     #[arg(long, value_name = "VAR", help = english("cli.help.key_env_read"))]
     pub key_env: Option<String>,
     #[arg(long, visible_alias = "key-stdin", help = english("cli.help.stdin"))]
@@ -470,8 +432,6 @@ pub struct ProfileAddArgs {
     pub site: String,
     #[arg(long = "line", value_name = "LINE", help = english("cli.help.profile_lines"))]
     pub lines: Vec<String>,
-    #[arg(long, value_enum, help = english("cli.help.auth_choice"))]
-    pub auth: Option<AuthChoiceArg>,
     #[arg(long, value_name = "VAR", help = english("cli.help.key_env"))]
     pub key_env: Option<String>,
     #[arg(long, visible_alias = "stdin", help = english("cli.help.stdin"))]
@@ -503,8 +463,6 @@ pub struct ProfileEditArgs {
     pub disable_lines: Vec<String>,
     #[arg(long = "enable-line", value_name = "LINE", help = english("cli.help.enable_line"))]
     pub enable_lines: Vec<String>,
-    #[arg(long, value_enum, help = english("cli.help.auth_choice"))]
-    pub auth: Option<AuthChoiceArg>,
     #[arg(long, help = english("cli.help.model"))]
     pub model: Option<String>,
     #[arg(long, help = english("cli.help.effort"))]
@@ -1488,8 +1446,6 @@ pub enum RemoteCommand {
         profile: Option<String>,
         #[arg(long, help = english("cli.help.line"))]
         line: Option<String>,
-        #[arg(long, value_enum, help = english("cli.help.auth"))]
-        auth: Option<AuthArg>,
         #[command(flatten)]
         exec: ExecArgs,
     },

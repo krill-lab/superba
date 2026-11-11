@@ -191,8 +191,6 @@ fn every_full_restart_reason_has_complete_translations() {
     let texts: Vec<_> = [
         FullRestartReason::NoCdp,
         FullRestartReason::NoBridge,
-        FullRestartReason::AuthApiMissing,
-        FullRestartReason::AuthApiUnhealthy,
         FullRestartReason::CrossAuthFamily,
         FullRestartReason::SessionMigration,
         FullRestartReason::PlatformNoHot,
@@ -212,14 +210,14 @@ fn every_block_reason_has_complete_translations_and_arguments() {
             consumer: "local CLI".into(),
             found: CodexVersion::new(0, 150, 0),
             required: CodexVersion::new(0, 162, 0),
-            capability: VersionCapability::PersonalAccessToken,
+            capability: VersionCapability::TopLevelOpenaiBaseUrl,
         },
         BlockReason::LineUnavailable {
             line_id: "overseas".into(),
         },
         BlockReason::AuthModeUnavailable {
             line_id: "cn-fast".into(),
-            auth_mode: AuthMode::Pat,
+            auth_mode: AuthMode::ApiKey,
         },
         BlockReason::KeyRejected {
             line_id: "cdn".into(),
@@ -593,7 +591,7 @@ fn io_errors_keep_the_os_code_and_name_the_open_file_limit() {
 #[test]
 fn every_auth_mode_has_complete_translations() {
     let texts: Vec<_> = [
-        AuthMode::Pat,
+        AuthMode::ApiKey,
         AuthMode::ApiKey,
         AuthMode::OfficialChatGpt,
         AuthMode::MixedOfficial,

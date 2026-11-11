@@ -83,8 +83,8 @@ fn shared_wording_is_layered_and_not_copied_into_cli_catalogs() {
         "Switched"
     );
     assert_ne!(
-        zh.text(&superba_core::AuthMode::Pat.text()),
-        superba_core::AuthMode::Pat.text().render_fallback()
+        zh.text(&superba_core::AuthMode::ApiKey.text()),
+        superba_core::AuthMode::ApiKey.text().render_fallback()
     );
 }
 

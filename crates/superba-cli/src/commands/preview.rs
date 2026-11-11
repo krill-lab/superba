@@ -1,8 +1,7 @@
 use std::path::Path;
 
 use superba_core::{
-    AuthMode, EnvLocation, EnvOp, EnvPlan, KeyResolution, LegacySessionChoice, SwitchIntent,
-    SwitchRequest,
+    EnvLocation, EnvOp, EnvPlan, KeyResolution, LegacySessionChoice, SwitchIntent, SwitchRequest,
 };
 
 use crate::{ExecArgs, Output, Runtime, text::text};
@@ -102,16 +101,8 @@ pub(super) fn alternative(
     if let Some(line) = line_id {
         option(&mut words, "--line", line);
     }
-    if let Some(mode) = auth_mode {
-        option(
-            &mut words,
-            "--auth",
-            match mode {
-                AuthMode::Pat => "pat",
-                AuthMode::ApiKey => "apikey",
-                _ => return None,
-            },
-        );
+    if auth_mode.is_some_and(|m| !m.uses_key()) {
+        return None;
     }
     if let Some(model) = &request.model_override {
         option(&mut words, "--model", model);

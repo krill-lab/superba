@@ -36,12 +36,11 @@ Geist look).
   app's Codex core restarts in about a second, the window, the open
   conversation and the recents list stay, and the next turn goes to the new line
   with its full history.
-- **Automatic authentication.** A Krill key is used as a personal access token
-  (PAT) where that works and as a plain API key otherwise: on a line whose edge
-  blocks the PAT endpoints, on a plain-http line, with a custom base URL, through
-  the local router, or when the installed Codex (the app's bundled one or the CLI)
-  is too old for PAT. The reason is always shown. PAT or API key can still be
-  pinned under Advanced.
+- **API-key authentication.** A Krill or custom-site key is written to Codex as
+  an API key, directly and through the local router. (Superba no longer uses
+  personal access tokens: desktop app 26.1106 cannot confirm an account for one,
+  so queued messages fail with "Account is not confirmed". A profile saved with
+  PAT gets API-key auth the next time it is applied.)
 - **Profiles = connection + Codex settings.** A profile is a site, its lines in
   priority order (the next one is used when the first is down), the auth choice
   and the key, plus the `config.toml` settings Superba manages for it. Settings
@@ -201,8 +200,7 @@ source, see [Building](#building).
 1. Get a key on <https://www.krill-code.com>.
 2. Start **Superba**. The first-run wizard detects the desktop app and the CLI,
    shows your current configuration (and any old `krill` sessions), asks for
-   the key and measures the lines; authentication is automatic (PAT where the
-   line supports it, else an API key, with the reason shown).
+   the key and measures the lines; the key is used as an API key.
 3. Review and press **Switch**. If the desktop app is running and was not
    started by Superba, Superba offers one full restart so it can hot-switch from
    then on (see below).
@@ -213,9 +211,9 @@ The same with the CLI:
 
 ```sh
 # store the key in the OS keyring (read from stdin, never from argv)
-# auth is automatic: PAT where the line supports it, else the API key (with the reason)
+# the key is used as an API key
 spb profile add krill --line overseas --line cdn --key-stdin
-spb lines --probe                 # latency and PAT / API-key availability per line
+spb lines --probe                 # latency and API-key availability per line
 spb switch --profile krill        # plan, countdown, switch, verify
 spb launch                        # (re)open the desktop app through Superba
 spb switch --line cdn             # later: hot switch to another line
@@ -504,14 +502,9 @@ Limits:
   switch is a **full restart** (quit and relaunch), after which hot switching is
   available. To start ChatGPT that way from the beginning, see below.
 - Some changes always need a full restart: switching between your ChatGPT login
-  and a key, PAT on a line whose auth address differs from the one the app was
-  started with (the app reads `CODEX_AUTHAPI_BASE_URL` once at launch), and
-  session migrations (all Codex processes must be closed).
+  and a key, and session migrations (all Codex processes must be closed).
 - A turn that is running when the core restarts loses its answer. Superba waits
   for running turns by default; `--force` interrupts them.
-- PAT needs an `https` line; Codex refuses a plain-http ChatGPT backend. A line
-  whose edge intercepts the PAT endpoints (currently China Express) is used in
-  API key mode, with an explanation.
 - Terminal `codex` sessions and IDE extensions keep their configuration until
   they are restarted; Superba lists them as stale.
 - Hot switching is verified on Linux (desktop app 26.10). On macOS and Windows it
@@ -552,9 +545,7 @@ hot-switched until Superba reopens it. Ways to open it through Superba:
 
 Router mode is off until you turn it on (**Router** page, or `spb router
 enable`). It needs at least one member: a Krill or custom-site profile with its
-own key. The router sends that key as an API key, also for a profile that uses a
-personal access token when switched directly (that choice stays for direct
-switches).
+own key. The router sends that key as an API key.
 
 - Superba installs `superba-router` as a per-user service (systemd user unit with
   an XDG autostart fallback on Linux, a LaunchAgent on macOS, a `HKCU\...\Run`
@@ -585,7 +576,7 @@ See [SECURITY.md](SECURITY.md#the-local-router) for what the router can see.
 |---|---|---|
 | `~/.codex/config.toml` (or `$CODEX_HOME`) | every switch | only the keys Superba owns (`model_provider`, `openai_base_url`, `chatgpt_base_url`, the profile's model and the Codex settings it manages); a key the profile stops managing gets its earlier value back; comments, MCP servers, plugins and everything else stay byte-for-byte; a key another program changed after Superba wrote it is kept (see above) |
 | `~/.codex/auth.json` | every switch | written with mode 0600; your ChatGPT login is stashed encrypted before it is replaced; a credential another program put there is kept by restores and replaced by a switch only when you take it over |
-| Shell startup files | PAT mode only | a marked block exporting `CODEX_AUTHAPI_BASE_URL` (Linux: `~/.profile` and `~/.config/environment.d/60-superba.conf`, plus `~/.bashrc`, `~/.bash_profile`, `~/.zshenv` (in `$ZDOTDIR` when set) and fish `conf.d/superba.fish` when they exist or belong to your shell; macOS: `~/.zshenv`, the same bash and fish files, and the LaunchAgent `~/Library/LaunchAgents/com.krill-code.superba.env.codex-authapi-base-url.plist`; Windows: the user variable in `HKCU\Environment`, no file). Old Krill tutorial lines are commented out and restored later |
+| Shell startup files | only to clean up | Superba no longer writes them; the marked block exporting `CODEX_AUTHAPI_BASE_URL` that its personal-access-token mode wrote before (Linux shell files and `~/.config/environment.d/60-superba.conf`, macOS LaunchAgent `com.krill-code.superba.env.codex-authapi-base-url`, Windows `HKCU\Environment`) is removed by the next switch, and old Krill tutorial lines it had commented out come back |
 | `state_5.sqlite`, `thread_history_*.sqlite`, `sessions/**/rollout-*.jsonl` | only when you migrate sessions | backups plus a ledger; `spb sessions rollback <id>` |
 | Remote hosts' `~/.codex` and shell files | only for hosts you select | per-host backups on the host; `spb remote rollback <target>` |
 | Router service (Linux: `~/.config/systemd/user/superba-router.service`; macOS: `~/Library/LaunchAgents/com.krill.superba.router.plist`; Windows: the `SuperbaRouter` value under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`) | only while the local router is installed | `spb router uninstall` / `spb uninstall` |
@@ -613,9 +604,9 @@ accepts `--json` (exactly one JSON document on stdout) and `--locale en|zh-CN`.
 |---|---|
 | `spb status` | applied profile, desktop app (install, CDP, auth address), CLI processes, remotes |
 | `spb data where \| move <dir> \| usage` | active Superba directory, verified relocation to an empty local directory, and category sizes with Codex sessions counted separately |
-| `spb lines [--site ID] [--probe]` | lines and their latency / PAT / API key / edge status |
+| `spb lines [--site ID] [--probe]` | lines and their latency / API key / edge status |
 | `spb key set --profile P (--stdin \| --key-env VAR)` / `spb key check` | store or check a key |
-| `spb profile list \| add \| edit \| remove \| use` | named profiles (site, line order, auth: auto / PAT / API key, key reference, model, `--compaction auto\|native\|unsupported`) |
+| `spb profile list \| add \| edit \| remove \| use` | named profiles (site, line order, key reference, model, `--compaction auto\|native\|unsupported`) |
 | `spb profile compaction ID [--check]` | the provider's remote compaction support (`--check` asks the provider: a few tokens) |
 | `spb site list \| add \| edit \| remove \| probe` | built-in and OpenAI-compatible sites, model mapping, line and key checks |
 | `spb switch [--profile P] [--line L] [--auth pat\|apikey]` | plan and execute a switch (the preview lists every changed key and why) |
@@ -654,7 +645,7 @@ Environment: `SUPERBA_DATA_DIR` (fixed data/pointer directory), `SUPERBA_LOCALE`
 ## Krill
 
 [Krill](https://www.krill-code.com) is the primary site Superba is built for:
-its lines, the PAT / API-key modes, the line probes and the whoami / account
+its lines, the API-key mode, the line probes and the whoami / account
 checks are built in. Accounts, keys, plans and billing live on
 <https://www.krill-code.com>. Superba itself works with any OpenAI-compatible
 Responses API site and with the official ChatGPT login as well.

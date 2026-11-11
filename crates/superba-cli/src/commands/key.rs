@@ -90,12 +90,10 @@ async fn check(args: &KeyCheckArgs, rt: &Runtime, out: &mut Output) -> Result {
         .or_else(|| profile.as_ref().and_then(|p| p.line_id.clone()))
         .or_else(|| site.default_line().map(|l| l.id.clone()))
         .ok_or_else(|| usage(out, text("cli.error.no_default_line").arg("site", &site.id)))?;
-    let mode = args
-        .auth
-        .map(Into::into)
-        .or_else(|| profile.as_ref().map(|p| p.auth_mode))
-        .unwrap_or(AuthMode::ApiKey);
-    let check = rt.service.check_key(&site.id, &line, mode, key).await?;
+    let check = rt
+        .service
+        .check_key(&site.id, &line, AuthMode::ApiKey, key)
+        .await?;
     out.field("cli.label.access", out.render(&check.access.text()))?;
     let health = match &check.whoami {
         Some(AuthApiHealth::Healthy) => out.label("cli.key.healthy"),

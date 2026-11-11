@@ -549,10 +549,6 @@ impl Switcher {
         };
         let mut pc = crate::planner::PlanContext::bare(home, set.settings.safe_mode);
         pc.install_id = install.map(|i| i.id);
-        pc.launch_authapi = session
-            .as_ref()
-            .and_then(|s| s.authapi_env.value())
-            .and_then(|o| superba_core::Origin::parse(o).ok());
         pc.session = session;
         pc.pin = Some(PinPlan {
             pin,

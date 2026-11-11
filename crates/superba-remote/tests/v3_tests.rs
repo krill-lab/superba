@@ -212,7 +212,7 @@ async fn settings_scope_writes_only_settings_and_never_the_login() {
     let h = devbox();
     let auth_before = read(&env.home.join(".codex/auth.json"));
     let mut desired = with_settings(
-        token_profile(ORIGIN, AuthMode::Pat, KEY),
+        token_profile(ORIGIN, AuthMode::ApiKey, KEY),
         &[
             ("approval_policy", Some("never")),
             ("web_search", Some("live")),
@@ -259,7 +259,7 @@ async fn settings_scope_writes_only_settings_and_never_the_login() {
 
     // A sync of one row leaves the other owned settings alone (unticked rows).
     let desired = with_settings(
-        token_profile(ORIGIN, AuthMode::Pat, KEY),
+        token_profile(ORIGIN, AuthMode::ApiKey, KEY),
         &[("approval_policy", Some("on-request"))],
     );
     let plan = env
@@ -275,7 +275,7 @@ async fn settings_scope_writes_only_settings_and_never_the_login() {
 
     // A row the local profile removes (`Unset`): the key goes away.
     let desired = with_settings(
-        token_profile(ORIGIN, AuthMode::Pat, KEY),
+        token_profile(ORIGIN, AuthMode::ApiKey, KEY),
         &[("web_search", None)],
     );
     let plan = env

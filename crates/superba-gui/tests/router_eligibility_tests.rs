@@ -12,9 +12,7 @@ mod support;
 use std::sync::Arc;
 
 use router_harness::Harness;
-use superba_core::{
-    AuthChoice, Locale, ProfileId, RouterInstallRequest, SwitchIntent, SwitchService,
-};
+use superba_core::{Locale, ProfileId, RouterInstallRequest, SwitchIntent, SwitchService};
 use superba_gui::pages::router::backend::{BoxFut, RouterBackend, SystemRouter};
 use superba_gui::pages::router::model::{Candidate, Snapshot};
 use superba_gui::pages::router::{self, Dialog, State};
@@ -78,7 +76,6 @@ fn without_an_api_key_member_the_page_says_why_and_offers_the_fixes() {
         for (p, k) in set.profiles.iter_mut().zip(&keys) {
             if !p.is_builtin() {
                 p.key_ref = k.clone();
-                p.set_auth(AuthChoice::Pat);
             }
         }
     });
@@ -107,13 +104,10 @@ fn without_an_api_key_member_the_page_says_why_and_offers_the_fixes() {
     );
 }
 
-/// Krill with its key and Auto auth (the router sends it as an API key).
+/// Krill with its key (the router sends it as an API key).
 fn keyed_auto(service: &FakeService) {
     service.edit_profiles(|set| {
         set.settings.router.members.clear();
-        for p in set.profiles.iter_mut().filter(|p| !p.is_builtin()) {
-            p.set_auth(AuthChoice::Auto);
-        }
     });
 }
 

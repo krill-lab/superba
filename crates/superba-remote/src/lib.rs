@@ -74,7 +74,7 @@ use async_trait::async_trait;
 use superba_core::codex::{ENV_AUTHAPI_BASE_URL, LEGACY_KRILL_PROVIDER};
 use superba_core::env::legacy_krill_export_value;
 use superba_core::{
-    AuthMode, Baseline, BaselineExtras, BlockReason, Clock, CodexFileKind, CodexHome, CodexVersion,
+    Baseline, BaselineExtras, BlockReason, Clock, CodexFileKind, CodexHome, CodexVersion,
     ConfigEngine, DataDir, EnvApplied, EnvObservation, EnvOp, EnvPlan, Error, FileChange,
     FileWrite, KeySnapshot, Notice, PlannedFile, ProcessInfo, RcLine, RemoteApplyReport,
     RemoteApplyScope, RemoteHost, RemoteHosts, RemoteInstallReport, RemoteOs, RemotePlan,
@@ -82,7 +82,7 @@ use superba_core::{
     ResolvedProfile, Result, SecretBytes, SessionReport, StashScope, SystemClock, TurnActivity,
 };
 
-use crate::envrc::{RcPlan, plan_env_with_certificate, shell_supported};
+use crate::envrc::{RcPlan, plan_env_with_certificate};
 use crate::probe::{RemoteMarker, Snapshot, parse_pids, snapshot_from_records};
 use crate::records::{FileRead, Records};
 use crate::script::{Expect, FileOp, Flavor, Mode, REMOTE_DIR, WriteSpec, backup_name, new_nonce};
@@ -392,35 +392,12 @@ impl SshRemoteHosts {
                     .load_login_stash(&StashScope::Remote(host.target_id.clone()))
                     .await?;
             }
-            ResolvedMode::Token {
-                auth, endpoints, ..
-            } => {
-                // A settings sync never touches the connection (PAT env included).
-                // A WSL API-key home may share its login shell with the local
-                // legacy desktop app, which reads Windows PAT credentials.
-                // Its explicit auth origin must be ready before that app starts.
-                let local_wsl_auth =
-                    host.kind == superba_core::HostKind::Wsl && endpoints.authapi_origin.is_some();
-                if (auth.needs_authapi_env() || local_wsl_auth)
-                    && scope != RemoteApplyScope::Settings
-                {
-                    let origin = endpoints
-                        .authapi_origin
-                        .as_ref()
-                        .unwrap_or(&endpoints.origin);
-                    if !env_shells(host, state).iter().any(shell_supported) {
-                        c.blocked.push(BlockReason::UnsupportedTarget {
-                            detail: format!(
-                                "{}: Superba cannot set {ENV_AUTHAPI_BASE_URL} for the login shell {:?}; use API key mode",
-                                host.label, state.shell
-                            ),
-                        });
-                        return Ok(c);
-                    }
-                    env_op = Some(EnvOp::Set {
-                        value: origin.as_str().to_owned(),
-                        take_over_foreign: false,
-                    });
+            ResolvedMode::Token { .. } => {
+                // A settings sync never touches the connection. An API key
+                // needs no environment: the marker block Superba persisted for
+                // a personal access token (before user bug 139) goes.
+                if scope != RemoteApplyScope::Settings && envrc::has_block(&snap.rc) {
+                    env_op = Some(EnvOp::Clear);
                 }
             }
             _ => {
@@ -527,7 +504,6 @@ impl SshRemoteHosts {
         &self,
         host: &RemoteHost,
         snap: &Snapshot,
-        desired: &ResolvedProfile,
         scope: RemoteApplyScope,
         c: &Computed,
     ) -> Vec<Notice> {
@@ -537,8 +513,6 @@ impl SshRemoteHosts {
         } else {
             host.label.as_str()
         };
-        let pat = scope != RemoteApplyScope::Settings
-            && desired.auth_mode().is_some_and(AuthMode::needs_authapi_env);
         let wsl = host.kind == superba_core::HostKind::Wsl;
         let mut w = Vec::new();
         if wsl {
@@ -557,13 +531,6 @@ impl SshRemoteHosts {
             if !snap.login_ok {
                 w.push(Notice::warning(texts::login_shell(label)));
             }
-        }
-        if pat && snap.state.codex_path.is_none() {
-            if !wsl {
-                w.push(Notice::warning(texts::codex_missing(label)));
-            }
-        } else if pat && snap.state.codex_version.is_none() {
-            w.push(Notice::warning(texts::version_unknown(label)));
         }
         if snap.state.shared_home_suspected() {
             let other = snap.state.marker_machine_id.as_deref().unwrap_or("?");
@@ -810,7 +777,7 @@ impl SshRemoteHosts {
         let st = self.store(host).load_state().await?;
         let c = self.compute(host, &snap, desired, scope, &st).await?;
         let warnings = if c.blocked.is_empty() {
-            self.warnings(host, &snap, desired, scope, &c)
+            self.warnings(host, &snap, scope, &c)
         } else {
             Vec::new()
         };

@@ -86,16 +86,6 @@ fn router(enable: bool) -> SwitchRequest {
     r
 }
 
-fn with_auth(profile: &str, auth: AuthMode) -> SwitchRequest {
-    let mut r = SwitchRequest::profile(ProfileId::new(profile));
-    r.intent = SwitchIntent::Profile {
-        profile_id: ProfileId::new(profile),
-        line_id: None,
-        auth_mode: Some(auth),
-    };
-    r
-}
-
 async fn execute(sw: &Switcher, plan: SwitchPlan) {
     let outcome = sw
         .execute(
@@ -160,19 +150,11 @@ fn notice(plan: &SwitchPlan, key: &str, locale: Locale) -> String {
     messages::catalog(locale).text(&n.text)
 }
 
-/// Krill ("work", Automatic auth, no model) applied directly with the PAT,
-/// the router installed with it as the only member, Krill's list answering.
+/// Krill ("work", no model) applied directly with a personal access token
+/// (a home Superba set up before user bug 139), the router installed with it
+/// as the only member, Krill's list answering.
 async fn pat_applied(default: &str) -> (World, Switcher) {
     let w = World::new();
-    {
-        let mut set = w.profiles.set.lock().unwrap();
-        let p = set
-            .profiles
-            .iter_mut()
-            .find(|p| p.id.as_str() == "work")
-            .unwrap();
-        p.set_auth(superba_core::AuthChoice::Auto);
-    }
     *w.prober.model_list.lock().unwrap() = Some(Ok(krill_list(default)));
     let sw = switcher(&w);
     let plan = sw
@@ -180,7 +162,7 @@ async fn pat_applied(default: &str) -> (World, Switcher) {
         .await
         .unwrap();
     assert!(!plan.is_blocked(), "{:?}", plan.primary);
-    assert_eq!(plan.to.auth_mode, Some(AuthMode::Pat));
+    assert_eq!(plan.to.auth_mode, Some(AuthMode::ApiKey));
     assert_eq!(planned_model(&plan), None, "a profile without a model");
     assert!(notice_keys(&plan).is_empty(), "{:?}", plan.warnings);
     execute(&sw, plan).await;
@@ -192,6 +174,7 @@ async fn pat_applied(default: &str) -> (World, Switcher) {
     .unwrap();
     sw.router_set_enabled(false).await.unwrap();
     w.prober.model_list_calls.lock().unwrap().clear();
+    make_pat_era(&w.ctx);
     (w, sw)
 }
 
@@ -205,7 +188,7 @@ async fn turning_the_router_on_keeps_the_model_the_pat_ran_and_says_so() {
 
     let plan = sw.plan(router(true)).await.unwrap();
     assert!(!plan.is_blocked(), "{:?}", plan.primary);
-    assert_eq!(plan.to.auth_mode, Some(AuthMode::Pat));
+    assert_eq!(plan.to.auth_mode, Some(AuthMode::ApiKey));
     assert_eq!(planned_model(&plan).as_deref(), Some("gpt-6.1-sol"));
     let row = model_row(&sw, &plan)
         .await
@@ -248,50 +231,10 @@ async fn turning_the_router_on_keeps_the_model_the_pat_ran_and_says_so() {
     execute(&sw, plan).await;
     assert_eq!(model_line(&w).as_deref(), Some("model = \"gpt-6.1-sol\""));
 
-    // Router off: the PAT's own default is the same model, so the key goes
-    // back to the user's (absent) value.
+    // Router off: an API key again (user bug 139); the kept model stays.
     let plan = sw.plan(router(false)).await.unwrap();
     assert!(!plan.is_blocked(), "{:?}", plan.primary);
-    assert_eq!(plan.to.auth_mode, Some(AuthMode::Pat));
-    assert_eq!(planned_model(&plan), None);
-    let row = model_row(&sw, &plan)
-        .await
-        .expect("the kept model is released");
-    assert_eq!(row.from.as_deref(), Some("\"gpt-6.1-sol\""));
-    assert_eq!(row.to, None);
-    assert_eq!(row.reason, ChangeReason::Released);
-    assert!(notice_keys(&plan).is_empty(), "{:?}", plan.warnings);
-    execute(&sw, plan).await;
-    assert_eq!(model_line(&w), None);
-
-    // Nothing is remembered as kept any more.
-    let home = w.ctx.codex_home();
-    let state = superba_config::TomlConfigEngine::new(w.ctx.clone());
-    let state = superba_core::ConfigEngine::read_state(&state, &home)
-        .await
-        .unwrap();
-    assert!(!state.model_owned);
-    assert_eq!(kept_model(&w.ctx.data_dir, &home, &state), None);
-}
-
-#[tokio::test]
-async fn router_off_keeps_the_model_when_the_pat_default_moved_on() {
-    let (w, sw) = pat_applied("gpt-6.1-sol").await;
-    execute(&sw, sw.plan(router(true)).await.unwrap()).await;
-    assert_eq!(model_line(&w).as_deref(), Some("model = \"gpt-6.1-sol\""));
-
-    // The provider's default changed while the router was on.
-    *w.prober.model_list.lock().unwrap() = Some(Ok(krill_list("gpt-6.2-sol")));
-    let plan = sw.plan(router(false)).await.unwrap();
-    assert!(!plan.is_blocked(), "{:?}", plan.primary);
-    assert_eq!(planned_model(&plan).as_deref(), Some("gpt-6.1-sol"));
-    assert_eq!(model_row(&sw, &plan).await, None, "the value stays");
-    assert_eq!(
-        notice(&plan, "switch.models.keep_pat_default", Locale::En),
-        "Codex keeps gpt-6.1-sol, the model it runs with now; with the personal access token it \
-         would change to gpt-6.2-sol, the default model of “Krill”. To use another model, set \
-         one on the profile (Models page, or spb profile edit --model)."
-    );
+    assert_eq!(plan.to.auth_mode, Some(AuthMode::ApiKey));
     execute(&sw, plan).await;
     assert_eq!(model_line(&w).as_deref(), Some("model = \"gpt-6.1-sol\""));
 }
@@ -355,55 +298,6 @@ async fn a_profile_model_or_the_users_own_model_is_left_alone() {
     assert_eq!(model_line(&w).as_deref(), Some("model = \"gpt-5.6-sol\""));
 }
 
-#[tokio::test]
-async fn an_api_key_turned_into_a_pat_names_the_model_codex_will_run() {
-    let (w, sw) = pat_applied("gpt-6.1-sol").await;
-    execute(
-        &sw,
-        sw.plan(with_auth("work", AuthMode::ApiKey)).await.unwrap(),
-    )
-    .await;
-    // PAT -> API key direct keeps the model too.
-    assert_eq!(model_line(&w).as_deref(), Some("model = \"gpt-6.1-sol\""));
-
-    // Without a kept model (an API-key profile from the start), the PAT's
-    // default is named.
-    let (w, sw) = pat_applied("gpt-6.1-sol").await;
-    let state = w
-        .ctx
-        .data_dir
-        .root()
-        .join(superba_switch::model_keep::KEPT_MODEL_FILE);
-    execute(
-        &sw,
-        sw.plan(with_auth("work", AuthMode::ApiKey)).await.unwrap(),
-    )
-    .await;
-    std::fs::remove_file(&state).unwrap();
-    let plan = sw.plan(with_auth("work", AuthMode::Pat)).await.unwrap();
-    assert!(!plan.is_blocked(), "{:?}", plan.primary);
-    // config.toml holds a model Superba wrote but no longer knows as kept:
-    // nothing is guessed about it.
-    assert!(notice_keys(&plan).is_empty(), "{:?}", plan.warnings);
-
-    let (w, sw) = pat_applied("gpt-6.1-sol").await;
-    *w.prober.model_list.lock().unwrap() = Some(Err(Error::not_implemented("offline")));
-    execute(
-        &sw,
-        sw.plan(with_auth("work", AuthMode::ApiKey)).await.unwrap(),
-    )
-    .await;
-    assert_eq!(model_line(&w), None, "nothing known, nothing written");
-    *w.prober.model_list.lock().unwrap() = Some(Ok(krill_list("gpt-6.1-sol")));
-    let plan = sw.plan(with_auth("work", AuthMode::Pat)).await.unwrap();
-    assert_eq!(planned_model(&plan), None);
-    assert_eq!(
-        notice(&plan, "switch.models.pat_default", Locale::En),
-        "With the personal access token Codex runs gpt-6.1-sol, the default model of “Krill”. \
-         To use another model, set one on the profile (Models page, or spb profile edit --model)."
-    );
-}
-
 // ---------------------------------------------------------------------------
 // The rules
 // ---------------------------------------------------------------------------
@@ -435,9 +329,14 @@ fn the_provider_default_is_the_first_listed_model_by_priority() {
 
 #[test]
 fn the_form_follows_the_auth_mode() {
-    assert_eq!(ModelForm::of(AuthMode::Pat), Some(ModelForm::ProviderList));
     assert_eq!(ModelForm::of(AuthMode::ApiKey), Some(ModelForm::ApiKey));
     assert_eq!(ModelForm::of(AuthMode::OfficialChatGpt), None);
+    // A personal access token Superba wrote before user bug 139 chose from
+    // the provider's list.
+    let pat = superba_core::AuthShape::Pat {
+        key_last4: "wxyz".into(),
+    };
+    assert_eq!(ModelForm::of_shape(&pat), Some(ModelForm::ProviderList));
 }
 
 fn state(auth: AuthMode, site: &str, model: Option<&str>, owned: bool) -> ConfigState {
@@ -470,7 +369,11 @@ fn the_scope_is_a_change_of_form_on_the_same_site_with_no_model() {
             left: None,
         }
     }
-    let pat = state(AuthMode::Pat, "krill", None, false);
+    // A home alpha.15 left on a personal access token.
+    let mut pat = state(AuthMode::ApiKey, "krill", None, false);
+    pat.auth = superba_core::AuthShape::Pat {
+        key_last4: "wxyz".into(),
+    };
     assert_eq!(
         keep_scope(input(&pat)),
         Some(KeepScope {
@@ -509,7 +412,7 @@ fn the_scope_is_a_change_of_form_on_the_same_site_with_no_model() {
     assert_eq!(keep_scope(input(&official)), None);
     // A Superba-written model that was not kept (a profile's model the user
     // removed since) is released as asked.
-    let removed = state(AuthMode::Pat, "krill", Some("gpt-6-luna"), true);
+    let removed = state(AuthMode::ApiKey, "krill", Some("gpt-6-luna"), true);
     assert_eq!(keep_scope(input(&removed)), None);
     // A kept model is in scope also without a change of form.
     let kept = state(AuthMode::ApiKey, "krill", Some("gpt-6.1-sol"), true);

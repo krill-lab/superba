@@ -218,7 +218,7 @@ fn switch_plan(primary: RestartKind) -> SwitchPlan {
             profile_id: Some(ProfileId::new("profile")),
             site_id: Some(SiteId::new("krill")),
             line_id: Some(LineId::new("overseas")),
-            auth_mode: Some(AuthMode::Pat),
+            auth_mode: Some(AuthMode::ApiKey),
             label: LocalizedText::new("test.destination", "Krill overseas"),
         },
         primary,

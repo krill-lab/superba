@@ -24,8 +24,8 @@ use crate::design::widgets::{
     Badge, Button, Choice, KeyInput as KeyField, Status, StatusDot, Text, choice_cards, dialog,
     dialog_body, link_button,
 };
+use crate::pages::shared::new_profile;
 use crate::pages::shared::providers::ProviderId;
-use crate::pages::shared::{auto_facts, decision_with, new_profile};
 use crate::pages::{Action, Cx, error_text, key_access_status};
 use crate::runtime::ReadTask;
 
@@ -543,14 +543,7 @@ fn preset_step(
                     let lines = site
                         .lines
                         .iter()
-                        .map(|l| {
-                            let caps = cx.data.site_caps(&site.id, &l.id);
-                            let mode =
-                                decision_with(&site, Some(l), caps, None, auto_facts(cx.data))
-                                    .mode
-                                    .unwrap_or(AuthMode::ApiKey);
-                            (l.id.clone(), mode)
-                        })
+                        .map(|l| (l.id.clone(), AuthMode::ApiKey))
                         .collect();
                     d.error = None;
                     d.check_task = Some(crate::runtime::task(ops::check_lines(

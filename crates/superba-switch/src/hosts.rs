@@ -751,7 +751,7 @@ impl Switcher {
                     .copied()
                     .unwrap_or(CodexPath::BackendApiCodex);
                 (
-                    ResolvedEndpoints::for_line(&line.origin, path, AuthMode::ApiKey)?,
+                    ResolvedEndpoints::for_line(&line.origin, path)?,
                     Some(line.id),
                 )
             }

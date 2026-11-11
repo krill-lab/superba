@@ -1497,7 +1497,7 @@ fn profiles_and_settings_leave_unused_optional_fields_out() {
     // network or app-Codex choice: those fields default and are not written.
     let profile = json!({
         "id": "work", "name": "Work", "builtin": null, "site_id": "krill",
-        "line_id": "overseas", "auth_mode": "pat", "auth": "auto", "key_ref": null,
+        "line_id": "overseas", "auth_mode": "apikey", "key_ref": null,
         "base_url_override": null,
         "model": {"model": "gpt-6-luna", "reasoning_effort": null}
     });

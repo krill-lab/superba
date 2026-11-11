@@ -318,9 +318,9 @@ fn unknown_key_renders_as_itself_in_both_languages() {
 
 #[test]
 fn domain_text_uses_the_chinese_core_catalog() {
-    let text = AuthMode::Pat.text();
+    let text = AuthMode::ApiKey.text();
     let translated = Tr::new(Locale::ZhCn).text(&text);
-    assert_eq!(translated, "PAT（个人访问令牌）");
+    assert_eq!(translated, "API Key");
     assert_ne!(translated, text.render_fallback());
     assert_eq!(Tr::new(Locale::En).text(&text), text.render_fallback());
 }

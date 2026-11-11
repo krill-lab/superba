@@ -45,7 +45,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use superba_core::{
-    AuthMode, CodexHome, CodexVersion, ConfigState, DataDir, Error, LocalizedText,
+    AuthMode, AuthShape, CodexHome, CodexVersion, ConfigState, DataDir, Error, LocalizedText,
     ModelListRequest, ModelListSource, ModelSpec, ModelVisibility, Notice, RemoteState,
     ResolvedMode, Result, Secret, Site, TargetId,
 };
@@ -63,7 +63,8 @@ pub const KEPT_MODEL_FILE: &str = "kept-model.json";
 /// How Codex chooses a model when `config.toml` names none.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ModelForm {
-    /// A personal access token: the default of the provider's own list.
+    /// A personal access token (only ever found in a home Superba set up
+    /// before user bug 139): the default of the provider's own list.
     ProviderList,
     /// An API key (direct or through the router): Codex's bundled list or the
     /// catalog file, with the desktop app's own choice of a default.
@@ -75,12 +76,15 @@ pub enum ModelForm {
 impl ModelForm {
     /// The form of a key-based auth mode (`None` for the official login).
     pub fn of(auth: AuthMode) -> Option<ModelForm> {
-        if !auth.uses_key() {
-            None
-        } else if auth.needs_authapi_env() {
-            Some(ModelForm::ProviderList)
-        } else {
-            Some(ModelForm::ApiKey)
+        auth.uses_key().then_some(ModelForm::ApiKey)
+    }
+
+    /// The form of the credential in a home's `auth.json` now: a personal
+    /// access token chooses from the provider's list.
+    pub fn of_shape(auth: &AuthShape) -> Option<ModelForm> {
+        match auth {
+            AuthShape::Pat { .. } => Some(ModelForm::ProviderList),
+            other => other.mode().and_then(ModelForm::of),
         }
     }
 }
@@ -139,6 +143,8 @@ pub fn keep_scope(i: ScopeInput<'_>) -> Option<KeepScope> {
     let active = i.state.active.as_ref()?;
     let from = if i.current_routed {
         ModelForm::Router
+    } else if matches!(i.state.auth, AuthShape::Pat { .. }) {
+        ModelForm::ProviderList
     } else {
         ModelForm::of(active.auth_mode?)?
     };
@@ -638,6 +644,8 @@ pub(crate) struct HostKeepInput<'a> {
     pub resolved: &'a superba_core::ResolvedProfile,
     /// The destination's key for a direct connection.
     pub direct_key: Option<&'a Secret>,
+    /// The distribution goes through the local router.
+    pub routed: bool,
 }
 
 impl Switcher {
@@ -698,12 +706,12 @@ impl Switcher {
             })
         }) {
             ModelForm::Router
-        } else if let Some(form) = i.state.auth.mode().and_then(ModelForm::of) {
+        } else if let Some(form) = ModelForm::of_shape(&i.state.auth) {
             form
         } else {
             return KeepDecision::Nothing;
         };
-        let to = if endpoints.ca_certificate.is_some() {
+        let to = if i.routed {
             ModelForm::Router
         } else if let Some(form) = ModelForm::of(*auth) {
             form

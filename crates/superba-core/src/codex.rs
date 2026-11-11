@@ -390,8 +390,4 @@ impl<'de> Deserialize<'de> for CodexVersion {
 pub enum VersionCapability {
     /// Honours top-level `openai_base_url` (else keys would go to api.openai.com).
     TopLevelOpenaiBaseUrl,
-    /// Supports `personal_access_token` + `CODEX_AUTHAPI_BASE_URL`.
-    PersonalAccessToken,
-    /// Calls `<chatgpt_base_url>wham/accounts/check` (needs `chatgpt_base_url`).
-    WhamAccountsCheck,
 }

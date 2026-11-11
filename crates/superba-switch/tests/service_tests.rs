@@ -79,7 +79,7 @@ async fn saving_a_profile_with_a_key_stores_the_key_and_a_reference() {
 #[tokio::test]
 async fn env_key_references_are_stored_without_a_secret() {
     let w = World::new();
-    let mut p = krill_profile("ci", Some("cdn"), AuthMode::Pat);
+    let mut p = krill_profile("ci", Some("cdn"), AuthMode::ApiKey);
     p.key_ref = Some(KeyRef::Env {
         var: "KRILL_KEY".into(),
     });
@@ -93,20 +93,23 @@ async fn invalid_profiles_are_refused() {
     let w = World::new();
     let sw = w.switcher();
     for (p, code) in [
-        (krill_profile("Bad Id", None, AuthMode::Pat), "invalid"),
-        (krill_profile("original", None, AuthMode::Pat), "invalid"),
-        (krill_profile("x", Some("mars"), AuthMode::Pat), "not_found"),
+        (krill_profile("Bad Id", None, AuthMode::ApiKey), "invalid"),
+        (krill_profile("original", None, AuthMode::ApiKey), "invalid"),
+        (
+            krill_profile("x", Some("mars"), AuthMode::ApiKey),
+            "not_found",
+        ),
         (
             Profile {
                 site_id: SiteId::new("nowhere"),
-                ..krill_profile("y", None, AuthMode::Pat)
+                ..krill_profile("y", None, AuthMode::ApiKey)
             },
             "not_found",
         ),
         (
             Profile {
                 builtin: Some(superba_core::BuiltinProfile::Official),
-                ..krill_profile("z", None, AuthMode::Pat)
+                ..krill_profile("z", None, AuthMode::ApiKey)
             },
             "invalid",
         ),
@@ -119,21 +122,23 @@ async fn invalid_profiles_are_refused() {
     sw.save_site(compatible_site("acme", "https://api.acme.example"))
         .await
         .unwrap();
-    let mut p = Profile {
+    let p = Profile {
         site_id: SiteId::new("acme"),
-        ..krill_profile("acme-pat", None, AuthMode::Pat)
+        ..krill_profile("acme-key", None, AuthMode::ApiKey)
     };
-    // A manual PAT choice is refused; Auto would resolve to an API key there.
-    p.set_auth(superba_core::AuthChoice::Pat);
+    sw.save_profile(p, None).await.unwrap();
+    // A key profile on the official site is refused: it offers no key mode.
+    let official = Profile {
+        site_id: SiteId::new("official"),
+        ..krill_profile("official-key", None, AuthMode::ApiKey)
+    };
     assert_eq!(
-        sw.save_profile(p.clone(), None).await.unwrap_err().code(),
+        sw.save_profile(official, None).await.unwrap_err().code(),
         "invalid"
     );
-    p.set_auth(superba_core::AuthChoice::Auto);
-    sw.save_profile(p, None).await.unwrap();
     assert_eq!(
         sw.save_profile(
-            krill_profile("e", None, AuthMode::Pat),
+            krill_profile("e", None, AuthMode::ApiKey),
             Some(Secret::new("  "))
         )
         .await
@@ -239,7 +244,7 @@ async fn key_checks_resolve_profiles_and_report_missing_keys() {
         .check_key(
             &SiteId::new("krill"),
             &LineId::new("overseas"),
-            AuthMode::Pat,
+            AuthMode::ApiKey,
             KeyInput::Profile(ProfileId::new("work")),
         )
         .await
@@ -250,7 +255,7 @@ async fn key_checks_resolve_profiles_and_report_missing_keys() {
         .check_key(
             &SiteId::new("krill"),
             &LineId::new("overseas"),
-            AuthMode::Pat,
+            AuthMode::ApiKey,
             KeyInput::Profile(ProfileId::new("work")),
         )
         .await
@@ -260,7 +265,7 @@ async fn key_checks_resolve_profiles_and_report_missing_keys() {
         .check_key(
             &SiteId::new("krill"),
             &LineId::new("moon"),
-            AuthMode::Pat,
+            AuthMode::ApiKey,
             KeyInput::Secret(Secret::new("sk-test-1")),
         )
         .await
@@ -299,23 +304,20 @@ async fn open_app_launches_with_cdp_and_the_auth_address() {
     // Running without Superba: refused (a restart through Superba is needed).
     w.set_session(Some(session(None, false)));
     assert_eq!(sw.open_app().await.unwrap_err().code(), "conflict");
-    // Not running: launched with the default Krill line's auth address.
+    // Not running: launched with CDP and no auth address (user bug 139).
     w.set_session(None);
     let s = sw.open_app().await.unwrap();
     assert!(s.cdp.is_some());
     let launch = w.app.launches.lock().unwrap().last().cloned().unwrap();
     assert_eq!(launch.cdp, superba_core::CdpMode::Auto);
-    assert_eq!(
-        launch.env.get("CODEX_AUTHAPI_BASE_URL").map(String::as_str),
-        Some(OVERSEAS)
-    );
-    // Applied Krill line wins; safe mode disables CDP.
+    assert_eq!(launch.env.get("CODEX_AUTHAPI_BASE_URL"), None);
+    // Safe mode disables CDP.
     w.set_session(None);
     w.config.state.lock().unwrap().active = Some(ActiveState {
         profile_id: Some("work".into()),
         site_id: Some("krill".into()),
         line_id: Some("cn-fast".into()),
-        auth_mode: Some(AuthMode::Pat),
+        auth_mode: Some(AuthMode::ApiKey),
         generation: 1,
         applied_at: Timestamp(T0),
     });
@@ -323,21 +325,17 @@ async fn open_app_launches_with_cdp_and_the_auth_address() {
     sw.open_app().await.unwrap();
     let launch = w.app.launches.lock().unwrap().last().cloned().unwrap();
     assert_eq!(launch.cdp, superba_core::CdpMode::Disabled);
-    assert_eq!(
-        launch.env.get("CODEX_AUTHAPI_BASE_URL").map(String::as_str),
-        Some(CN_FAST)
-    );
+    assert_eq!(launch.env.get("CODEX_AUTHAPI_BASE_URL"), None);
 }
 
 // --- overview -------------------------------------------------------------------------------
 
 #[tokio::test]
-async fn overview_reports_hot_switch_status_and_the_auth_line() {
+async fn overview_reports_hot_switch_status() {
     let w = World::new();
     let sw = w.switcher();
     let o = sw.overview().await.unwrap();
     assert_eq!(o.app.hot_switch, HotSwitchStatus::Ready);
-    assert_eq!(o.app.authapi_line, Some(LineId::new("overseas")));
     assert_eq!(o.codex_home, w.ctx.codex_home().root());
     assert!(o.baseline_captured);
 
@@ -375,31 +373,13 @@ async fn overview_reports_hot_switch_status_and_the_auth_line() {
 /// An app still started with a 0.1.1-alpha.9 auth address (an old Krill
 /// origin) is on that line, not on an unknown one.
 #[tokio::test]
-async fn overview_names_the_line_of_a_legacy_auth_address() {
-    let w = World::new();
-    let sw = w.switcher();
-    for (origin, line) in [
-        ("https://api-slb.krill-code.net", "cn-fast"),
-        ("https://api.krill-code.net/", "overseas"),
-        ("https://api.cdn-krill-ai.com", "cdn"),
-    ] {
-        w.set_session(Some(session(Some(origin), true)));
-        assert_eq!(
-            sw.overview().await.unwrap().app.authapi_line,
-            Some(LineId::new(line)),
-            "{origin}"
-        );
-    }
-}
-
-#[tokio::test]
-async fn overview_marks_stale_processes_and_a_diverging_auth_line() {
+async fn overview_marks_stale_processes() {
     let w = World::new();
     w.config.state.lock().unwrap().active = Some(ActiveState {
         profile_id: Some("work".into()),
         site_id: Some("krill".into()),
         line_id: Some("cdn".into()),
-        auth_mode: Some(AuthMode::Pat),
+        auth_mode: Some(AuthMode::ApiKey),
         generation: 2,
         applied_at: Timestamp(T0),
     });
@@ -423,7 +403,6 @@ async fn overview_marks_stale_processes_and_a_diverging_auth_line() {
     assert_eq!(o.cli.stale_count(), 2);
     let keys: Vec<&str> = o.notices.iter().map(|n| n.text.key.as_str()).collect();
     assert!(keys.contains(&"switch.overview.stale_processes"));
-    assert!(keys.contains(&"switch.overview.authapi_line"));
 }
 
 // --- doctor -----------------------------------------------------------------------------------
@@ -441,7 +420,7 @@ async fn doctor_lists_actionable_findings() {
             profile_id: Some("work".into()),
             site_id: Some("krill".into()),
             line_id: Some("overseas".into()),
-            auth_mode: Some(AuthMode::Pat),
+            auth_mode: Some(AuthMode::ApiKey),
             generation: 1,
             applied_at: Timestamp(T0),
         });
@@ -463,7 +442,6 @@ async fn doctor_lists_actionable_findings() {
         "legacy_provider",
         "provider_table",
         "profile_override",
-        "missing_env",
         "hidden_sessions",
         "openai_env_conflict",
     ] {
@@ -472,43 +450,6 @@ async fn doctor_lists_actionable_findings() {
     // A healthy setup reports nothing.
     let w = World::new();
     assert!(w.switcher().doctor().await.unwrap().is_empty());
-}
-
-#[tokio::test]
-async fn doctor_names_the_line_the_app_authenticates_through() {
-    // e2e: after a hot switch the app keeps its launch-time auth origin; the
-    // finding names that line (looked up on the applied site, not by line id
-    // across every site).
-    let w = World::new();
-    w.config.state.lock().unwrap().active = Some(ActiveState {
-        profile_id: Some("work".into()),
-        site_id: Some("krill".into()),
-        line_id: Some("cdn".into()),
-        auth_mode: Some(AuthMode::Pat),
-        generation: 2,
-        applied_at: Timestamp(T0),
-    });
-    let find = |findings: Vec<superba_core::DoctorFinding>| {
-        findings.into_iter().find(|f| f.id == "authapi_other_line")
-    };
-    w.set_session(Some(session(Some(catalog::KRILL_ORIGIN_OVERSEAS), true)));
-    let f = find(w.switcher().doctor().await.unwrap()).expect("finding");
-    assert_eq!(f.title.key, "switch.doctor.authapi_other_line_named");
-    assert!(
-        f.title
-            .nested
-            .iter()
-            .any(|(k, v)| k == "line" && v.key == "line.krill.overseas"),
-        "{:?}",
-        f.title
-    );
-    // An origin that is not a line of the applied site keeps the plain text.
-    w.set_session(Some(session(Some("https://elsewhere.example"), true)));
-    let f = find(w.switcher().doctor().await.unwrap()).expect("finding");
-    assert_eq!(f.title.key, "switch.doctor.authapi_other_line");
-    // The current line's own origin: nothing to report.
-    w.set_session(Some(session(Some(catalog::KRILL_ORIGIN_CDN), true)));
-    assert!(find(w.switcher().doctor().await.unwrap()).is_none());
 }
 
 // --- recovery -----------------------------------------------------------------------------------
@@ -759,7 +700,7 @@ async fn journal_keeps_a_bounded_history() {
 }
 
 #[tokio::test]
-async fn e2e_test_sites_are_injected_from_a_file_and_usable_for_pat() {
+async fn e2e_test_sites_are_injected_from_a_file_and_usable_with_a_key() {
     let mut w = World::new();
     let mut site = catalog::krill_site();
     site.id = SiteId::new("krill-test");
@@ -782,7 +723,7 @@ async fn e2e_test_sites_are_injected_from_a_file_and_usable_for_pat() {
         .expect("injected");
     assert_eq!(test.lines[0].source, LineSource::Test);
 
-    let mut p = krill_profile("e2e", Some("a"), AuthMode::Pat);
+    let mut p = krill_profile("e2e", Some("a"), AuthMode::ApiKey);
     p.site_id = SiteId::new("krill-test");
     w.secrets
         .map
@@ -796,13 +737,16 @@ async fn e2e_test_sites_are_injected_from_a_file_and_usable_for_pat() {
         .await
         .unwrap();
     assert!(plan.primary.is_hot(), "{:?}", plan.primary);
-    assert_eq!(
-        w.env.plans.lock().unwrap().last(),
-        Some(&superba_core::EnvOp::Set {
-            value: "https://127.0.0.1:18001".into(),
-            take_over_foreign: false
-        })
-    );
+    match &plan.config.as_ref().unwrap().desired.as_ref().unwrap().mode {
+        superba_core::ResolvedMode::Token {
+            auth, endpoints, ..
+        } => {
+            assert_eq!(*auth, AuthMode::ApiKey);
+            assert_eq!(endpoints.origin.as_str(), "https://127.0.0.1:18001");
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(plan.env.is_none(), "an API key needs no auth address");
     // An unreadable file is ignored.
     std::fs::write(&file, b"not json").unwrap();
     assert!(

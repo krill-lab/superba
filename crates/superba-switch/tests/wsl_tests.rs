@@ -171,16 +171,10 @@ async fn router_mode_routes_wsl1_over_loopback_with_its_own_token() {
     else {
         panic!("token mode")
     };
-    assert_eq!(*auth, superba_core::AuthMode::Pat);
-    assert_eq!(
-        endpoints.chatgpt_base_url.as_ref().unwrap().as_str(),
-        "https://127.0.0.1:18431/backend-api/"
-    );
+    assert_eq!(*auth, superba_core::AuthMode::ApiKey);
     assert!(
-        endpoints
-            .ca_certificate
-            .as_ref()
-            .is_some_and(|b| b.expose().starts_with(b"-----BEGIN CERTIFICATE-----"))
+        endpoints.ca_certificate.is_none(),
+        "plain HTTP loopback: no certificate"
     );
     assert_eq!(base, FakeRouter::base_url(18_431));
     assert_ne!(key, ROUTER_TOKEN, "a distribution has its own token");

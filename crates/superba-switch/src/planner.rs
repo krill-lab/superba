@@ -9,22 +9,20 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use superba_core::{
-    AppSession, ApplyPlan, AuthApiHealth, AuthMode, BaselineExtras, BlockReason, BuiltinProfile,
-    CdpMode, CodexFileKind, CodexFiles, CodexHome, CodexPath, ConfigState, EnvObservation, EnvOp,
-    EnvPlan, EnvSnapshot, Error, FileChange, Line, LineCaps, LocalizedText, MigrationPlan,
-    MigrationRequest, MigrationSelector, ModelCheck, Notice, Origin, PlanAlternative, PlanChoice,
-    PlanDestination, ProcessInfo, Profile, ProfileId, ProfileSet, ProviderRestore, RemoteHost,
-    RemotePlan, ResolvedEndpoints, ResolvedMode, ResolvedProfile, RestartKind, RestoreTarget,
-    Result, Secret, SessionReport, Site, SiteId, SiteKind, StashScope, SwitchIntent, SwitchPlan,
-    SwitchRequest, TargetId, ThreadActivity,
+    AppSession, ApplyPlan, AuthMode, BaselineExtras, BlockReason, BuiltinProfile, CdpMode,
+    CodexFileKind, CodexFiles, CodexHome, CodexPath, ConfigState, EnvOp, EnvPlan, EnvSnapshot,
+    Error, FileChange, Line, LineCaps, LocalizedText, MigrationPlan, MigrationRequest,
+    MigrationSelector, ModelCheck, Notice, PlanAlternative, PlanChoice, PlanDestination,
+    ProcessInfo, Profile, ProfileId, ProfileSet, ProviderRestore, RemoteHost, RemotePlan,
+    ResolvedEndpoints, ResolvedMode, ResolvedProfile, RestartKind, RestoreTarget, Result, Secret,
+    SessionReport, Site, SiteId, SiteKind, StashScope, SwitchIntent, SwitchPlan, SwitchRequest,
+    TargetId, ThreadActivity,
     catalog::{self, KRILL_SITE_ID, OFFICIAL_SITE_ID, PROFILE_OFFICIAL, PROFILE_ORIGINAL},
     codex::{ENV_AUTHAPI_BASE_URL, LEGACY_KRILL_PROVIDER, PROVIDER_OPENAI, VersionCapability},
 };
 
 use superba_config::settings::{HomeInput, PreviewTarget, plan_settings, preview_changes};
-use superba_core::{
-    AuthChoice, AuthContext, ConsumerKind, PlanSettings, SettingsConsumer, SettingsPlan,
-};
+use superba_core::{ConsumerKind, PlanSettings, SettingsConsumer, SettingsPlan};
 
 use crate::Switcher;
 use crate::journal::SwitchJournal;
@@ -49,7 +47,6 @@ pub(crate) struct PlanContext {
     pub endpoints: Option<ResolvedEndpoints>,
     pub session: Option<AppSession>,
     pub hosts: Vec<RemoteHost>,
-    pub launch_authapi: Option<Origin>,
     pub baseline_missing: bool,
     pub baseline_released: bool,
     pub baseline_extras: BaselineExtras,
@@ -97,8 +94,6 @@ pub(crate) struct PlanContext {
     /// (target, its `CODEX_HOME`, the model or `None`), recorded after that
     /// distribution's apply.
     pub kept_host_models: Vec<KeptHostModel>,
-    /// The local app's login shell lives in this WSL distribution.
-    pub legacy_wsl: Option<String>,
 }
 
 /// The model a plan keeps in one WSL distribution (user bug 63).
@@ -123,7 +118,6 @@ impl PlanContext {
             endpoints: None,
             session: None,
             hosts: Vec::new(),
-            launch_authapi: None,
             baseline_missing: false,
             baseline_released: false,
             baseline_extras: BaselineExtras::default(),
@@ -148,7 +142,6 @@ impl PlanContext {
             wsl_pending: Vec::new(),
             kept_model: None,
             kept_host_models: Vec::new(),
-            legacy_wsl: None,
         }
     }
 }
@@ -258,28 +251,12 @@ struct LineEval {
     auth: AuthMode,
     path: CodexPath,
     blocks: Vec<BlockReason>,
-    warns: Vec<LocalizedText>,
 }
 
-/// Judge `line` for `choice` from its probe (`None` = not probed).
-/// `pat_version_ok` (see [`rules::pat_version_ok`]) only steers `Auto`: a manual
-/// PAT choice is left to the version gate, which names the consumer and lets the
-/// user accept a too-old CLI.
-fn evaluate_line(
-    site: &Site,
-    line: &Line,
-    caps: Option<&LineCaps>,
-    choice: AuthChoice,
-    pat_version_ok: Option<bool>,
-) -> LineEval {
-    let mut cx = AuthContext::new(site).line(line);
-    cx.caps = caps;
-    if choice.is_auto() {
-        cx.pat_version_ok = pat_version_ok;
-    }
-    let decision = choice.decide(&cx);
+/// Judge `line` for the profile's API key from its probe (`None` = not probed).
+fn evaluate_line(site: &Site, line: &Line, caps: Option<&LineCaps>) -> LineEval {
+    let decision = superba_core::key_auth(site, caps);
     let mut blocks = Vec::new();
-    let mut warns = Vec::new();
     let mut path = site
         .capabilities
         .codex_paths
@@ -305,36 +282,16 @@ fn evaluate_line(
             }
         }
     }
-    let auth = match decision.mode {
-        Some(mode) => {
-            if decision.fell_back() {
-                let reason = decision.reason.text();
-                warns.push(
-                    text("switch.warn.pat_fallback")
-                        .arg_text("line", line.name.clone())
-                        .arg_text("reason", reason),
-                );
-            }
-            mode
-        }
-        None => {
-            if blocks.is_empty() {
-                blocks.push(BlockReason::AuthModeUnavailable {
-                    line_id: line.id.clone(),
-                    auth_mode: choice.representative_mode(),
-                });
-            }
-            choice.representative_mode()
-        }
-    };
-    if auth.writes_chatgpt_base_url() {
-        path = CodexPath::BackendApiCodex;
+    if decision.mode.is_none() && blocks.is_empty() {
+        blocks.push(BlockReason::AuthModeUnavailable {
+            line_id: line.id.clone(),
+            auth_mode: AuthMode::ApiKey,
+        });
     }
     LineEval {
-        auth,
+        auth: AuthMode::ApiKey,
         path,
         blocks,
-        warns,
     }
 }
 
@@ -815,17 +772,6 @@ impl Switcher {
             .and_then(|s| s.install_id.clone())
             .or_else(|| set.settings.preferred_app_id.clone())
             .or_else(|| installs.first().map(|i| i.id.clone()));
-        let local_versions = rules::local_versioned_consumers(
-            install_id.as_deref(),
-            &installs,
-            &binaries,
-            APP_CONSUMER_LABEL,
-        );
-        let pat_version_ok = if local {
-            rules::pat_version_ok(&local_versions)
-        } else {
-            None
-        };
 
         // --- destination ------------------------------------------------------
         let mut dest = self
@@ -835,7 +781,6 @@ impl Switcher {
                 &sites,
                 &state,
                 baseline.as_ref(),
-                pat_version_ok,
                 &mut draft,
             )
             .await?;
@@ -1071,24 +1016,15 @@ impl Switcher {
                 extras.env = snapshots(&r);
                 extras.legacy_env_lines = r.legacy_lines;
             }
-            let certificate_op = if dest.routed {
-                let path =
-                    superba_router::RouterPaths::new(&d.ctx.data_dir).client_certificate_pem();
-                Some(EnvOp::Set {
-                    value: path.to_string_lossy().into_owned(),
-                    // Existing CA roots are merged into the new bundle before this
-                    // edit, and the persister restores these lines on Clear.
-                    take_over_foreign: true,
-                })
-            } else {
-                let managed = d
-                    .env
-                    .inspect(superba_router::tls::CERT_ENV)
-                    .await
-                    .ok()
-                    .is_some_and(|r| r.superba_value.is_some());
-                managed.then_some(EnvOp::Clear)
-            };
+            // The router no longer serves Codex over TLS (user bug 139): the
+            // CA bundle Superba persisted for it before goes.
+            let managed = d
+                .env
+                .inspect(superba_router::tls::CERT_ENV)
+                .await
+                .ok()
+                .is_some_and(|r| r.superba_value.is_some());
+            let certificate_op = managed.then_some(EnvOp::Clear);
             if let Some(op) = certificate_op {
                 match d.env.plan(superba_router::tls::CERT_ENV, op).await {
                     Ok(p) if !p.is_noop() => certificate_env = Some(p),
@@ -1100,21 +1036,10 @@ impl Switcher {
         }
 
         // --- app facts and restart decision (plan 7.1) ------------------------
-        let needs_authapi = dest.auth.is_some_and(AuthMode::needs_authapi_env);
-        let authapi_env = session
-            .as_ref()
-            .map(|s| s.authapi_env.clone())
-            .unwrap_or(EnvObservation::Unknown);
-        let authapi_health = match (&session, needs_authapi, authapi_env.value()) {
-            (Some(_), true, Some(origin)) => Some(self.authapi_health(&dest, origin).await),
-            _ => None,
-        };
         let app_facts = match &session {
-            Some(s) => AppFacts::Running {
+            Some(_) => AppFacts::Running {
                 cdp: cdp_ok,
                 bridge_ready,
-                authapi_env: s.authapi_env.clone(),
-                authapi_health: authapi_health.clone(),
             },
             None => AppFacts::NotRunning,
         };
@@ -1166,7 +1091,6 @@ impl Switcher {
                     migration: migration.is_some() || dest.rollback_migration.is_some(),
                     current_family: state.auth.family(),
                     target_family: dest.auth.map(AuthMode::family),
-                    target_needs_authapi: needs_authapi,
                     app: app_facts,
                     hot_supported: rules::platform_hot_supported(),
                 })
@@ -1251,8 +1175,8 @@ impl Switcher {
             if rules::quit_needs_force(self.tuning.windows_app, &primary, session.as_ref()) {
                 draft.warn(text(superba_core::FORCE_QUIT_NOTICE));
             }
-            self.consumer_warnings(&restarts, &processes, &dest, &mut draft);
-            self.restart_notes(&primary, &dest, &sites, &authapi_env, &mut draft);
+            self.consumer_warnings(&restarts, &mut draft);
+            self.restart_notes(&primary, &mut draft);
             let dest_profile = dest.profile_id.as_ref().and_then(|id| set.profile(id));
             // Content another provider encrypted (GitHub issue 11): the local
             // rollouts only, nothing is sent; the router repairs requests
@@ -1303,24 +1227,6 @@ impl Switcher {
         if !remote_hosts.is_empty() {
             draft.warn(text("switch.warn.remotes").arg("hosts", remote_hosts.join(", ")));
         }
-        self.alternatives(&request, &primary, &dest, &mut draft);
-
-        let launch_authapi = {
-            let active = state.active.as_ref();
-            let (krill, active_line) = rules::active_krill_site(
-                &sites,
-                active.and_then(|a| a.site_id.as_ref()),
-                active.and_then(|a| a.line_id.as_ref()),
-            );
-            rules::launch_authapi_origin(
-                &krill,
-                dest.line.as_ref(),
-                dest.site
-                    .as_ref()
-                    .is_some_and(|s| s.kind == SiteKind::Krill),
-                active_line.as_ref(),
-            )
-        };
 
         let id = uuid::Uuid::new_v4().simple().to_string();
         let to = PlanDestination {
@@ -1377,7 +1283,6 @@ impl Switcher {
                 endpoints: dest.endpoints,
                 session,
                 hosts,
-                launch_authapi,
                 baseline_missing: first_takeover,
                 baseline_released: baseline.as_ref().is_some_and(|b| b.released),
                 baseline_extras: extras,
@@ -1402,7 +1307,6 @@ impl Switcher {
                 wsl_pending,
                 kept_model,
                 kept_host_models,
-                legacy_wsl: dest.legacy_wsl,
             },
         );
         Ok(plan)
@@ -1677,7 +1581,6 @@ impl Switcher {
         sites: &[Site],
         state: &ConfigState,
         baseline: Option<&superba_core::Baseline>,
-        pat_version_ok: Option<bool>,
         draft: &mut Draft,
     ) -> Result<Dest> {
         match &request.intent {
@@ -1716,7 +1619,6 @@ impl Switcher {
                             line_id.clone(),
                             *auth_mode,
                             None,
-                            pat_version_ok,
                             draft,
                         )
                         .await
@@ -1758,16 +1660,7 @@ impl Switcher {
                         what: format!("site {}", profile.site_id),
                     })?;
                 let mut dest = self
-                    .token_destination(
-                        request,
-                        profile,
-                        site,
-                        None,
-                        None,
-                        Some(*enable),
-                        pat_version_ok,
-                        draft,
-                    )
+                    .token_destination(request, profile, site, None, None, Some(*enable), draft)
                     .await?;
                 if !*enable && self.codex_routed(state) && dest.auth == Some(AuthMode::ApiKey) {
                     // API-key destinations need no auth address, but the router
@@ -1906,17 +1799,11 @@ impl Switcher {
         line_override: Option<superba_core::LineId>,
         auth_override: Option<AuthMode>,
         router_override: Option<bool>,
-        pat_version_ok: Option<bool>,
         draft: &mut Draft,
     ) -> Result<Dest> {
         let d = &self.deps;
-        // v2 auth: the profile's choice (Auto by default); a per-switch override is
-        // a manual choice (Advanced) that never falls back silently.
-        let choice = match auth_override {
-            Some(AuthMode::Pat) => AuthChoice::Pat,
-            Some(AuthMode::ApiKey) => AuthChoice::ApiKey,
-            _ => profile.auth_choice(),
-        };
+        // Key-based profiles always use their key as an API key (user bug
+        // 139); an override can only ask for that.
         if let Some(mode) = auth_override
             && (!mode.uses_key() || !site.supports(mode))
         {
@@ -1978,7 +1865,7 @@ impl Switcher {
 
         // Direct mode for the local home, and for remote hosts in router mode.
         let need_direct = !router_on || !request.targets.remotes.is_empty();
-        let mut auth = choice.representative_mode();
+        let auth = AuthMode::ApiKey;
         let mut endpoints = None;
         if need_direct {
             // A compatible site created from a base URL keeps its base path in the
@@ -1991,13 +1878,11 @@ impl Switcher {
                     None
                 };
             if let Some(base) = profile.base_url_override.as_ref().or(derived_base.as_ref()) {
-                let decision = choice.decide(&AuthContext::new(&site).custom_base_url(true));
-                match decision.mode {
-                    Some(m) => auth = m,
-                    None => draft.block(BlockReason::AuthModeUnavailable {
+                if superba_core::key_auth(&site, None).mode.is_none() {
+                    draft.block(BlockReason::AuthModeUnavailable {
                         line_id: superba_core::LineId::new("-"),
-                        auth_mode: choice.representative_mode(),
-                    }),
+                        auth_mode: auth,
+                    });
                 }
                 endpoints = Some(ResolvedEndpoints::for_site_base_url(&site, base)?);
             } else {
@@ -2053,7 +1938,7 @@ impl Switcher {
                     let caps = self
                         .probe_for_switch(&site, &line, key.as_ref(), draft)
                         .await;
-                    let eval = evaluate_line(&site, &line, caps.as_ref(), choice, pat_version_ok);
+                    let eval = evaluate_line(&site, &line, caps.as_ref());
                     if eval.blocks.is_empty() || i == last {
                         chosen = Some((line, caps, eval));
                         break;
@@ -2077,16 +1962,12 @@ impl Switcher {
                 for b in eval.blocks {
                     draft.block(b);
                 }
-                for w in eval.warns {
-                    draft.warn(w);
-                }
-                auth = eval.auth;
-                endpoints = match ResolvedEndpoints::for_line(&line.origin, eval.path, auth) {
+                endpoints = match ResolvedEndpoints::for_line(&line.origin, eval.path) {
                     Ok(e) => Some(e),
                     Err(_) => {
                         draft.block(BlockReason::AuthModeUnavailable {
                             line_id: line.id.clone(),
-                            auth_mode: auth,
+                            auth_mode: eval.auth,
                         });
                         None
                     }
@@ -2125,18 +2006,18 @@ impl Switcher {
                 r.line_id = dest.line.as_ref().map(|l| l.id.clone());
                 dest.remote_resolved = Some(r);
             }
-            self.route_through_router(profile, &site, choice, &router_settings, &mut dest, draft)
+            self.route_through_router(profile, &site, &router_settings, &mut dest, draft)
                 .await;
             if !request.targets.local {
                 // Only the distributions are written: the router's members stay.
                 dest.router_update = None;
             }
             if let (Some(e), Some(token)) = (dest.endpoints.clone(), dest.key.clone()) {
-                let auth = dest.auth.unwrap_or(AuthMode::Pat);
+                let auth = dest.auth.unwrap_or(AuthMode::ApiKey);
                 let mut r = resolved(&e, auth, &token);
                 if auth == AuthMode::MixedOfficial {
-                    // Krill's PAT recommendations do not apply to the
-                    // official login.
+                    // Krill's recommendations do not apply to the official
+                    // login.
                     r.settings = Default::default();
                 }
                 dest.resolved = Some(r);
@@ -2151,13 +2032,10 @@ impl Switcher {
             let mut r = resolved(endpoints, auth, key);
             r.line_id = dest.line.as_ref().map(|l| l.id.clone());
             dest.resolved = Some(r);
-            if auth.needs_authapi_env()
-                && let Some(origin) = &endpoints.authapi_origin
-            {
-                dest.env_op = Some(EnvOp::Set {
-                    value: origin.as_str(),
-                    take_over_foreign: request.take_over_foreign_env.unwrap_or(false),
-                });
+            // An API key needs no auth address: what Superba persisted for a
+            // personal access token before user bug 139 (or the router) goes.
+            if self.authapi_persisted().await {
+                dest.env_op = Some(EnvOp::Clear);
             }
         }
         dest.endpoints = endpoints;
@@ -2191,7 +2069,6 @@ impl Switcher {
                         checked_at: self.deps.clock.now(),
                         reachable: false,
                         latency_ms: None,
-                        pat_ok: false,
                         apikey_ok: false,
                         codex_path: None,
                         blocked_by_edge: false,
@@ -2204,25 +2081,24 @@ impl Switcher {
         }
     }
 
-    /// Point the local destination at the router: its endpoint and local PAT, and the router's member order with `profile` first.
+    /// Point the local destination at the router: its endpoint and local API
+    /// key, and the router's member order with `profile` first.
     async fn route_through_router(
         &self,
         profile: &Profile,
         site: &Site,
-        choice: AuthChoice,
         router: &superba_core::RouterSettings,
         dest: &mut Dest,
         draft: &mut Draft,
     ) {
         let d = &self.deps;
-        let decision = choice.decide(&AuthContext::new(site).router(true));
-        if decision.mode.is_none() {
+        if superba_core::key_auth(site, None).mode.is_none() {
             draft.block(BlockReason::AuthModeUnavailable {
                 line_id: superba_core::LineId::new("router"),
-                auth_mode: choice.representative_mode(),
+                auth_mode: AuthMode::ApiKey,
             });
         }
-        dest.auth = Some(AuthMode::Pat);
+        dest.auth = Some(AuthMode::ApiKey);
         dest.line = None;
         dest.caps = None;
         dest.env_op = None;
@@ -2294,27 +2170,17 @@ impl Switcher {
             ),
         }
         match ResolvedEndpoints::for_base_url(&endpoint.base_url) {
-            Ok(e) if official.is_some() => {
+            Ok(e) => {
                 // Mixed login: auth.json keeps the official login and
-                // chatgpt_base_url stays chatgpt.com (no workspace discovery,
-                // no CODEX_AUTHAPI_BASE_URL); only model traffic is routed.
-                dest.auth = Some(AuthMode::MixedOfficial);
-                dest.env_op = Some(EnvOp::Clear);
-                dest.endpoints = Some(e);
-                dest.key = Some(endpoint.token);
-            }
-            Ok(mut e) => {
-                // Inference stays on HTTP loopback (also used by the CLI and
-                // model probes). Workspace discovery uses TLS on the same
-                // listener; Codex requires an HTTPS workspace origin.
-                let mut chatgpt = e.origin.join("/backend-api/");
-                let _ = chatgpt.set_scheme("https");
-                e.chatgpt_base_url = Some(chatgpt);
-                e.authapi_origin = Some(e.origin.clone());
-                dest.env_op = Some(EnvOp::Set {
-                    value: e.origin.as_str(),
-                    take_over_foreign: false,
-                });
+                // chatgpt_base_url stays chatgpt.com; only model traffic is
+                // routed. Otherwise Codex sends the router's local key as an
+                // API key over HTTP loopback. Neither needs an auth address.
+                if official.is_some() {
+                    dest.auth = Some(AuthMode::MixedOfficial);
+                    dest.env_op = Some(EnvOp::Clear);
+                } else if self.authapi_persisted().await {
+                    dest.env_op = Some(EnvOp::Clear);
+                }
                 dest.endpoints = Some(e);
                 dest.key = Some(endpoint.token);
             }
@@ -2801,29 +2667,17 @@ impl Switcher {
             return Ok(());
         };
         let owner = plain_http_owner(sites, &base);
-        let mut endpoints = match owner {
+        let endpoints = match owner {
             Some(site) if auth == AuthMode::ApiKey => {
                 ResolvedEndpoints::for_site_base_url(site, &base)?
             }
             _ => ResolvedEndpoints::for_base_url(&base)?,
         };
-        endpoints.chatgpt_base_url = rendered_state
-            .chatgpt_base_url
-            .as_deref()
-            .and_then(|s| url::Url::parse(s).ok());
-        if auth.needs_authapi_env() {
-            endpoints.authapi_origin = endpoints
-                .chatgpt_base_url
-                .as_ref()
-                .and_then(|u| Origin::parse(&u.origin().ascii_serialization()).ok())
-                .or_else(|| Some(endpoints.origin.clone()));
-        }
-        if auth.needs_authapi_env() && self.matches_router_endpoint(base.as_str()) {
+        if self.matches_router_endpoint(base.as_str()) {
             dest.routed = true;
-            endpoints.authapi_origin = Some(endpoints.origin.clone());
         }
         // Only a configured site that owns the restored API origin may receive
-        // this key. The prober also checks the launch-time auth origin against it.
+        // this key.
         if let Some((site, line)) = sites.iter().find_map(|site| {
             site.supports(auth)
                 .then(|| site.line_for_origin(&endpoints.origin))
@@ -2833,55 +2687,18 @@ impl Switcher {
             dest.site = Some(site.clone());
             dest.line = Some(line.clone());
         }
-        if matches!(
-            dest.resolved.as_ref().map(|r| &r.mode),
-            Some(ResolvedMode::Generation { .. })
-        ) && let Some(origin) = &endpoints.authapi_origin
-        {
-            dest.env_op = Some(EnvOp::Set {
-                value: origin.as_str(),
-                take_over_foreign: false,
-            });
-        }
         dest.endpoints = Some(endpoints);
         Ok(())
     }
 
-    async fn authapi_health(&self, dest: &Dest, origin: &str) -> AuthApiHealth {
-        if dest.routed {
-            // Never send a local router token to the previously selected
-            // upstream's auth service. Router health was checked above.
-            return if dest
-                .endpoints
-                .as_ref()
-                .is_some_and(|e| e.origin.as_str() == origin)
-            {
-                AuthApiHealth::Healthy
-            } else {
-                AuthApiHealth::Unhealthy {
-                    reason: "the app must use the local router's auth address".into(),
-                }
-            };
-        }
-        let (Some(site), Some(key)) = (dest.site.as_ref(), dest.key.as_ref()) else {
-            return AuthApiHealth::Unhealthy {
-                reason: "no key to check the auth address with".into(),
-            };
-        };
-        let origin = match Origin::parse(origin) {
-            Ok(o) => o,
-            Err(e) => {
-                return AuthApiHealth::Unhealthy {
-                    reason: e.to_string(),
-                };
-            }
-        };
-        match self.deps.prober.check_authapi(site, &origin, key).await {
-            Ok(h) => h,
-            Err(e) => AuthApiHealth::Unhealthy {
-                reason: e.to_string(),
-            },
-        }
+    /// Superba persisted `CODEX_AUTHAPI_BASE_URL` (for a personal access
+    /// token or the router before user bug 139): the next switch clears it.
+    async fn authapi_persisted(&self) -> bool {
+        self.deps
+            .env
+            .inspect(ENV_AUTHAPI_BASE_URL)
+            .await
+            .is_ok_and(|r| r.superba_value.is_some())
     }
 
     async fn plan_env(
@@ -3166,13 +2983,7 @@ impl Switcher {
         (used_hosts, plans, restarts)
     }
 
-    fn consumer_warnings(
-        &self,
-        restarts: &[superba_core::ConsumerRestart],
-        processes: &[ProcessInfo],
-        dest: &Dest,
-        draft: &mut Draft,
-    ) {
+    fn consumer_warnings(&self, restarts: &[superba_core::ConsumerRestart], draft: &mut Draft) {
         for r in restarts {
             match r.consumer {
                 superba_core::ConsumerKind::CliProcesses if !r.pids.is_empty() => {
@@ -3189,108 +3000,14 @@ impl Switcher {
                 _ => {}
             }
         }
-        if dest.auth.is_some_and(AuthMode::needs_authapi_env) {
-            let missing = processes
-                .iter()
-                .filter(|p| {
-                    matches!(
-                        rules::consumer_group(&p.kind),
-                        Some(
-                            superba_core::ConsumerKind::CliProcesses
-                                | superba_core::ConsumerKind::IdeAppServers
-                                | superba_core::ConsumerKind::CliDaemon
-                        )
-                    )
-                })
-                .filter(|p| matches!(p.authapi_env, EnvObservation::Absent))
-                .count();
-            if missing > 0 {
-                draft.warn(text("switch.warn.missing_env_processes").arg("count", missing));
-            }
-        }
     }
 
-    fn restart_notes(
-        &self,
-        primary: &RestartKind,
-        dest: &Dest,
-        sites: &[Site],
-        authapi_env: &EnvObservation,
-        draft: &mut Draft,
-    ) {
-        match primary {
-            RestartKind::AppServerHot { .. }
-                if dest.auth.is_some_and(AuthMode::needs_authapi_env) =>
-            {
-                if let Some(origin) = authapi_env.value() {
-                    let line = sites
-                        .iter()
-                        .find_map(|s| rules::line_for_origin(s, origin))
-                        .map(|l| l.name.clone())
-                        .unwrap_or_else(|| LocalizedText::new("raw", origin));
-                    // Only worth a line when it differs from the destination line.
-                    if dest.line.as_ref().is_none_or(|l| l.name != line) {
-                        draft.info(text("switch.warn.authapi_line").arg_text("line", line));
-                    }
-                }
-            }
-            RestartKind::FullAppRestart {
-                reason: superba_core::FullRestartReason::NoCdp,
-            } => draft.info(text("switch.warn.app_not_ours")),
-            _ => {}
-        }
-    }
-
-    fn alternatives(
-        &self,
-        request: &SwitchRequest,
-        primary: &RestartKind,
-        dest: &Dest,
-        draft: &mut Draft,
-    ) {
-        let SwitchIntent::Profile {
-            profile_id,
-            line_id,
-            ..
-        } = &request.intent
-        else {
-            return;
-        };
-        if dest.auth != Some(AuthMode::Pat) {
-            return;
-        }
-        let apikey_ok = dest
-            .caps
-            .as_ref()
-            .is_none_or(|c| c.allows(AuthMode::ApiKey));
-        let wants_alt = match primary {
-            RestartKind::FullAppRestart { reason } => matches!(
-                reason,
-                superba_core::FullRestartReason::AuthApiUnhealthy
-                    | superba_core::FullRestartReason::AuthApiMissing
-            ),
-            RestartKind::Blocked { reasons } => reasons.iter().any(|r| {
-                matches!(
-                    r,
-                    BlockReason::AuthModeUnavailable {
-                        auth_mode: AuthMode::Pat,
-                        ..
-                    }
-                )
-            }),
-            _ => false,
-        };
-        if wants_alt && apikey_ok {
-            let mut alt = request.clone();
-            alt.intent = SwitchIntent::Profile {
-                profile_id: profile_id.clone(),
-                line_id: line_id.clone(),
-                auth_mode: Some(AuthMode::ApiKey),
-            };
-            draft.alternatives.push(PlanAlternative {
-                label: text("switch.action.hot_with_apikey"),
-                request: alt,
-            });
+    fn restart_notes(&self, primary: &RestartKind, draft: &mut Draft) {
+        if let RestartKind::FullAppRestart {
+            reason: superba_core::FullRestartReason::NoCdp,
+        } = primary
+        {
+            draft.info(text("switch.warn.app_not_ours"));
         }
     }
 }
@@ -3327,26 +3044,8 @@ impl Switcher {
                 && let Some(local) = dest.resolved.as_ref()
             {
                 match self.wsl_route(host, state).await {
-                    crate::wsl::WslRoute::Routed {
-                        origin,
-                        token,
-                        certificate,
-                    } => {
-                        resolved = crate::wsl::routed(local, &origin, &token, &certificate);
-                        if dest.legacy_wsl.as_deref() == host.wsl_distro().as_deref()
-                            && let (
-                                ResolvedMode::Token {
-                                    endpoints: local, ..
-                                },
-                                ResolvedMode::Token {
-                                    endpoints: remote, ..
-                                },
-                            ) = (&local.mode, &mut resolved.mode)
-                        {
-                            // Both WSL consumers use PAT. The rc files also run
-                            // before the legacy core reading the Windows home.
-                            remote.authapi_origin = local.authapi_origin.clone();
-                        }
+                    crate::wsl::WslRoute::Routed { origin, token } => {
+                        resolved = crate::wsl::routed(local, &origin, &token);
                         if dest.kept_model {
                             local_kept = resolved.model.model.take();
                             resolved.model.model = base.model.model.clone();
@@ -3407,6 +3106,14 @@ impl Switcher {
             ResolvedMode::Token { key, .. } => Some(key),
             _ => None,
         };
+        // Routed: the distribution's endpoints are the router's, not the line's.
+        let routed = match (&base.mode, &resolved.mode) {
+            (
+                ResolvedMode::Token { endpoints: b, .. },
+                ResolvedMode::Token { endpoints: r, .. },
+            ) => b.openai_base_url != r.openai_base_url,
+            _ => false,
+        };
         let decision = self
             .plan_host_model_keep(crate::model_keep::HostKeepInput {
                 host,
@@ -3416,6 +3123,7 @@ impl Switcher {
                 set,
                 resolved,
                 direct_key,
+                routed,
             })
             .await;
         match decision {

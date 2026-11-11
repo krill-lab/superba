@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use pretty_assertions::assert_eq;
 use superba_core::catalog::{self, builtin_sites};
 use superba_core::{
-    AuthChoice, CandidateStatus, ConflictAction, ForeignApp, ImportKey, ImportSelection,
+    AuthMode, CandidateStatus, ConflictAction, ForeignApp, ImportKey, ImportSelection,
     ImportSource, ImportStore, LineId, LineSource, LocalizedText, Profile, ProfileId, ProfileSet,
     Result, Site, SiteEndpoints, SiteId, SiteKind, StoreStatus,
 };
@@ -321,7 +321,6 @@ fn existing_set() -> ProfileSet {
     let mut compat = krill("my-relay", "My Relay", None);
     compat.site_id = SiteId::new("my-relay");
     compat.auth_mode = superba_core::AuthMode::ApiKey;
-    compat.set_auth(AuthChoice::ApiKey);
     set.profiles.push(compat);
     set.profiles
         .push(krill("work", "Krill", Some(catalog::KRILL_LINE_OVERSEAS)));
@@ -329,7 +328,7 @@ fn existing_set() -> ProfileSet {
 }
 
 fn krill(id: &str, name: &str, line: Option<&str>) -> Profile {
-    let mut p = Profile {
+    Profile {
         id: ProfileId::new(id),
         name: name.into(),
         builtin: None,
@@ -337,8 +336,7 @@ fn krill(id: &str, name: &str, line: Option<&str>) -> Profile {
         line_id: line.map(LineId::new),
         backup_lines: Vec::new(),
         disabled_lines: Default::default(),
-        auth_mode: superba_core::AuthMode::Pat,
-        auth: AuthChoice::Auto,
+        auth_mode: superba_core::AuthMode::ApiKey,
         key_ref: None,
         base_url_override: None,
         model: Default::default(),
@@ -348,9 +346,7 @@ fn krill(id: &str, name: &str, line: Option<&str>) -> Profile {
         compaction: Default::default(),
         anthropic: None,
         model_source: None,
-    };
-    p.set_auth(AuthChoice::Auto);
-    p
+    }
 }
 
 fn sites(set: &ProfileSet) -> Vec<Site> {
@@ -487,7 +483,7 @@ fn rename_creates_next_to_it_and_update_changes_only_the_connection() {
             assert_eq!(site.id, profile.site_id);
             assert_eq!(site.lines.len(), 2);
             assert_eq!(site.model_map.len(), 1);
-            assert_eq!(profile.auth_choice(), AuthChoice::ApiKey);
+            assert_eq!(profile.auth_mode, AuthMode::ApiKey);
             assert_eq!(key.as_ref().unwrap().expose(), "sk-test-a-0000");
         }
         other => panic!("{other:?}"),
@@ -504,7 +500,7 @@ fn rename_creates_next_to_it_and_update_changes_only_the_connection() {
                 profile.line_id.as_ref().unwrap().as_str(),
                 catalog::KRILL_LINE_CDN
             );
-            assert_eq!(profile.auth_choice(), AuthChoice::Auto);
+            assert_eq!(profile.auth_mode, AuthMode::ApiKey);
             assert!(
                 !profile.codex_settings.is_empty(),
                 "Krill's recommended settings"

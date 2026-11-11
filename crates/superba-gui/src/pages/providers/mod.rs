@@ -109,8 +109,6 @@ pub struct State {
     pub tab: Tab,
     /// Paging of the list.
     pub list: PagedState,
-    /// Manual authentication controls are shown.
-    pub(crate) advanced: bool,
     /// The key editor.
     pub(crate) key_edit: Option<KeyEdit>,
     /// Edited base URL of a custom site: (site, text).
@@ -219,7 +217,6 @@ impl State {
             self.rename_armed = None;
             self.base_url = None;
             self.base_url_error = None;
-            self.advanced = false;
         }
     }
 
