@@ -5,6 +5,28 @@ All notable changes to Superba are documented here. The format follows
 [Semantic Versioning](https://semver.org/): later releases increment the patch
 number; the minor number changes only for breaking changes.
 
+## [0.1.1-alpha.16] - 2026-11-12
+
+### Added
+- One-click import from the Krill website (feature 140): a `superba://import/v1?key=<API key>[&name=<name>]` link always targets the built-in Krill provider (it updates the existing Krill provider's key, or adds one), always asks first in a confirmation dialog with the masked key, goes to a running window when there is one, and never logs the key. The `superba:` scheme is registered on Linux at window start, by the MSI on Windows and in `Info.plist` on macOS. See `docs/deeplink.md`.
+
+### Changed
+- **Breaking:** Krill and custom-site keys are always written as API keys (`auth_mode = "apikey"`, no `chatgpt_base_url`, no `CODEX_AUTHAPI_BASE_URL`); personal access token (PAT) mode is gone (user bug 139). Desktop app 26.1106 never confirms an account for a PAT, so a queued follow-up message failed with "Account is not confirmed". This covers direct switches, the local router (now plain HTTP on loopback, no certificate), WSL distributions and remote hosts. The Automatic / PAT / API key selector is removed, a saved PAT profile reads as an API-key profile, and an auth address or router certificate bundle written by earlier versions is cleared at the next switch.
+- One-off PAT→API-key migration: at the first start of Superba's window after the upgrade, an applied provider whose `auth.json` still holds the token Superba wrote is written again with the same key as an API key (configuration only; a running ChatGPT picks it up at its next restart or launch through Superba). `spb` runs the same migration before its first command that may write (not `--dry-run`); a lock lets only one of them do it. A line that refuses the key, or a plan that needs an answer, asks for one manual switch instead.
+- The first API-key launch of the desktop app keeps its sidebar, composer and model choices in a Codex home a PAT or app 26.1103 used.
+- The catalog and setting descriptions are updated to Codex 0.169.0-alpha.10, adding 0.167.0, 0.167.1 and 0.167.0-alpha.4.1 bundled with desktop app 26.1106. All 1144 settings and feature flags have current Chinese descriptions, with none missing or stale.
+
+### Removed
+- **Breaking:** the `spb` `--auth` flag (`switch`, `remote apply`, `key check`, `profile add`/`edit`), the PAT column of `spb lines` and the auth-line field of `spb status`.
+
+### Fixed
+- Archiving a chat in the desktop app works now that Superba signs in with an API key (user bug 134).
+- Update progress bars (Superba's own update, and installing or updating the Codex app and other tools) are repainted every frame and ease towards each report instead of jumping about 12 times a second (user bug 138); "Reduce motion" shows reports as they are.
+
+### Known issues
+- In API-key mode desktop app 26.1106 does not send speed tiers: Fast/Ultrafast set in Superba apply to terminal Codex only, and the app's model picker shows no speed icons (an app-side gate; terminal Codex is unaffected).
+- One-click import is tested end to end on Linux only; the Windows MSI registration and macOS link delivery are not run-tested.
+
 ## [0.1.1-alpha.15] - 2026-11-10
 
 ### Added
