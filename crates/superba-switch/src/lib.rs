@@ -49,6 +49,8 @@ pub mod models;
 pub mod monitor;
 pub mod notify;
 pub mod ownership;
+// One-off alpha.16 PAT→API-key migration (user bug 139).
+mod pat_migration;
 pub mod planner;
 pub mod privilege;
 pub mod router;
