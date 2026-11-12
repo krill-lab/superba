@@ -17,7 +17,7 @@ use superba_core::{
     ModelSpec, ModelsEdit, ModelsView, ModelsViewRequest, Profile, ProfileId, SpeedTier,
     SwitchIntent, check_all_models, check_model_override, model_limits, parse_token_count,
 };
-use superba_switch::models::{CatalogReason, catalog_reasons, override_needs_catalog};
+use superba_switch::models::{CatalogReason, app_menu_on, catalog_reasons, override_needs_catalog};
 
 use super::{Result, execute, request, usage};
 use crate::{
@@ -307,6 +307,7 @@ fn reason_key(r: CatalogReason) -> &'static str {
         CatalogReason::ProviderPicker => "cli.models.reason.picker",
         CatalogReason::Ultrafast => "cli.models.reason.ultrafast",
         CatalogReason::TierSuffix => "cli.models.reason.suffix",
+        CatalogReason::AppSpeedMenu => "cli.models.reason.app_menu",
     }
 }
 
@@ -343,7 +344,7 @@ async fn save(edit: ModelsEdit, exec: &ExecArgs, rt: &Runtime, out: &mut Output)
         out.field("cli.models.service_tier", speed.config_value())?;
         let reasons = site
             .as_ref()
-            .map(|s| catalog_reasons(&after, s, auth))
+            .map(|s| catalog_reasons(&after, s, auth, app_menu_on(&set.settings)))
             .unwrap_or_default();
         if reasons.is_empty() {
             out.line(text("cli.models.no_catalog"))?;

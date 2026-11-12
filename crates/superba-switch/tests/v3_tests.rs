@@ -179,6 +179,32 @@ async fn a_preflight_failure_blocks_the_switch_and_writes_nothing() {
 }
 
 #[tokio::test]
+async fn the_speed_menu_catalog_never_blocks_a_switch() {
+    // Krill with the app's speed menu (default) asks for a catalog file only to
+    // list Krill's models and tiers. When none can be made (Windows before
+    // ChatGPT extracted its Codex, user bug 143) the switch goes on without it.
+    let w = World::new();
+    w.profiles.set.lock().unwrap().settings.app_speed_menu = true;
+    set_profile(&w, api_key);
+    *w.app.preflight_error.lock().unwrap() = Some(superba_core::Error::parse(
+        "model_catalog_json",
+        "missing field `base_instructions`",
+    ));
+    let sw = w.switcher();
+    let plan = sw.plan(req("work")).await.unwrap();
+    assert!(!plan.is_blocked(), "{:?}", plan.primary);
+    assert!(warning_keys(&plan).contains(&"switch.models.menu_catalog_later".to_owned()));
+    assert!(desired(&plan).model_catalog.is_none());
+    assert!(files_in(&superba_dir(&w)).is_empty());
+    // Another reason for the file (a per-model window) still blocks.
+    set_profile(&w, |p| {
+        p.model_overrides
+            .insert("gpt-6-astra".into(), window(400_000));
+    });
+    assert!(sw.plan(req("work")).await.unwrap().is_blocked());
+}
+
+#[tokio::test]
 async fn catalog_triggers_and_where_a_catalog_is_never_written() {
     let w = World::new();
     let sw = w.switcher();
@@ -231,17 +257,17 @@ async fn reasons_are_pure_and_cover_the_picker_and_tier_suffix() {
     let mut site = superba_core::catalog::compatible_template_site();
     let mut p = krill_profile("x", None, AuthMode::ApiKey);
     p.site_id = site.id.clone();
-    assert!(catalog_reasons(&p, &site, AuthMode::ApiKey).is_empty());
+    assert!(catalog_reasons(&p, &site, AuthMode::ApiKey, false).is_empty());
     p.model_picker = ModelPicker::Provider;
     assert_eq!(
-        catalog_reasons(&p, &site, AuthMode::ApiKey),
+        catalog_reasons(&p, &site, AuthMode::ApiKey, false),
         vec![CatalogReason::ProviderPicker]
     );
     p.model_picker = ModelPicker::CodexDefault;
     p.model.speed = Some(SpeedTier::Fast);
     site.capabilities.tier_model_suffix = true;
     assert_eq!(
-        catalog_reasons(&p, &site, AuthMode::ApiKey),
+        catalog_reasons(&p, &site, AuthMode::ApiKey, false),
         vec![CatalogReason::TierSuffix]
     );
     // An upstream name alone edits the model map, not the catalog.
@@ -253,7 +279,41 @@ async fn reasons_are_pure_and_cover_the_picker_and_tier_suffix() {
             ..ModelOverride::default()
         },
     );
-    assert!(catalog_reasons(&p, &site, AuthMode::ApiKey).is_empty());
+    assert!(catalog_reasons(&p, &site, AuthMode::ApiKey, false).is_empty());
+}
+
+#[test]
+fn with_the_app_speed_menu_krill_gets_its_models_and_no_tier_names() {
+    use superba_switch::models::{CatalogReason, catalog_reasons, suffix_applies};
+    let mut site = superba_core::catalog::builtin_sites()
+        .into_iter()
+        .find(|s| s.kind == superba_core::SiteKind::Krill)
+        .unwrap();
+    site.capabilities.tier_model_suffix = true;
+    let mut p = krill_profile("x", None, AuthMode::ApiKey);
+    p.site_id = site.id.clone();
+    p.model.speed = Some(SpeedTier::Fast);
+    // The menu: Krill's list (6.1 models, Ultrafast) and the tier as service_tier.
+    assert_eq!(
+        catalog_reasons(&p, &site, AuthMode::ApiKey, true),
+        vec![CatalogReason::AppSpeedMenu]
+    );
+    assert!(!suffix_applies(
+        &site,
+        AuthMode::ApiKey,
+        SpeedTier::Fast,
+        true
+    ));
+    // Without it, as before.
+    assert_eq!(
+        catalog_reasons(&p, &site, AuthMode::ApiKey, false),
+        vec![CatalogReason::TierSuffix]
+    );
+    // A custom site keeps its own picker choice.
+    let mut compat = superba_core::catalog::compatible_template_site();
+    compat.capabilities.tier_model_suffix = false;
+    p.site_id = compat.id.clone();
+    assert!(catalog_reasons(&p, &compat, AuthMode::ApiKey, true).is_empty());
 }
 
 #[tokio::test]
@@ -561,8 +621,9 @@ async fn a_saved_standard_tier_still_tells_what_fast_does_in_the_app() {
 
 #[tokio::test]
 async fn with_the_app_speed_menu_the_app_decides_the_tier() {
-    // On by default: an API-key profile's tier is the app menu's, not Standard.
+    // An API-key profile's tier is the app menu's, not Standard.
     let w = World::new();
+    w.profiles.set.lock().unwrap().settings.app_speed_menu = true;
     set_profile(&w, |p| {
         api_key(p);
         p.model.speed = Some(SpeedTier::Fast);

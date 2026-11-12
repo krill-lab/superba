@@ -561,6 +561,42 @@ SPEED_MENU_JS = r"""(() => {
 })()"""
 
 
+def same_model(shown, name):
+    """The picker may drop the "GPT-" prefix of a display name ("6 Astra")."""
+    norm = lambda x: re.sub(r"(?i)^gpt-", "", x.strip()).lower()
+    return norm(shown) == norm(name)
+
+
+def pick_model(run, s, name):
+    """Open the composer's model list; returns the listed model names and, when `name`
+    is among them, picks it."""
+    a = App(run)
+    a.eval("document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}))")
+    time.sleep(0.5)
+    end = time.time() + 30
+    while not a.eval(SPEED_MENU_JS % json.dumps("model")):
+        if time.time() > end:
+            return []
+        time.sleep(2)
+    a.click_css('[data-e2e-speed="model"]')
+    time.sleep(1.5)
+    a.click_css('[role=menuitem][aria-label="Select model"]')
+    time.sleep(1.5)
+    names = a.eval("[...document.querySelectorAll('[role=menuitemradio]')].filter((e) => e.getClientRects().length > 0)"
+                   ".map((e) => (e.innerText || '').trim().split('\\n')[0])") or []
+    s.info(f"models listed: {names}")
+    hit = next((n for n in names if same_model(n, name)), None)
+    if hit:
+        a.eval("(() => { const e = [...document.querySelectorAll('[role=menuitemradio]')].find((e) =>"
+               " (e.innerText || '').trim().split('\\n')[0] === %s); e.setAttribute('data-e2e-model', '1'); })()"
+               % json.dumps(hit))
+        a.click_css('[data-e2e-model]')
+        time.sleep(1.5)
+    a.eval("document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}))")
+    a.click_css(".ProseMirror")
+    return names
+
+
 def pick_speed(run, s, tier):
     """Open the composer's model popup and choose `tier` (Standard / Fast / Ultrafast) in
     ChatGPT's own speed control; returns what the control looked like."""
@@ -606,6 +642,14 @@ def pick_speed(run, s, tier):
 def w24(t):
     run = t.run
     a = App(run)
+    with t.step("Switch again once ChatGPT has run: the model catalog file from the provider's list") as s:
+        # On Windows the catalog needs the Codex ChatGPT extracts on its first run; a
+        # first switch before that goes on without the file (user bug 143).
+        r = run.spb("switch", "--profile", "krill", "--countdown", "0", "--yes", "--wait-turn", timeout=300,
+                    label="speed-switch")
+        s.check(r["code"] == 0, f"spb switch exit {r['code']} [{r['transcript']}]")
+        cfg = run.guest_read(run.guest["CODEX_HOME"] + r"\config.toml") or ""
+        s.check("model_catalog_json" in cfg, "config.toml names a model catalog file (the provider's list)")
     with t.step("Open ChatGPT through Superba: the speed menu is patched in at the first page") as s:
         m0 = a.main()
         r = run.spb("launch", "--restart", "--yes", timeout=240, label="speed-launch")
@@ -640,6 +684,25 @@ def w24(t):
         a.wait_idle(180)
         s.check(any(e.get("service_tier") == "priority" for e in posts),
                 f"POST …/responses with service_tier priority: {[(e.get('model'), e.get('service_tier')) for e in posts]}")
+    with t.step("Krill's own models and tiers (catalog file): a provider-only model, Ultrafast on 6 Astra") as s:
+        names = pick_model(run, s, "GPT-6 Astra")
+        s.check(any(same_model(n, "GPT-5.5 Mini") for n in names),
+                f"the model list has a model only the provider lists (GPT-5.5 Mini): {names}")
+        s.check(any(same_model(n, "GPT-6 Astra") for n in names), "GPT-6 Astra listed and picked")
+        control = pick_speed(run, s, "Ultrafast")
+        s.check(bool(control) and control.startswith("sub:"),
+                f"6 Astra offers more than one tier (a Speed submenu): {control!r}")
+        s.shot("speed-ultrafast")
+        cfg = run.guest_read(run.guest["CODEX_HOME"] + r"\config.toml") or ""
+        s.check('service_tier = "ultrafast"' in cfg, "the app wrote service_tier = \"ultrafast\"")
+        since = time.time()
+        a.send_turn("E2E-SPEED-ULTRA: reply with exactly the text PONG")
+        posts = flows.wait_relay_turn(run, since)
+        s.save("speed-ultra-posts.json", posts)
+        a.wait_idle(180)
+        s.check(any(e.get("model") == "gpt-6-astra" and e.get("service_tier") == "ultrafast" for e in posts),
+                f"POST …/responses on gpt-6-astra with service_tier ultrafast: "
+                f"{[(e.get('model'), e.get('service_tier')) for e in posts]}")
     with t.step("Back to Standard: no tier on the wire") as s:
         control = pick_speed(run, s, "Standard")
         s.check(bool(control), f"the speed control again: {control!r}")

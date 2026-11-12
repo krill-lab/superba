@@ -370,6 +370,9 @@ async fn a_tier_suffix_model_written_last_time_is_not_suffixed_twice() {
     });
     // The previous switch wrote the Fast name; the profile has no default model.
     w.config.state.lock().unwrap().model = Some("gpt-6-astra-fast".into());
+    // Tier names are used without the app's speed menu (with it the tier goes
+    // as service_tier and the name loses its suffix).
+    w.profiles.set.lock().unwrap().settings.app_speed_menu = false;
     let sw = suffix_switcher(&w);
     let plan = sw.plan(req("work")).await.unwrap();
     assert!(!plan.is_blocked(), "{:?}", plan.primary);
@@ -377,6 +380,12 @@ async fn a_tier_suffix_model_written_last_time_is_not_suffixed_twice() {
         desired(&plan).model.model.as_deref(),
         Some("gpt-6-astra-ultrafast")
     );
+    w.profiles.set.lock().unwrap().settings.app_speed_menu = true;
+    let plan = sw.plan(req("work")).await.unwrap();
+    assert!(!plan.is_blocked(), "{:?}", plan.primary);
+    let d = desired(&plan);
+    assert_eq!(d.model.model.as_deref(), Some("gpt-6-astra"));
+    assert_eq!(d.model.speed, Some(SpeedTier::Ultrafast));
 }
 
 #[tokio::test]

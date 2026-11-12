@@ -318,6 +318,7 @@ switch_once = "Superba 没有自动重新应用 {profile} 来取消关闭 OpenAI
 store_unreadable = "Superba 无法读取供应商配置，未能完成取消关闭 OpenAI 遥测：{reason} 下次启动时会再试。"
 
 [switch.models]
+menu_catalog_later = "暂时无法让 ChatGPT 使用供应商的模型列表（更多模型、Ultrafast）：{reason} 本次切换照常进行，之后再切换一次即可补上。"
 service_tier_old_codex = "{consumer} 的 Codex 版本为 {version}，只认 service_tier = \"fast\" 或 \"flex\"；为了让它仍能读取 config.toml，Superba 不写入 service_tier = \"{tier}\"。"
 catalog_unrepaired = "Codex {now} 不接受模型目录文件 {file}，Superba 也无法改写配置（{reason}）。修复前 Codex 无法启动：请重新切换到这个供应商一次，或从 {config} 中删除 model_catalog_json 这一行。"
 repair_no_profile = "当前没有应用任何供应商"

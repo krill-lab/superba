@@ -5,6 +5,11 @@ All notable changes to Superba are documented here. The format follows
 [Semantic Versioning](https://semver.org/): later releases increment the patch
 number; the minor number changes only for breaking changes.
 
+## [Unreleased]
+
+### Fixed
+- With ChatGPT's speed menu on (the default), a Krill provider with an API key now gets Krill's own model list in ChatGPT, through a model catalog file written at the switch: gpt-6.1-sol and gpt-6.1-terra appear (the list built into ChatGPT's Codex lacks them), and the menu offers Ultrafast where Krill declares it (gpt-6.1-sol, gpt-6-astra). In alpha.18 only Fast showed, and only for the built-in models. The speed tier is no longer put into the model name (`gpt-6-astra-fast`) for the desktop app; it goes as `service_tier`, as chosen in the menu. With the speed menu off, the earlier behaviour (no catalog file unless needed, tier-suffixed model names) is unchanged. Custom sites keep their own "Models in the picker" choice. The next switch to the Krill provider writes the file (`spb switch` or Apply on the Providers page).
+
 ## [0.1.1-alpha.18] - 2026-11-12
 
 ### Added

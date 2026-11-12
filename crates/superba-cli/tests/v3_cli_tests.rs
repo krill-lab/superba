@@ -127,15 +127,21 @@ async fn models_dry_run_stores_nothing_and_names_the_catalog_reasons() {
     assert_eq!(doc["service_tier"], "default");
     assert!(service.v3.lock().unwrap().model_edits.is_empty());
     assert!(!service.calls().names.contains(&"plan"));
-    // PAT applies the per-model override through a catalog.
-    assert_eq!(doc["catalog_reasons"], serde_json::json!(["overrides"]));
+    // The per-model override goes through a catalog; with the app's speed menu
+    // (on by default) a Krill profile has one for Krill's models and tiers too.
+    assert_eq!(
+        doc["catalog_reasons"],
+        serde_json::json!(["overrides", "app_speed_menu"])
+    );
     let (_, stdout, _) = run(
         &service,
         &["speed", "ultrafast", "--profile", "other", "--dry-run"],
     )
     .await;
     assert!(
-        stdout.contains("A model catalog file is written at the switch (Ultrafast)."),
+        stdout.contains(
+            "A model catalog file is written at the switch (Ultrafast, ChatGPT's speed menu: Krill's models and tiers)."
+        ),
         "{stdout}"
     );
     assert!(stdout.contains("service_tier: ultrafast"), "{stdout}");

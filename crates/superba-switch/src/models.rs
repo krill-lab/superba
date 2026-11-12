@@ -105,6 +105,11 @@ pub enum CatalogReason {
     Ultrafast,
     /// Fast / Ultrafast through tier-suffix model names.
     TierSuffix,
+    /// The app's speed menu ([`superba_core::Settings::app_speed_menu`]) on a
+    /// Krill line: the app lists Krill's models (gpt-6.1-*, which Codex's
+    /// bundled list lacks) with the tiers Krill declares (Ultrafast), as a
+    /// ChatGPT sign-in gets them from its remote list.
+    AppSpeedMenu,
 }
 
 /// An override that needs a catalog entry (an upstream name alone edits the
@@ -118,15 +123,32 @@ pub fn profile_speed(profile: &Profile) -> SpeedTier {
     profile.model.speed.unwrap_or_default()
 }
 
+/// Whether the app's speed menu is offered for API keys
+/// ([`superba_core::Settings::app_speed_menu`]; safe mode starts the app
+/// without the debugging port it needs).
+pub fn app_menu_on(settings: &superba_core::Settings) -> bool {
+    settings.app_speed_menu && !settings.safe_mode
+}
+
 /// Whether the tier-suffix model names apply: the site maps them, the tier is
-/// not Standard and the desktop app runs with a key.
-pub fn suffix_applies(site: &Site, auth: AuthMode, speed: SpeedTier) -> bool {
-    site.capabilities.tier_model_suffix && speed != SpeedTier::Standard && auth.uses_key()
+/// not Standard and the desktop app runs with a key, without its own speed
+/// menu (`app_menu`: then the tier goes as `service_tier`, chosen per turn).
+pub fn suffix_applies(site: &Site, auth: AuthMode, speed: SpeedTier, app_menu: bool) -> bool {
+    site.capabilities.tier_model_suffix
+        && speed != SpeedTier::Standard
+        && auth.uses_key()
+        && !app_menu
 }
 
 /// Reasons a key-based profile needs a catalog file in `auth` mode (empty =
-/// none). Official profiles keep Codex's own catalog.
-pub fn catalog_reasons(profile: &Profile, site: &Site, auth: AuthMode) -> Vec<CatalogReason> {
+/// none). Official profiles keep Codex's own catalog. `app_menu`: see
+/// [`app_menu_on`].
+pub fn catalog_reasons(
+    profile: &Profile,
+    site: &Site,
+    auth: AuthMode,
+    app_menu: bool,
+) -> Vec<CatalogReason> {
     if profile.is_builtin() || site.kind == SiteKind::Official || !auth.uses_key() {
         return Vec::new();
     }
@@ -141,8 +163,11 @@ pub fn catalog_reasons(profile: &Profile, site: &Site, auth: AuthMode) -> Vec<Ca
     if speed == SpeedTier::Ultrafast {
         out.push(CatalogReason::Ultrafast);
     }
-    if suffix_applies(site, auth, speed) {
+    if suffix_applies(site, auth, speed, app_menu) {
         out.push(CatalogReason::TierSuffix);
+    }
+    if app_menu && site.kind == SiteKind::Krill {
+        out.push(CatalogReason::AppSpeedMenu);
     }
     out
 }
@@ -727,6 +752,9 @@ pub(crate) struct CatalogPlan {
     pub notes: Vec<Notice>,
     /// Why no file could be made (the switch is blocked).
     pub failed: Option<LocalizedText>,
+    /// Only [`CatalogReason::AppSpeedMenu`] asked for the file: a failure is a
+    /// warning, not a blocked switch.
+    pub optional: bool,
 }
 
 impl Switcher {
@@ -833,6 +861,23 @@ impl Switcher {
     /// Decide and (for writes) build and preflight a profile's catalog file.
     /// Writes only a scratch copy for the preflight, which is removed again.
     pub(crate) async fn plan_catalog(&self, input: CatalogPlanInput<'_>) -> CatalogPlan {
+        let mut out = self.plan_catalog_file(input).await;
+        // The speed menu's catalog only adds Krill's models and tiers: when it
+        // cannot be made (on Windows before ChatGPT extracted its Codex, user
+        // bug 143) the switch goes on without it, and a later switch adds it.
+        if out.optional
+            && let Some(reason) = out.failed.take()
+        {
+            out.write = None;
+            out.record = None;
+            out.notes.push(Notice::warning(
+                text("switch.models.menu_catalog_later").arg_text("reason", reason),
+            ));
+        }
+        out
+    }
+
+    async fn plan_catalog_file(&self, input: CatalogPlanInput<'_>) -> CatalogPlan {
         let d = &self.deps;
         let mut out = CatalogPlan::default();
         let profile = input.profile;
@@ -842,7 +887,9 @@ impl Switcher {
             return out;
         }
         let speed = profile_speed(profile);
-        let mut reasons = catalog_reasons(profile, input.site, input.auth);
+        let set = d.profiles.load().await.unwrap_or_default();
+        let app_menu = app_menu_on(&set.settings);
+        let mut reasons = catalog_reasons(profile, input.site, input.auth, app_menu);
         if self.catalog_off.load(std::sync::atomic::Ordering::SeqCst) && !reasons.is_empty() {
             reasons.clear();
             out.notes
@@ -851,6 +898,7 @@ impl Switcher {
         if reasons.is_empty() {
             return out;
         }
+        out.optional = reasons == [CatalogReason::AppSpeedMenu];
         let (app, cli) = local_codexes(input.install_id, input.installs, input.binaries);
         let Some(app) = app.filter(|a| a.binary.is_some() && a.version.is_some()) else {
             out.failed = Some(text("switch.models.no_consumer"));
@@ -899,7 +947,6 @@ impl Switcher {
             ModelListSource::Feed { .. } => CatalogSource::Feed(list.models.clone()),
             _ => CatalogSource::Bundled,
         };
-        let set = d.profiles.load().await.unwrap_or_default();
         let feeds = (d.feeds)(&set.settings.network);
         let feed_models = feeds
             .snapshot(false)
@@ -936,7 +983,7 @@ impl Switcher {
         let overrides = fold_globals(&profile.model_overrides, &profile.model, slugs, max_of);
         out.folded_globals =
             profile.model.context_window.is_some() || profile.model.auto_compact.is_some();
-        let suffix = suffix_applies(input.site, input.auth, speed);
+        let suffix = suffix_applies(input.site, input.auth, speed, app_menu);
         let catalog_input = CatalogInput {
             consumer: app_version.clone(),
             template: &template,
@@ -1238,14 +1285,15 @@ impl Switcher {
             .model
             .clone()
             .or_else(|| state.as_ref().and_then(|s| s.model.clone()));
-        let reasons = catalog_reasons(profile, &site, auth);
+        let app_menu = app_menu_on(&set.settings);
+        let reasons = catalog_reasons(profile, &site, auth, app_menu);
         // Without a catalog file an API-key Codex filters the tier with its own
         // bundled list (it never fetches the provider's). Whether there is one
         // depends on the tier too (Ultrafast and tier-suffix names need it).
         let needs_catalog = |tier: SpeedTier| {
             let mut p = profile.clone();
             p.model.speed = Some(tier);
-            !catalog_reasons(&p, &site, auth).is_empty()
+            !catalog_reasons(&p, &site, auth, app_menu).is_empty()
         };
         let bundled = if !matches!(list.source, ModelListSource::Bundled { .. })
             && (reasons.is_empty() || SpeedTier::ALL.into_iter().any(|t| !needs_catalog(t)))
@@ -1260,16 +1308,16 @@ impl Switcher {
             bundled.as_ref().filter(|_| reasons.is_empty()),
             model.as_deref(),
             false,
-            site.capabilities.tier_model_suffix,
+            site.capabilities.tier_model_suffix && !app_menu,
         );
         speed.tiers = tier_effects(
             &list,
             |tier| bundled.as_ref().filter(|_| !needs_catalog(tier)),
             model.as_deref(),
             false,
-            site.capabilities.tier_model_suffix,
+            site.capabilities.tier_model_suffix && !app_menu,
         );
-        if set.settings.app_speed_menu && !set.settings.safe_mode {
+        if app_menu {
             speed = with_app_menu(speed);
         }
         let record = current_record(&d.ctx.data_dir, home.root())
@@ -1440,8 +1488,9 @@ impl Switcher {
             superba_core::check_model_override(spec(slug).as_ref(), o, &p.model)
                 .map_err(|e| Error::invalid(format!("{slug}: {}", e.message())))?;
         }
-        let before = catalog_reasons(&profile, &site, auth);
-        let after = catalog_reasons(&p, &site, auth);
+        let app_menu = app_menu_on(&set.settings);
+        let before = catalog_reasons(&profile, &site, auth, app_menu);
+        let after = catalog_reasons(&p, &site, auth, app_menu);
         if before.is_empty() && !after.is_empty() {
             notes.push(Notice::info(text("switch.models.catalog_from_next_switch")));
             if site.kind == SiteKind::Krill {
