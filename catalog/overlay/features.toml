@@ -366,6 +366,11 @@ zh_name = "自动启动后台服务"
 zh = "交互式启动 `codex` 时自动启动或连接本机共享的后台服务（app-server 守护进程），多个终端会话共用它，可用 `/daemon` 管理。单次启动加 `--no-daemon` 可不使用；远程工作区不会自动启动。0.157 起为稳定功能并默认开启；桌面 app 绑定的 0.167.0-alpha.4.1 中此开关已移除并被忽略，只能用 `--no-daemon` 关闭。"
 zh_basis = ""
 
+["feature:daybreak_program_propagation"]
+en = ""
+en_hash = ""
+zh = ""
+
 ["feature:default_mode_request_user_input"]
 en = ""
 en_hash = ""
@@ -716,6 +721,11 @@ zh_name = "旧格式增量工具定义"
 zh = "依据源码推断，对不使用 Responses Lite 格式的模型，在内置 Amazon Bedrock 供应商（`amazon-bedrock`、`amazon-bedrock-runtime`）上像 `incremental_tools` 一样跟踪工具定义，新的上下文窗口只发送工具变化的增量更新；0.169.0-alpha.10 起也适用于 Google Cloud 供应商（`gcp`）。开发中，默认关闭；其他供应商不受影响。"
 zh_basis = ""
 
+["feature:incremental_tools_legacy_gcp"]
+en = ""
+en_hash = ""
+zh = ""
+
 ["feature:instant_interrupt"]
 en = ""
 en_hash = ""
@@ -864,6 +874,11 @@ en_hash = ""
 zh_name = "跨环境复制文件"
 zh = "向模型提供 `multi_env_copy_file` 工具，在两个不同的执行环境之间按绝对路径复制单个文件，内容不经过模型上下文。两端各按自身权限读写，目标目录必须已存在，中途中断可能留下不完整的文件。开发中，默认关闭。"
 zh_basis = ""
+
+["feature:multi_environment_mcp"]
+en = ""
+en_hash = ""
+zh = ""
 
 ["feature:network_proxy"]
 en_name = "Network proxy"
