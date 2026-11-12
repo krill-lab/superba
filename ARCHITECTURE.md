@@ -1116,14 +1116,57 @@ home, a remote host or a WSL distribution through four `SwitchService` methods
   (`original-<file>`), newest first; a restore is a save with
   `SaveReason::Restore` (and a backup of its own).
 
+### The app's speed menu with API keys
+
+The desktop app offers its speed menu, reads `service_tier` and sends the chosen
+tier only for a ChatGPT, personal-access-token or Bedrock sign-in. With the API key
+Superba writes it sends no tier at all, even though Codex itself would. Turning that
+around without touching the app's files (`superba_appctl::speedmenu`):
+
+1. **Plan, once per app build** (`plan`, cached per `app.asar` stamp under
+   `cache/speed-menu/`). The renderer is an Rspack build: each chunk under
+   `webview/assets/` exports `__webpack_modules__ = {id(e,t,n){...}}`. Chunks holding
+   the anchors are read from the asar (`asar`, ~0.5 s for 760 MB) and split into
+   factories with a small lexer (`jslex`; on app 26.1106 its split equals V8's
+   `Function.prototype.toString` for all 52 633 factories). Four rules find the gates
+   (UI access, requirements, configured tier, chosen tier). Each must match in exactly
+   one module, in every copy of it; a module ships in several chunks, minified
+   differently in each, and every copy becomes a variant. A patch keeps the original
+   condition and adds `|| globalThis.__superbaSpeedMenu.allow(host, method)`. The
+   page policy is true only for host `local` with `apikey`/`apiKey`. Copilot checks
+   stay in front. Anything unexpected means no plan, and the app runs unchanged.
+2. **Attach before the first document** (`attach`). Right after the spawn, Superba
+   waits for `DevToolsActivePort` (~0.5 s), checks the listener owner and connects to
+   the browser endpoint with `Target.setAutoAttach {waitForDebuggerOnStart}`. The
+   window's page appears paused about 3 s after start. For it, `Page.enable`,
+   `Page.addScriptToEvaluateOnNewDocument` and `Runtime.runIfWaitingForDebugger` are
+   sent back to back, because a paused target answers nothing until it runs. Other
+   targets are resumed and detached. A page waits for the plan at most 10 s.
+3. **Swap at registration** (`hook.js`). The Rspack runtime registers factories with
+   `table[id] = factory`. A non-enumerable `Object.prototype` accessor per planned id
+   sees that first assignment. If the factory's source length and FNV-1a hash are a
+   planned variant, the table gets the patched copy (an own accessor that keeps it
+   when another chunk registers the module again), and the prototype accessor is
+   removed. Otherwise the value is stored as the assignment would.
+
+The session settles when the page reports every planned module patched (~2 s), or
+after 90 s. Pausing then stops, and the connection stays open while the Superba
+process runs, so reloads get the script too. Offered tiers come from each model's
+`service_tiers`: without a catalog file from Codex's bundled list, with one from the
+provider's list. `Settings::app_speed_menu` (default on) turns it off; the Models page
+then shows `SpeedEffect::AppForcesStandard` again instead of `AppMenu`.
+
 ## 9. Security
 
 - CDP binds to loopback only, uses `--remote-allow-origins=http://127.0.0.1:<port>`
   with a reserved port (Windows; with port 0 no origin is allowed at all),
   verifies the listener PID is the app main process before the first evaluate (a
   mismatch disables CDP for that session), connects only while switching, and
-  evaluates only the restart call and read-only checks. Safe mode launches without
-  CDP (no hot switching); so does running as root.
+  evaluates only the restart call and read-only checks. The one exception is the
+  speed menu (§8, "The app's speed menu with API keys"): at a launch through Superba,
+  after the same owner check, it registers one document-start script in the app's
+  window and stays attached without evaluating anything else. Safe mode launches without
+  CDP (no hot switching, no speed menu); so does running as root.
 - Keys are sent to HTTPS origins (loopback HTTP is allowed for tests). A user-created
   compatible/API-key site may persist `allow_plain_http = true` only after the user
   explicitly acknowledges that API keys and conversation contents cross the network

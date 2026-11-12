@@ -112,6 +112,8 @@ tar = "0.4"
 quick-xml = "0.41"
 # byte searches on hot paths (router stats-line strip, app.asar scan)
 memchr = "2.8"
+# Speed-menu gate rules (superba-appctl); already in the lock file
+regex = "1.13"
 walkdir = "2"
 fs4 = "1"
 sysinfo = { version = "0.39", default-features = false, features = ["system", "user"] }

@@ -16,6 +16,8 @@ futures-util.workspace = true
 hex.workspace = true
 # app.asar scan for the app-server version floor
 memchr.workspace = true
+# speed-menu gate rules over the renderer bundle
+regex.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -53,6 +53,9 @@ pub(crate) struct PlanContext {
     pub profile_update: Option<ProfileUpdate>,
     pub install_id: Option<String>,
     pub safe_mode: bool,
+    /// Launch the app with its speed menu for API keys
+    /// ([`superba_core::Settings::app_speed_menu`]).
+    pub app_speed_menu: bool,
     pub restart_app: bool,
     pub rollback_migration: Option<String>,
     pub rollback_remote: Option<TargetId>,
@@ -124,6 +127,7 @@ impl PlanContext {
             profile_update: None,
             install_id: None,
             safe_mode,
+            app_speed_menu: false,
             restart_app: false,
             rollback_migration: None,
             rollback_remote: None,
@@ -1289,6 +1293,7 @@ impl Switcher {
                 profile_update: dest.profile_update,
                 install_id: dest.install_id,
                 safe_mode: set.settings.safe_mode,
+                app_speed_menu: set.settings.app_speed_menu,
                 restart_app: dest.restart_app,
                 rollback_migration: dest.rollback_migration,
                 rollback_remote: dest.rollback_remote,

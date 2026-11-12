@@ -47,7 +47,7 @@ NAMES = {
     "s16": "Setup wizard with the Krill preset (fresh home, GUI): first start, key typed, lines, finish = profile + switch; re-run from Preferences edits the profile; Skip writes nothing",
     "s17": "Model lists from the provider (Codex-native and /v1/models) and the signed feeds through raced mirrors: 404 / HTML / stale / valid, winner remembered, cache, built-in snapshot",
     "s18": "Per-model context override: catalog file at <CODEX_HOME>/superba/models-<sha8>.json, preflight, picker list, rollout context window, reset and pruning, a refused preflight writes nothing",
-    "s19": "Fast / Ultrafast in API-key direct mode: service_tier for the CLI, the app runs Standard, Ultrafast through the catalog, tier-suffixed model names for the app, Standard = no tier",
+    "s19": "Fast / Ultrafast in API-key direct mode: service_tier for the CLI, the app sends the configured tier (Superba's speed menu), Ultrafast through the catalog, tier-suffixed model names for the app, Standard = no tier",
     "s20": "Request log and stats line (router on, real app): line under the reply, stripped from the next request, final answer only in a tool loop, codex exec untouched, log rows, GUI, no request content recorded, no key bytes",
     "s21": "CODEX_CLI_PATH pin: verified install from the local package source (corrupted copy rejected), pin = full restart with the store binary, rollout cli_version, unpin, inherited CODEX_CLI_PATH ignored",
     "s22": "Remote host (Docker sshd): app-known hosts only, probe, Codex install over SSH stdin, settings sync filtered by the host's Codex version, follow off/on, sessions per host, rollback",

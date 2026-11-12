@@ -538,6 +538,109 @@ def w21(t):
         u.resize(1280, 800)
 
 
+# The composer's model button (its text is "<model>\n<effort>"), the speed control in its popup
+# (a fast-mode toggle when the model offers one tier, a "Speed …" submenu with more) and a
+# menu item by its first line.
+SPEED_MENU_JS = r"""(() => {
+  const vis = (e) => e.getClientRects().length > 0;
+  const mark = (e, v) => { document.querySelectorAll('[data-e2e-speed]').forEach((x) => x.removeAttribute('data-e2e-speed'));
+                           if (e) e.setAttribute('data-e2e-speed', v); return !!e; };
+  const want = %s;
+  if (want === 'model') return mark([...document.querySelectorAll('button')].find((b) => vis(b)
+      && /\n(None|Minimal|Low|Light|Medium|High|Extra High|Max|Ultra)$/.test((b.innerText || '').trim())), 'model');
+  if (want === 'control') {
+    const t = document.querySelector('[role=menuitemcheckbox][aria-label$="mode"]');
+    if (t) return mark(t, 'toggle') && 'toggle:' + t.getAttribute('aria-label') + ':' + t.getAttribute('aria-checked');
+    const sub = document.querySelector('[role=menuitem][aria-label^="Speed"]');
+    return sub ? mark(sub, 'sub') && 'sub:' + sub.getAttribute('aria-label') : null;
+  }
+  return mark([...document.querySelectorAll('[role=menuitem]')].find((e) => vis(e)
+      && (e.innerText || '').trim().split('\n')[0] === want), 'item');
+})()"""
+
+
+def pick_speed(run, s, tier):
+    """Open the composer's model popup and choose `tier` (Standard / Fast / Ultrafast) in
+    ChatGPT's own speed control; returns what the control looked like."""
+    a = App(run)
+    a.eval("document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}))")
+    time.sleep(0.5)
+    if not a.eval(SPEED_MENU_JS % json.dumps("model")) or not a.click_css('[data-e2e-speed="model"]'):
+        return None
+    time.sleep(1.2)
+    control = a.eval(SPEED_MENU_JS % json.dumps("control"))
+    s.info(f"speed control: {control!r}")
+    if not control:
+        return None
+    if control.startswith("toggle:"):
+        # aria-label "Enable fast mode" = Standard now; "Enable standard mode" = Fast now.
+        fast_now = control.split(":")[1].startswith("Enable standard")
+        if (tier == "Fast") != fast_now:
+            a.click_css('[data-e2e-speed="toggle"]')
+    else:
+        a.click_css('[data-e2e-speed="sub"]')
+        time.sleep(1)
+        if not a.eval(SPEED_MENU_JS % json.dumps(tier)) or not a.click_css('[data-e2e-speed="item"]'):
+            return None
+    time.sleep(1)
+    a.eval("document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}))")
+    a.click_css(".ProseMirror")
+    return control
+
+
+@scenario("W24", "Speed menu with an API key: Superba's window patch, Fast reaches the line as service_tier",
+          area="models", net="mock", needs=("app_ready",))
+def w24(t):
+    run = t.run
+    a = App(run)
+    with t.step("Open ChatGPT through Superba: the speed menu is patched in at the first page") as s:
+        m0 = a.main()
+        r = run.spb("launch", "--restart", "--yes", timeout=240, label="speed-launch")
+        s.check(r["code"] == 0, f"spb launch --restart exit {r['code']} [{r['transcript']}]")
+        m1 = a.wait_main(90, not_pid=m0["pid"] if m0 else None)
+        s.check(m1 is not None, f"ChatGPT restarted: {m0 and m0['pid']} -> {m1 and m1['pid']}")
+        a.onboarding(120)
+        s.check(a.composer_ready(240), "composer usable")
+        state = None
+        end = time.time() + 60
+        while time.time() < end:
+            state = a.eval("JSON.stringify(globalThis.__superbaSpeedMenu?.state ?? null)")
+            state = json.loads(state) if state else None
+            if state and len(state.get("patched") or {}) >= 3:
+                break
+            time.sleep(2)
+        s.save("speed-menu-state.json", state)
+        s.check(bool(state), "the window has Superba's speed-menu script (registered before the first page)")
+        s.check(len((state or {}).get("patched") or {}) >= 3,
+                f"the speed-tier modules were replaced: {(state or {}).get('patched')}")
+        s.check(not (state or {}).get("mismatched"), f"no module with unplanned source: {(state or {}).get('mismatched')}")
+    with t.step("Fast in ChatGPT's own speed menu: the turn carries service_tier priority") as s:
+        control = pick_speed(run, s, "Fast")
+        s.check(bool(control), f"the composer offers the speed control: {control!r}")
+        s.shot("speed-fast")
+        cfg = run.guest_read(run.guest["CODEX_HOME"] + r"\config.toml") or ""
+        s.check('service_tier = "priority"' in cfg, "the app wrote service_tier = \"priority\" to config.toml")
+        since = time.time()
+        a.send_turn("E2E-SPEED-FAST: reply with exactly the text PONG")
+        posts = flows.wait_relay_turn(run, since)
+        s.save("speed-fast-posts.json", posts)
+        a.wait_idle(180)
+        s.check(any(e.get("service_tier") == "priority" for e in posts),
+                f"POST …/responses with service_tier priority: {[(e.get('model'), e.get('service_tier')) for e in posts]}")
+    with t.step("Back to Standard: no tier on the wire") as s:
+        control = pick_speed(run, s, "Standard")
+        s.check(bool(control), f"the speed control again: {control!r}")
+        since = time.time()
+        a.send_turn("E2E-SPEED-STD: reply with exactly the text PONG")
+        posts = flows.wait_relay_turn(run, since)
+        s.save("speed-std-posts.json", posts)
+        a.wait_idle(180)
+        s.check(bool(posts) and not any(e.get("tier_sent") and e.get("service_tier") not in (None, "default")
+                                        for e in posts),
+                f"no tier sent: {[(e.get('model'), e.get('service_tier')) for e in posts]}")
+        s.shot("speed-standard")
+
+
 def legacy_sessions_tar(work, codex_home_win, n=600, kb=48, seed=7):
     """`n` rollout files under provider `krill` (Windows paths in the rows), as a tar
     to unpack into %USERPROFILE%\\.codex, plus the rows to insert into state_5.sqlite."""

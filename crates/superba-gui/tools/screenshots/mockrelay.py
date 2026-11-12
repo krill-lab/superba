@@ -349,7 +349,8 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             path = "/<invalid-request-target>"
         path = path.replace(self.server.relay.config.api_key, "[redacted]")
-        self.server.relay.log(self.server.line, getattr(self, "command", ""), path, status)
+        self.server.relay.log(self.server.line, getattr(self, "command", ""), path, status,
+                              getattr(self, "request_meta", None))
         self.close_connection = True
         try:
             self.send_response(status)
@@ -420,6 +421,11 @@ class Handler(BaseHTTPRequestHandler):
                 model = body.get("model", MODELS[0][0])
                 if not isinstance(model, str) or not model.strip():
                     raise BadRequest("model must be a nonempty string")
+                # The speed tier a client sent (e2e checks), never the input.
+                tier = body.get("service_tier")
+                self.request_meta = {"model": model,
+                                     "service_tier": tier if isinstance(tier, str) else None,
+                                     "tier_sent": "service_tier" in body}
                 if path.endswith("/compact"):
                     return 200, {"object": "response.compaction", "output": []}, {}
                 return 200, responses_stream(model, relay.data.now), {
@@ -511,9 +517,9 @@ class Relay:
             return (self.config.usage_limit is None
                     or self.usage_count <= self.config.usage_limit)
 
-    def log(self, line, method, path, status):
+    def log(self, line, method, path, status, meta=None):
         entry = {"ts": round(time.time(), 3), "line": line, "method": method,
-                 "path": path, "status": status}
+                 "path": path, "status": status, **(meta or {})}
         with self.log_lock:
             if self.log_file is not None:
                 self.log_file.write(json.dumps(entry, separators=(",", ":")) + "\n")

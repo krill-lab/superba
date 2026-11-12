@@ -463,6 +463,21 @@ fn the_window_choices_persist_and_stay_out_of_a_default_file() {
 }
 
 #[test]
+fn the_app_speed_menu_is_on_unless_turned_off() {
+    let default = serde_json::to_value(Settings::default()).unwrap();
+    assert!(default.get("app_speed_menu").is_none());
+    let old: Settings = serde_json::from_value(json!({"countdown_secs": 3})).unwrap();
+    assert!(old.app_speed_menu);
+    let off = Settings {
+        app_speed_menu: false,
+        ..Settings::default()
+    };
+    let value = serde_json::to_value(&off).unwrap();
+    assert_eq!(value["app_speed_menu"], false);
+    assert_eq!(serde_json::from_value::<Settings>(value).unwrap(), off);
+}
+
+#[test]
 fn empty_settings_deserialize_to_defaults_and_partial_settings_preserve_other_defaults() {
     let settings: Settings = serde_json::from_str("{}").unwrap();
     // A file without the bug 137 marker has not been migrated yet, while a new

@@ -54,6 +54,12 @@ fn api_key(p: &mut superba_core::Profile) {
     p.auth_mode = AuthMode::ApiKey;
 }
 
+/// Turn off the app's speed menu for API keys (on by default), so the app
+/// drops the tier as it does without Superba.
+fn no_speed_menu(w: &World) {
+    w.profiles.set.lock().unwrap().settings.app_speed_menu = false;
+}
+
 fn window(n: u64) -> ModelOverride {
     ModelOverride {
         context_window: Some(n),
@@ -359,6 +365,7 @@ async fn pruning_keeps_the_referenced_and_the_previous_file() {
 #[tokio::test]
 async fn the_models_view_shows_the_list_source_speed_effect_and_catalog_status() {
     let w = World::new();
+    no_speed_menu(&w);
     set_profile(&w, |p| {
         api_key(p);
         p.model.speed = Some(SpeedTier::Fast);
@@ -417,6 +424,7 @@ async fn without_a_catalog_file_an_api_key_cli_follows_the_bundled_tiers() {
     // tier data (an OpenAI list) must not hide Fast from the terminal Codex (e2e
     // s19: `codex exec` sent `priority` while the view said "not offered").
     let w = World::new();
+    no_speed_menu(&w);
     set_profile(&w, |p| {
         api_key(p);
         p.model.speed = Some(SpeedTier::Fast);
@@ -527,6 +535,7 @@ async fn a_saved_standard_tier_still_tells_what_fast_does_in_the_app() {
     // Review ux-visual #0: an API-key profile at Standard; the Models page shows
     // Fast's effect as soon as it is picked, before saving.
     let w = World::new();
+    no_speed_menu(&w);
     set_profile(&w, |p| {
         api_key(p);
         p.model.speed = None;
@@ -548,6 +557,41 @@ async fn a_saved_standard_tier_still_tells_what_fast_does_in_the_app() {
         view.speed.tiers.iter().map(|t| t.tier).collect::<Vec<_>>(),
         SpeedTier::ALL.to_vec()
     );
+}
+
+#[tokio::test]
+async fn with_the_app_speed_menu_the_app_decides_the_tier() {
+    // On by default: an API-key profile's tier is the app menu's, not Standard.
+    let w = World::new();
+    set_profile(&w, |p| {
+        api_key(p);
+        p.model.speed = Some(SpeedTier::Fast);
+    });
+    let view = w
+        .switcher()
+        .models_view(ModelsViewRequest {
+            profile_id: Some(ProfileId::new("work")),
+            refresh: false,
+        })
+        .await
+        .unwrap();
+    assert_eq!(view.speed.cli, SpeedEffect::Applies);
+    assert_eq!(view.speed.app, SpeedEffect::AppMenu);
+    assert_eq!(
+        view.speed.effect(SpeedTier::Standard),
+        (&SpeedEffect::Applies, &SpeedEffect::Applies)
+    );
+    // Safe mode starts the app without a debugging port: no menu.
+    w.profiles.set.lock().unwrap().settings.safe_mode = true;
+    let view = w
+        .switcher()
+        .models_view(ModelsViewRequest {
+            profile_id: Some(ProfileId::new("work")),
+            refresh: false,
+        })
+        .await
+        .unwrap();
+    assert_eq!(view.speed.app, SpeedEffect::AppForcesStandard);
 }
 
 #[test]
