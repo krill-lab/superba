@@ -5,10 +5,15 @@ All notable changes to Superba are documented here. The format follows
 [Semantic Versioning](https://semver.org/): later releases increment the patch
 number; the minor number changes only for breaking changes.
 
-## [Unreleased]
+## [0.1.1-alpha.19] - 2026-11-13
 
 ### Fixed
 - With ChatGPT's speed menu on (the default), a Krill provider with an API key now gets Krill's own model list in ChatGPT, through a model catalog file written at the switch: gpt-6.1-sol and gpt-6.1-terra appear (the list built into ChatGPT's Codex lacks them), and the menu offers Ultrafast where Krill declares it (gpt-6.1-sol, gpt-6-astra). In alpha.18 only Fast showed, and only for the built-in models. The speed tier is no longer put into the model name (`gpt-6-astra-fast`) for the desktop app; it goes as `service_tier`, as chosen in the menu. With the speed menu off, the earlier behaviour (no catalog file unless needed, tier-suffixed model names) is unchanged. Custom sites keep their own "Models in the picker" choice. The next switch to the Krill provider writes the file (`spb switch` or Apply on the Providers page).
+- The list now comes from Krill, so ChatGPT shows Krill's models (for example no 6 Luna or 5.5 when Krill does not list them). A model Superba wrote as `<model>-fast` / `<model>-ultrafast` becomes `<model>` again.
+- Windows: when ChatGPT has never run since it was installed, the model list cannot be built yet (user bug 143). The switch now goes on without it and says so; switching again after ChatGPT has run once adds it. Other reasons for a model catalog file (per-model settings) still stop the switch as before.
+
+### Changed
+- The catalog and setting descriptions are updated to Codex 0.170.0-alpha.2, adding 0.167.2. All 1148 settings and feature flags have current Chinese descriptions, with none missing or stale (new: `daybreak_program_propagation`, `incremental_tools_legacy_gcp`, `multi_environment_mcp` and Guardian's `sync_elastic_sections.<name>.nested_tool_names`; `incremental_tools_legacy` no longer covers Google Cloud).
 
 ## [0.1.1-alpha.18] - 2026-11-12
 
