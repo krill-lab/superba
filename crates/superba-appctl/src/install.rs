@@ -744,6 +744,8 @@ pub(crate) struct CandidateRoots {
     pub(crate) scan_dirs: Vec<PathBuf>,
 }
 
+// Linux and Windows only (macOS paths come from the home directory).
+#[cfg(not(target_os = "macos"))]
 fn env_path(env: &dyn EnvSource, key: &str) -> Option<PathBuf> {
     env.var_os(key)
         .filter(|value| !value.is_empty())
