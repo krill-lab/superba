@@ -359,7 +359,9 @@ zh_basis = ""
 en = "Exact Code Mode tool names for the transcript_selected_exec_results section."
 en_source = "openai/codex rust-v0.170.0-alpha.2: codex-rs/core/config.schema.json"
 en_hash = "84f91949ebcba5b8"
-zh = ""
+zh_name = "执行结果分区工具名"
+zh = "依据源码推断，列出 Code Mode 中哪些工具（按精确名称）的执行结果归入 `transcript_selected_exec_results` 审查分区，让同步 Guardian 审查优先保留这些结果。只能写在该分区下且必须非空、不能有空名称；写在其他分区下会导致配置加载失败。"
+zh_basis = "84f91949ebcba5b8"
 
 ["config:features.guardianv2.transcript"]
 en = ""

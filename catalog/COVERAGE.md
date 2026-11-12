@@ -12,10 +12,10 @@ Feature stages from Codex 0.167.2 (linux).
 
 | | Entries | English (official) | English missing | with en_note | Chinese current | Chinese stale | Chinese missing |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| config | 873 | 565 | 308 | 0 | 872 | 0 | 1 |
-| feature | 216 | 5 | 211 | 0 | 213 | 0 | 3 |
+| config | 873 | 565 | 308 | 0 | 873 | 0 | 0 |
+| feature | 216 | 5 | 211 | 0 | 216 | 0 | 0 |
 | value | 59 | 59 | 0 | 0 | 59 | 0 | 0 |
-| **all** | 1148 | 629 | 519 | 0 | 1144 | 0 | 4 |
+| **all** | 1148 | 629 | 519 | 0 | 1148 | 0 | 0 |
 
 Retired entries kept for their written text: 1.
 
@@ -25,11 +25,11 @@ Retired entries kept for their written text: 1.
 |---|---:|---:|---:|---:|---:|---:|---:|
 | under development | 85 | 0 | 85 | 0 | 85 | 0 | 0 |
 | experimental | 5 | 5 | 0 | 0 | 5 | 0 | 0 |
-| stable | 63 | 0 | 63 | 0 | 62 | 0 | 1 |
+| stable | 63 | 0 | 63 | 0 | 63 | 0 | 0 |
 | deprecated | 3 | 0 | 3 | 0 | 3 | 0 | 0 |
 | removed | 47 | 0 | 47 | 0 | 47 | 0 | 0 |
-| unknown | 13 | 0 | 13 | 0 | 11 | 0 | 2 |
-| **all features** | 216 | 5 | 211 | 0 | 213 | 0 | 3 |
+| unknown | 13 | 0 | 13 | 0 | 13 | 0 | 0 |
+| **all features** | 216 | 5 | 211 | 0 | 216 | 0 | 0 |
 
 ## By overlay file
 
@@ -39,7 +39,7 @@ Retired entries kept for their written text: 1.
 | `overlay/config-approvals.toml` | 46 | 33 | 13 | 0 | 46 | 0 | 0 |
 | `overlay/config-apps.toml` | 73 | 58 | 15 | 0 | 73 | 0 | 0 |
 | `overlay/config-context.toml` | 46 | 44 | 2 | 0 | 46 | 0 | 0 |
-| `overlay/config-features.toml` | 131 | 47 | 84 | 0 | 130 | 0 | 1 |
+| `overlay/config-features.toml` | 131 | 47 | 84 | 0 | 131 | 0 | 0 |
 | `overlay/config-interface.toml` | 283 | 264 | 19 | 0 | 283 | 0 | 0 |
 | `overlay/config-mcp.toml` | 61 | 30 | 31 | 0 | 61 | 0 | 0 |
 | `overlay/config-model.toml` | 11 | 8 | 3 | 0 | 11 | 0 | 0 |
@@ -49,4 +49,4 @@ Retired entries kept for their written text: 1.
 | `overlay/config-storage.toml` | 18 | 14 | 4 | 0 | 18 | 0 | 0 |
 | `overlay/config-telemetry.toml` | 79 | 24 | 55 | 0 | 79 | 0 | 0 |
 | `overlay/config-tools.toml` | 67 | 10 | 57 | 0 | 67 | 0 | 0 |
-| `overlay/features.toml` | 216 | 5 | 211 | 0 | 213 | 0 | 3 |
+| `overlay/features.toml` | 216 | 5 | 211 | 0 | 216 | 0 | 0 |
