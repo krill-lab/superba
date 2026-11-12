@@ -25,7 +25,7 @@ use crate::Switcher;
 use crate::messages::text;
 
 /// Why the owed write did not happen.
-enum Skip {
+pub(crate) enum Skip {
     /// Something failed: retried once at the next start.
     Failed(LocalizedText),
     /// The plan would change more than the key: the user switches once.
@@ -42,6 +42,9 @@ impl Switcher {
         // this once-per-start call; remove with `crate::pat_migration`.
         let mut notes = self.pat_migration_window().await;
         notes.extend(self.analytics_reapply_owed().await);
+        // One-time user bug 144 clean-up (silent); remove with
+        // `crate::features_cleanup`.
+        self.features_cleanup_window().await;
         notes
     }
 
@@ -138,11 +141,38 @@ impl Switcher {
         owed: &superba_core::AnalyticsReapply,
     ) -> std::result::Result<Option<(superba_core::ProfileId, bool)>, (superba_core::ProfileId, Skip)>
     {
+        // Superba's own `false` is still in the file (owned, not changed since).
+        self.release_owned_keys(
+            set,
+            &owed.profiles,
+            &[config_keys::ANALYTICS_ENABLED],
+            false,
+            |k| k.value.as_deref() == Some("false"),
+        )
+        .await
+    }
+
+    /// Write the applied profile once more, write-only, to release `keys` it
+    /// no longer manages, when it is one of `profiles` and Superba still owns
+    /// one of them with a value `written` accepts, unchanged since it wrote it
+    /// or, with `with_changed`, changed since (the user's value then stays and
+    /// is released) (user bugs 137 and 144). `Ok(None)`: nothing to do.
+    /// `Ok(Some((id, changed)))`: released for the applied profile `id`;
+    /// `changed` when that changed the file (not when the baseline is the same
+    /// value).
+    pub(crate) async fn release_owned_keys(
+        &self,
+        set: &ProfileSet,
+        profiles: &[superba_core::ProfileId],
+        keys: &[&str],
+        with_changed: bool,
+        written: impl Fn(&superba_core::KeySnapshot) -> bool,
+    ) -> std::result::Result<Option<(superba_core::ProfileId, bool)>, (superba_core::ProfileId, Skip)>
+    {
         let d = &self.deps;
         let home = d.ctx.codex_home();
         // Unknown which profile is applied: try again at the next start.
-        let first = owed
-            .profiles
+        let first = profiles
             .first()
             .cloned()
             .unwrap_or_else(|| superba_core::ProfileId::new(""));
@@ -155,23 +185,16 @@ impl Switcher {
         let Some(active) = state.active.clone() else {
             return Ok(None);
         };
-        let Some(id) = active
-            .profile_id
-            .clone()
-            .filter(|id| owed.profiles.contains(id))
-        else {
+        let Some(id) = active.profile_id.clone().filter(|id| profiles.contains(id)) else {
             return Ok(None);
         };
-        // Superba's own `false` is still in the file (owned, not changed since).
         let owned = d.config.owned_keys(&home).await.map_err(|e| fail(&id, e))?;
-        let drifted = state
-            .drift
-            .iter()
-            .any(|k| k.path == config_keys::ANALYTICS_ENABLED);
-        let written = owned.iter().any(|k| {
-            k.path == config_keys::ANALYTICS_ENABLED && k.value.as_deref() == Some("false")
+        let still_superbas = owned.iter().any(|k| {
+            keys.contains(&k.path.as_str())
+                && written(k)
+                && (with_changed || !state.drift.iter().any(|c| c.path == k.path))
         });
-        if drifted || !written || set.profile(&id).is_none() {
+        if !still_superbas || set.profile(&id).is_none() {
             return Ok(None);
         }
         // Router mode plans the router's members and its base URL: more than
@@ -202,7 +225,7 @@ impl Switcher {
                 .unwrap_or_else(|| text("switch.outcome.failed"));
             return Err((id, Skip::Failed(reason)));
         }
-        if !only_the_key(&plan) || !pc.as_ref().is_some_and(only_the_key_context) {
+        if !only_the_keys(&plan, keys) || !pc.as_ref().is_some_and(only_the_key_context) {
             return Err((id, Skip::MoreThanTheKey));
         }
         let changed = plan
@@ -259,18 +282,18 @@ impl Switcher {
     }
 }
 
-/// The plan changes no key of `config.toml` but `analytics.enabled` (none
-/// when the baseline is the same value) and nothing else: no other file,
-/// environment variable, session migration, remote host, or question
-/// (unknown versions included).
-fn only_the_key(plan: &SwitchPlan) -> bool {
+/// The plan changes no key of `config.toml` but `keys` (none when the
+/// baseline is the same value) and nothing else: no other file, environment
+/// variable, session migration, remote host, or question (unknown versions
+/// included).
+fn only_the_keys(plan: &SwitchPlan, keys: &[&str]) -> bool {
     let Some(config) = &plan.config else {
         return false;
     };
     let keys_ok = config
         .key_changes
         .iter()
-        .all(|k| k.path == config_keys::ANALYTICS_ENABLED);
+        .all(|k| keys.contains(&k.path.as_str()));
     let files_ok = config
         .files
         .iter()

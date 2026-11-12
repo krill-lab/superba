@@ -287,6 +287,9 @@ impl Switcher {
         // One-off alpha.16 PAT→API-key migration (user bug 139): its state is
         // the switch service's own.
         settings.pat_migration = set.settings.pat_migration.take();
+        // The bug 144 migration stays recorded (remove after alpha.17+N).
+        settings.features_preset_dropped |= set.settings.features_preset_dropped;
+        settings.features_cleanup = std::mem::take(&mut set.settings.features_cleanup);
         set.settings = settings;
         let persist = set.settings.app_codex.persist_env;
         if was_persisted == persist {

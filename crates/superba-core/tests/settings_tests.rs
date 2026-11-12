@@ -172,6 +172,18 @@ fn krill_recommended_preset_matches_the_tutorial_keys() {
         preset.get("web_search"),
         Some(&SettingEntry::Set("live".into()))
     );
+    // User bug 144: the under-development features of the old preset, and
+    // the keys it wrote without effect, are left to Codex's own default.
+    for path in codex::RETIRED_PRESET_KEYS
+        .iter()
+        .chain(codex::FORMER_PRESET_KEYS)
+    {
+        assert_eq!(preset.get(path), None, "{path}");
+        assert!(
+            codex::PAT_RECOMMENDED_KEYS.iter().all(|(p, _)| p != path),
+            "{path}"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------

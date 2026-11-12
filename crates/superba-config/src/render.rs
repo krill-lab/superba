@@ -12,7 +12,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use superba_core::codex::{PAT_RECOMMENDED_KEYS, PROVIDER_OPENAI, config_keys as k};
+use superba_core::codex::{
+    FORMER_PRESET_KEYS, PAT_RECOMMENDED_KEYS, PROVIDER_OPENAI, RETIRED_PRESET_KEYS,
+    config_keys as k,
+};
 use superba_core::{
     AUTH_JSON_PATH, AuthChange, AuthMode, AuthShape, Baseline, BaselineExtras, CodexFiles,
     ConfigState, Error, FileChange, KeyChange, KeyResolution, KeySnapshot, LocalizedText, Notice,
@@ -47,8 +50,20 @@ pub(crate) fn all_owned_paths() -> Vec<&'static str> {
         .chain(MODEL_KEYS.iter())
         .chain(MODEL_EXTRA_KEYS.iter())
         .copied()
-        .chain(PAT_RECOMMENDED_KEYS.iter().map(|(p, _)| *p))
+        .chain(preset_paths())
         .collect()
+}
+
+/// Krill's recommended keys and the ones older presets held
+/// ([`FORMER_PRESET_KEYS`], [`RETIRED_PRESET_KEYS`], user bug 144): released
+/// (restored to the baseline when Superba wrote them) unless the profile
+/// manages them. In the Krill template's order.
+fn preset_paths() -> impl Iterator<Item = &'static str> {
+    PAT_RECOMMENDED_KEYS
+        .iter()
+        .map(|(p, _)| *p)
+        .chain(FORMER_PRESET_KEYS.iter().copied())
+        .chain(RETIRED_PRESET_KEYS.iter().copied())
 }
 
 /// Model keys that follow the user's latest value instead of the takeover-time
@@ -179,9 +194,9 @@ fn targets(
             } else {
                 put(k::CHATGPT_BASE_URL, Target::Restore);
             }
-            // Krill's recommended keys are released unless the profile manages
-            // them as settings (below).
-            for (p, _) in PAT_RECOMMENDED_KEYS {
+            // Krill's recommended keys, and the ones older presets held, are
+            // released unless the profile manages them as settings (below).
+            for p in preset_paths() {
                 put(p, Target::Restore);
             }
             // Codex settings of the profile (already filtered by the settings
@@ -205,7 +220,7 @@ fn targets(
             for p in ROUTING_KEYS {
                 put(p, Target::Remove);
             }
-            for (p, _) in PAT_RECOMMENDED_KEYS {
+            for p in preset_paths() {
                 put(p, Target::Restore);
             }
         }
@@ -577,6 +592,18 @@ pub(crate) fn render(inp: &Inputs<'_>) -> Result<Rendered> {
                     continue;
                 }
                 Some(KeyResolution::Overwrite) => {}
+                // User bug 144: Superba no longer writes the old preset's
+                // feature keys, so a value changed since Superba wrote one is
+                // the user's: kept and released, never asked about.
+                None if target == Target::Restore
+                    && RETIRED_PRESET_KEYS.contains(&path.as_str()) =>
+                {
+                    notes.push(
+                        note(Notice::info, "drift_kept", "Kept your own value of {key}.")
+                            .with_arg("key", path),
+                    );
+                    continue;
+                }
                 None => {
                     conflicts.push(path.clone());
                     continue;

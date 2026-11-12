@@ -58,11 +58,17 @@ async fn legacy_takeover_two_keys_and_byte_exact_original_restore() {
             .all(|c| c.path != k::CHATGPT_BASE_URL)
     );
     assert_eq!(
-        key_change(&plan, "features.context_management")
-            .after
-            .as_deref(),
-        Some("true")
+        key_change(&plan, "web_search").after.as_deref(),
+        Some("\"live\"")
     );
+    // User bug 144: what the old preset wrote without effect, and its
+    // under-development features, are no longer written.
+    for path in superba_core::codex::FORMER_PRESET_KEYS
+        .iter()
+        .chain(superba_core::codex::RETIRED_PRESET_KEYS)
+    {
+        assert!(plan.key_changes.iter().all(|c| c.path != *path), "{path}");
+    }
     assert!(plan.key_changes.iter().all(|c| c.path != k::MODEL));
     let ac = plan.auth_change.clone().unwrap();
     assert_eq!(ac.before, AuthShape::Missing);
@@ -127,7 +133,7 @@ async fn legacy_takeover_two_keys_and_byte_exact_original_restore() {
     // --- Another key on the CDN line (/codex/v1) without Krill's settings:
     // they go back to the baseline.
     let plan = e.plan(&env.home, &apikey(CDN)).await.unwrap();
-    assert_eq!(key_change(&plan, "features.fast_mode").after, None);
+    assert_eq!(key_change(&plan, "web_search").after, None);
     e.apply(&plan).await.unwrap();
     let cfg = env.config();
     assert!(cfg.contains("openai_base_url = \"https://api.kbsfdxc.com/codex/v1\""));

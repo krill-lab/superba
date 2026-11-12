@@ -469,10 +469,14 @@ fn empty_settings_deserialize_to_defaults_and_partial_settings_preserve_other_de
     // set needs no migration (remove after alpha.14+N).
     assert!(!settings.analytics_preset_dropped);
     assert!(Settings::default().analytics_preset_dropped);
+    // The same for the bug 144 marker (remove after alpha.17+N).
+    assert!(!settings.features_preset_dropped);
+    assert!(Settings::default().features_preset_dropped);
     assert_eq!(
         settings,
         Settings {
             analytics_preset_dropped: false,
+            features_preset_dropped: false,
             ..Settings::default()
         }
     );
@@ -494,6 +498,7 @@ fn empty_settings_deserialize_to_defaults_and_partial_settings_preserve_other_de
             safe_mode: true,
             countdown_secs: 0,
             analytics_preset_dropped: false,
+            features_preset_dropped: false,
             ..Settings::default()
         }
     );
