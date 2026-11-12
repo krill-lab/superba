@@ -697,6 +697,7 @@ overrides = "按模型的设置"
 picker = "选择器显示供应商的模型"
 ultrafast = "Ultrafast"
 suffix = "通过模型名传递速度档"
+app_menu = "ChatGPT 速度菜单：使用 Krill 的模型和速度档"
 
 [cli.models.source]
 upstream = "供应商（{path}）"

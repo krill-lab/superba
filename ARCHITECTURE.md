@@ -1154,7 +1154,11 @@ after 90 s. Pausing then stops, and the connection stays open while the Superba
 process runs, so reloads get the script too. Offered tiers come from each model's
 `service_tiers`: without a catalog file from Codex's bundled list, with one from the
 provider's list. `Settings::app_speed_menu` (default on) turns it off; the Models page
-then shows `SpeedEffect::AppForcesStandard` again instead of `AppMenu`.
+then shows `SpeedEffect::AppForcesStandard` again instead of `AppMenu`. While it is on, a Krill
+profile with a key always gets a catalog file from Krill's native list
+(`CatalogReason::AppSpeedMenu`: the gpt-6.1 models and Ultrafast, which Codex's bundled list
+lacks), and tier-suffix model names are not used (`suffix_applies(.., app_menu)`): the tier
+goes as `service_tier`.
 
 ## 9. Security
 

@@ -231,17 +231,17 @@ async fn reasons_are_pure_and_cover_the_picker_and_tier_suffix() {
     let mut site = superba_core::catalog::compatible_template_site();
     let mut p = krill_profile("x", None, AuthMode::ApiKey);
     p.site_id = site.id.clone();
-    assert!(catalog_reasons(&p, &site, AuthMode::ApiKey).is_empty());
+    assert!(catalog_reasons(&p, &site, AuthMode::ApiKey, false).is_empty());
     p.model_picker = ModelPicker::Provider;
     assert_eq!(
-        catalog_reasons(&p, &site, AuthMode::ApiKey),
+        catalog_reasons(&p, &site, AuthMode::ApiKey, false),
         vec![CatalogReason::ProviderPicker]
     );
     p.model_picker = ModelPicker::CodexDefault;
     p.model.speed = Some(SpeedTier::Fast);
     site.capabilities.tier_model_suffix = true;
     assert_eq!(
-        catalog_reasons(&p, &site, AuthMode::ApiKey),
+        catalog_reasons(&p, &site, AuthMode::ApiKey, false),
         vec![CatalogReason::TierSuffix]
     );
     // An upstream name alone edits the model map, not the catalog.
@@ -253,7 +253,41 @@ async fn reasons_are_pure_and_cover_the_picker_and_tier_suffix() {
             ..ModelOverride::default()
         },
     );
-    assert!(catalog_reasons(&p, &site, AuthMode::ApiKey).is_empty());
+    assert!(catalog_reasons(&p, &site, AuthMode::ApiKey, false).is_empty());
+}
+
+#[test]
+fn with_the_app_speed_menu_krill_gets_its_models_and_no_tier_names() {
+    use superba_switch::models::{CatalogReason, catalog_reasons, suffix_applies};
+    let site = superba_core::catalog::builtin_sites()
+        .into_iter()
+        .find(|s| s.kind == superba_core::SiteKind::Krill)
+        .unwrap();
+    assert!(site.capabilities.tier_model_suffix);
+    let mut p = krill_profile("x", None, AuthMode::ApiKey);
+    p.site_id = site.id.clone();
+    p.model.speed = Some(SpeedTier::Fast);
+    // The menu: Krill's list (6.1 models, Ultrafast) and the tier as service_tier.
+    assert_eq!(
+        catalog_reasons(&p, &site, AuthMode::ApiKey, true),
+        vec![CatalogReason::AppSpeedMenu]
+    );
+    assert!(!suffix_applies(
+        &site,
+        AuthMode::ApiKey,
+        SpeedTier::Fast,
+        true
+    ));
+    // Without it, as before.
+    assert_eq!(
+        catalog_reasons(&p, &site, AuthMode::ApiKey, false),
+        vec![CatalogReason::TierSuffix]
+    );
+    // A custom site keeps its own picker choice.
+    let mut compat = superba_core::catalog::compatible_template_site();
+    compat.capabilities.tier_model_suffix = false;
+    p.site_id = compat.id.clone();
+    assert!(catalog_reasons(&p, &compat, AuthMode::ApiKey, true).is_empty());
 }
 
 #[tokio::test]
