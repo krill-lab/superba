@@ -2543,6 +2543,9 @@ impl World {
         let log: Log = Arc::new(Mutex::new(Vec::new()));
         let clock = Arc::new(ManualClock::new(Timestamp(T0)));
         let mut set = ProfileSet::default();
+        // The app's speed menu (on by default) makes every Krill switch write a
+        // catalog file; tests of the speed menu turn it on themselves.
+        set.settings.app_speed_menu = false;
         set.profiles
             .push(krill_profile("work", Some("overseas"), AuthMode::ApiKey));
         let secrets = FakeSecrets::default();

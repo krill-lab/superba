@@ -1448,6 +1448,18 @@ impl Switcher {
         // Without a default model the live one is suffixed; on a tier-suffix site
         // that may be the `<slug>-fast` name Superba wrote last time, whose base
         // gets the suffix again (never `<slug>-fast-fast`).
+        // The `<slug>-<tier>` name Superba wrote last time, when the profile has
+        // no default model: its base, written again when no tier name applies
+        // now (the app's speed menu sends the tier as `service_tier`).
+        let unsuffixed = resolved
+            .model
+            .model
+            .is_none()
+            .then_some(state.model.as_deref())
+            .flatten()
+            .filter(|_| site.capabilities.tier_model_suffix)
+            .and_then(superba_models::split_tier_suffix)
+            .map(|(base, _)| base.to_owned());
         let configured = resolved.model.model.clone().or_else(|| {
             state.model.clone().map(|m| {
                 if site.capabilities.tier_model_suffix {
@@ -1520,6 +1532,8 @@ impl Switcher {
         if let Some(m) = cp.model {
             draft.info(text("switch.models.suffix_model").arg("model", &m));
             resolved.model.model = Some(m);
+        } else if let Some(base) = unsuffixed {
+            resolved.model.model = Some(base);
         }
         match cp.write {
             Some(w) => {

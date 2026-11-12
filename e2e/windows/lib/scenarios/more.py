@@ -642,6 +642,14 @@ def pick_speed(run, s, tier):
 def w24(t):
     run = t.run
     a = App(run)
+    with t.step("Switch again once ChatGPT has run: the model catalog file from the provider's list") as s:
+        # On Windows the catalog needs the Codex ChatGPT extracts on its first run; a
+        # first switch before that goes on without the file (user bug 143).
+        r = run.spb("switch", "--profile", "krill", "--countdown", "0", "--yes", "--wait-turn", timeout=300,
+                    label="speed-switch")
+        s.check(r["code"] == 0, f"spb switch exit {r['code']} [{r['transcript']}]")
+        cfg = run.guest_read(run.guest["CODEX_HOME"] + r"\config.toml") or ""
+        s.check("model_catalog_json" in cfg, "config.toml names a model catalog file (the provider's list)")
     with t.step("Open ChatGPT through Superba: the speed menu is patched in at the first page") as s:
         m0 = a.main()
         r = run.spb("launch", "--restart", "--yes", timeout=240, label="speed-launch")
@@ -677,8 +685,6 @@ def w24(t):
         s.check(any(e.get("service_tier") == "priority" for e in posts),
                 f"POST …/responses with service_tier priority: {[(e.get('model'), e.get('service_tier')) for e in posts]}")
     with t.step("Krill's own models and tiers (catalog file): a provider-only model, Ultrafast on 6 Astra") as s:
-        cfg = run.guest_read(run.guest["CODEX_HOME"] + r"\config.toml") or ""
-        s.check("model_catalog_json" in cfg, "config.toml names a model catalog file (the provider's list)")
         names = pick_model(run, s, "GPT-6 Astra")
         s.check(any(same_model(n, "GPT-5.5 Mini") for n in names),
                 f"the model list has a model only the provider lists (GPT-5.5 Mini): {names}")

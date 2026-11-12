@@ -752,6 +752,9 @@ pub(crate) struct CatalogPlan {
     pub notes: Vec<Notice>,
     /// Why no file could be made (the switch is blocked).
     pub failed: Option<LocalizedText>,
+    /// Only [`CatalogReason::AppSpeedMenu`] asked for the file: a failure is a
+    /// warning, not a blocked switch.
+    pub optional: bool,
 }
 
 impl Switcher {
@@ -858,6 +861,23 @@ impl Switcher {
     /// Decide and (for writes) build and preflight a profile's catalog file.
     /// Writes only a scratch copy for the preflight, which is removed again.
     pub(crate) async fn plan_catalog(&self, input: CatalogPlanInput<'_>) -> CatalogPlan {
+        let mut out = self.plan_catalog_file(input).await;
+        // The speed menu's catalog only adds Krill's models and tiers: when it
+        // cannot be made (on Windows before ChatGPT extracted its Codex, user
+        // bug 143) the switch goes on without it, and a later switch adds it.
+        if out.optional
+            && let Some(reason) = out.failed.take()
+        {
+            out.write = None;
+            out.record = None;
+            out.notes.push(Notice::warning(
+                text("switch.models.menu_catalog_later").arg_text("reason", reason),
+            ));
+        }
+        out
+    }
+
+    async fn plan_catalog_file(&self, input: CatalogPlanInput<'_>) -> CatalogPlan {
         let d = &self.deps;
         let mut out = CatalogPlan::default();
         let profile = input.profile;
@@ -878,6 +898,7 @@ impl Switcher {
         if reasons.is_empty() {
             return out;
         }
+        out.optional = reasons == [CatalogReason::AppSpeedMenu];
         let (app, cli) = local_codexes(input.install_id, input.installs, input.binaries);
         let Some(app) = app.filter(|a| a.binary.is_some() && a.version.is_some()) else {
             out.failed = Some(text("switch.models.no_consumer"));
