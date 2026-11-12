@@ -13,7 +13,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use superba_core::codex::{
-    PAT_RECOMMENDED_KEYS, PROVIDER_OPENAI, RETIRED_PRESET_KEYS, config_keys as k,
+    FORMER_PRESET_KEYS, PAT_RECOMMENDED_KEYS, PROVIDER_OPENAI, RETIRED_PRESET_KEYS,
+    config_keys as k,
 };
 use superba_core::{
     AUTH_JSON_PATH, AuthChange, AuthMode, AuthShape, Baseline, BaselineExtras, CodexFiles,
@@ -54,12 +55,14 @@ pub(crate) fn all_owned_paths() -> Vec<&'static str> {
 }
 
 /// Krill's recommended keys and the ones older presets held
-/// ([`RETIRED_PRESET_KEYS`], user bug 144): released (restored to the
-/// baseline when Superba wrote them) unless the profile manages them.
+/// ([`FORMER_PRESET_KEYS`], [`RETIRED_PRESET_KEYS`], user bug 144): released
+/// (restored to the baseline when Superba wrote them) unless the profile
+/// manages them. In the Krill template's order.
 fn preset_paths() -> impl Iterator<Item = &'static str> {
     PAT_RECOMMENDED_KEYS
         .iter()
         .map(|(p, _)| *p)
+        .chain(FORMER_PRESET_KEYS.iter().copied())
         .chain(RETIRED_PRESET_KEYS.iter().copied())
 }
 

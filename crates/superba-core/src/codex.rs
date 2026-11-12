@@ -126,14 +126,17 @@ pub enum TomlLiteral {
 /// Keys the Krill tutorial recommends (plan 9.1), as dotted paths: the preset
 /// of new Krill profiles ([`crate::CodexSettings::krill_recommended`]), which
 /// the user sees and edits like any other setting of the profile.
-pub const PAT_RECOMMENDED_KEYS: &[(&str, TomlLiteral)] = &[
-    ("web_search", TomlLiteral::Str("live")),
-    (
-        "suppress_unstable_features_warning",
-        TomlLiteral::Bool(true),
-    ),
-    ("features.fast_mode", TomlLiteral::Bool(true)),
-];
+pub const PAT_RECOMMENDED_KEYS: &[(&str, TomlLiteral)] =
+    &[("web_search", TomlLiteral::Str("live"))];
+
+/// Keys the Krill preset held up to alpha.16 that new profiles no longer get,
+/// because writing them changes nothing (user bug 144): `features.fast_mode =
+/// true` is Codex's own default (a stable feature, on), and
+/// `suppress_unstable_features_warning = true` only hid the warning about the
+/// under-development features of [`RETIRED_PRESET_KEYS`]. Profiles that hold
+/// them keep them (no migration); they stay paths Superba may own.
+pub const FORMER_PRESET_KEYS: &[&str] =
+    &["suppress_unstable_features_warning", "features.fast_mode"];
 
 /// Keys the Krill preset held up to alpha.16 and Superba no longer writes by
 /// itself (user bug 144): the under-development context management and token

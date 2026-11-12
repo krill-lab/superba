@@ -12,7 +12,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use superba_config::{ENV_SUPERBA_SECRET_BACKEND, JsonProfileStore};
-use superba_core::codex::RETIRED_PRESET_KEYS;
+use superba_core::codex::{FORMER_PRESET_KEYS, RETIRED_PRESET_KEYS};
 use superba_core::{
     AuthMode, CodexSettings, DataDir, LocalContext, MapEnv, Profile, ProfileId, ProfileSet,
     ProfileStore, SettingEntry, SettingValue, SiteId, catalog,
@@ -50,8 +50,18 @@ fn profile(id: &str, site: &str, settings: CodexSettings) -> Profile {
 
 /// The Krill preset up to alpha.16.
 fn old_preset() -> CodexSettings {
-    let mut s = CodexSettings::krill_recommended();
+    let mut s = kept_preset();
     for path in RETIRED_PRESET_KEYS {
+        s.set(path, true).unwrap();
+    }
+    s
+}
+
+/// What the migration leaves of it: the keys the preset still holds and
+/// the ones new profiles no longer get but stored profiles keep.
+fn kept_preset() -> CodexSettings {
+    let mut s = CodexSettings::krill_recommended();
+    for path in FORMER_PRESET_KEYS {
         s.set(path, true).unwrap();
     }
     s
@@ -101,14 +111,8 @@ async fn every_stored_value_of_the_old_feature_keys_goes_and_the_run_is_recorded
     write_old_file(&ctx);
     let set = JsonProfileStore::new(ctx.clone()).load().await.unwrap();
     // `true` and `false` alike; the rest of the preset stays.
-    assert_eq!(
-        settings(&set, "krill-old"),
-        CodexSettings::krill_recommended()
-    );
-    assert_eq!(
-        settings(&set, "krill-off"),
-        CodexSettings::krill_recommended()
-    );
+    assert_eq!(settings(&set, "krill-old"), kept_preset());
+    assert_eq!(settings(&set, "krill-off"), kept_preset());
     // Any site; an entry that removes a key and other features stay.
     let other = settings(&set, "other");
     assert_eq!(other.get("features.context_management"), None);

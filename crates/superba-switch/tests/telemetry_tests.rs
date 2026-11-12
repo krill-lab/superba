@@ -153,7 +153,7 @@ async fn a_key_switch_leaves_openai_telemetry_on_by_default() {
     rig.apply("work").await;
     let config = rig.config();
     assert!(config.contains("openai_base_url"), "{config}");
-    assert!(config.contains("[features]"), "{config}");
+    assert!(config.contains("web_search"), "{config}");
     assert!(!config.contains("analytics"), "{config}");
     rig.apply("original").await;
     assert_eq!(rig.config(), ORIGINAL);
@@ -175,12 +175,7 @@ async fn the_toggle_writes_analytics_off_and_turning_it_off_removes_it_at_the_ne
     let after = rig.config();
     assert_eq!(rig.analytics(), None, "{after}");
     assert!(!after.contains("analytics"), "{after}");
-    for kept in [
-        "openai_base_url",
-        "[features]",
-        "fast_mode = true",
-        "web_search",
-    ] {
+    for kept in ["openai_base_url", "web_search"] {
         assert!(
             before.contains(kept) && after.contains(kept),
             "{kept}: {after}"

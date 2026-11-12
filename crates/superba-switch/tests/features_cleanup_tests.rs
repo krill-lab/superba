@@ -18,7 +18,7 @@ use fakes::*;
 use superba_config::{
     EnvPlatform, JsonProfileStore, MemoryNativeEnv, ShellEnvPersister, TomlConfigEngine,
 };
-use superba_core::codex::RETIRED_PRESET_KEYS;
+use superba_core::codex::{FORMER_PRESET_KEYS, RETIRED_PRESET_KEYS};
 use superba_core::{
     CodexSettings, ConfigEngine, ExecuteOptions, LegacySessionChoice, MapEnv, NoEvents,
     OutcomeStatus, ProfileId, ProfileSet, ProfileStore, SafeDefaults, SwitchRequest, SwitchService,
@@ -38,8 +38,18 @@ struct Rig {
 
 /// The Krill preset up to alpha.16.
 fn old_preset() -> CodexSettings {
-    let mut s = CodexSettings::krill_recommended();
+    let mut s = kept_preset();
     for path in RETIRED_PRESET_KEYS {
+        s.set(path, true).unwrap();
+    }
+    s
+}
+
+/// What the migration leaves of it: the keys the preset still holds and
+/// the ones new profiles no longer get but stored profiles keep.
+fn kept_preset() -> CodexSettings {
+    let mut s = CodexSettings::krill_recommended();
+    for path in FORMER_PRESET_KEYS {
         s.set(path, true).unwrap();
     }
     s
