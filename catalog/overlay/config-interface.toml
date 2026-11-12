@@ -288,7 +288,7 @@ zh_basis = "1938c1c8cd355cbb"
 
 ["config:tui.collapse_turn_details"]
 en = "Summarize tool calls and collapse completed turns in the full-screen transcript. Defaults to `false`."
-en_source = "openai/codex rust-v0.169.0-alpha.10: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.170.0-alpha.2: codex-rs/core/config.schema.json"
 en_hash = "dd66adb71c2f837f"
 zh_name = "折叠轮次详情"
 zh = "依据源码推断，在 Codex 自己管理的全屏会话记录（`tui.fullscreen_transcript`）中，把工具调用归并为可展开的摘要行，并折叠已完成轮次的细节。默认 `false`；也可在终端界面设置面板的“Collapse turn details”开关中修改，普通终端滚动输出模式下不生效。"
@@ -923,7 +923,7 @@ zh_basis = "b41c1dfc1ebd31d0"
 
 ["config:tui.keymap.global.close_sidebar_tab"]
 en = "Close the active sidebar tab."
-en_source = "openai/codex rust-v0.169.0-alpha.10: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.170.0-alpha.2: codex-rs/core/config.schema.json"
 en_hash = "8e4f88b3a90c44b7"
 zh_name = "关闭侧边标签键"
 zh = "依据源码推断，自定义在终端工作区中关闭当前显示的侧边会话标签的快捷键；已保存的会话仍留在侧边会话列表中。若会停止正在运行的轮次、丢弃未发送的输入或丢失临时会话记录，会先请求确认。未自定义时默认先按前导键（默认 `Ctrl+X`）再按 `w`。"
@@ -939,7 +939,7 @@ zh_basis = "3166d080f1a039ce"
 
 ["config:tui.keymap.global.equalize_pane_widths"]
 en = "Equalize visible pane widths."
-en_source = "openai/codex rust-v0.169.0-alpha.10: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.170.0-alpha.2: codex-rs/core/config.schema.json"
 en_hash = "b3efefb2001bd302"
 zh_name = "均分窗格宽度键"
 zh = "依据源码推断，自定义将终端工作区的两个可见窗格调为等宽的快捷键；宽度仍受各窗格最小列数约束。调整结果会保存到 `tui.sidebar_width_percent`。"
@@ -963,7 +963,7 @@ zh_basis = "24fdf976ffe8e898"
 
 ["config:tui.keymap.global.focus_main_composer"]
 en = "Focus the main conversation composer."
-en_source = "openai/codex rust-v0.169.0-alpha.10: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.170.0-alpha.2: codex-rs/core/config.schema.json"
 en_hash = "58e7462fc2b90479"
 zh_name = "聚焦主输入框键"
 zh = "依据源码推断，自定义回到主会话输入框的快捷键；在侧边会话中会先返回父会话，并清除浏览或选择状态。需要启用终端工作区并使用由 Codex 管理的全屏界面。"
@@ -971,7 +971,7 @@ zh_basis = "58e7462fc2b90479"
 
 ["config:tui.keymap.global.focus_pane_left"]
 en = "Focus the parent conversation."
-en_source = "openai/codex rust-v0.169.0-alpha.10: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.170.0-alpha.2: codex-rs/core/config.schema.json"
 en_hash = "fe1c04fbc7836d1b"
 zh_name = "聚焦左侧窗格键"
 zh = "依据源码推断，自定义从侧边会话切回父会话窗格的快捷键；没有可达的父会话时保持当前焦点。仅在终端工作区的会话焦点切换可用时响应。"
@@ -979,7 +979,7 @@ zh_basis = "fe1c04fbc7836d1b"
 
 ["config:tui.keymap.global.focus_pane_right"]
 en = "Focus the open side conversation."
-en_source = "openai/codex rust-v0.169.0-alpha.10: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.170.0-alpha.2: codex-rs/core/config.schema.json"
 en_hash = "d583dfa18bb62bca"
 zh_name = "聚焦右侧窗格键"
 zh = "依据源码推断，自定义从父会话切到已打开侧边会话窗格的快捷键；侧边窗格未打开时保持当前焦点。仅在终端工作区的会话焦点切换可用时响应。"
@@ -987,7 +987,7 @@ zh_basis = "d583dfa18bb62bca"
 
 ["config:tui.keymap.global.focus_sidebar_content"]
 en = "Focus the side conversation, or hide it when already focused."
-en_source = "openai/codex rust-v0.169.0-alpha.10: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.170.0-alpha.2: codex-rs/core/config.schema.json"
 en_hash = "a1f770b75fcd6e1c"
 zh_name = "聚焦侧边会话键"
 zh = "依据源码推断，自定义终端工作区中切入侧边会话的快捷键；已聚焦侧边会话时再次触发会隐藏该侧边窗格。没有可切换的侧边会话时不响应。"
@@ -995,7 +995,7 @@ zh_basis = "a1f770b75fcd6e1c"
 
 ["config:tui.keymap.global.focus_sidebar_tabs"]
 en = "Open the sidebar tab chooser."
-en_source = "openai/codex rust-v0.169.0-alpha.10: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.170.0-alpha.2: codex-rs/core/config.schema.json"
 en_hash = "7ee60ad500ff87da"
 zh_name = "侧边标签选择键"
 zh = "依据源码推断，自定义在终端工作区中打开侧边会话标签选择器的快捷键，用于在侧边会话间挑选要显示的一个。只有侧边标签选择器可用时才响应；未自定义时默认先按前导键（默认 `Ctrl+X`）再按 `t`。"
@@ -1003,7 +1003,7 @@ zh_basis = "7ee60ad500ff87da"
 
 ["config:tui.keymap.global.hide_pane"]
 en = "Hide the focused sidebar pane."
-en_source = "openai/codex rust-v0.169.0-alpha.10: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.170.0-alpha.2: codex-rs/core/config.schema.json"
 en_hash = "1a437e0cbc72d737"
 zh_name = "隐藏侧边窗格键"
 zh = "依据源码推断，自定义隐藏当前聚焦的侧边会话窗格并返回父会话的快捷键，保留该会话以便之后继续使用。需要终端工作区中已聚焦侧边会话。"
@@ -1019,7 +1019,7 @@ zh_basis = "421bfee37aefffab"
 
 ["config:tui.keymap.global.maximize_pane_width"]
 en = "Maximize the focused pane width."
-en_source = "openai/codex rust-v0.169.0-alpha.10: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.170.0-alpha.2: codex-rs/core/config.schema.json"
 en_hash = "ec4fde5b316f14fa"
 zh_name = "最大窗格宽度键"
 zh = "依据源码推断，自定义将当前聚焦窗格扩展到允许的最大宽度的快捷键，同时为另一窗格保留最小宽度。需要终端工作区中已有打开的窗格，调整结果会保存。"
@@ -1027,7 +1027,7 @@ zh_basis = "ec4fde5b316f14fa"
 
 ["config:tui.keymap.global.minimize_pane_width"]
 en = "Minimize the focused pane width."
-en_source = "openai/codex rust-v0.169.0-alpha.10: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.170.0-alpha.2: codex-rs/core/config.schema.json"
 en_hash = "ed53d10276d3bb43"
 zh_name = "最小窗格宽度键"
 zh = "依据源码推断，自定义将当前聚焦窗格缩到允许的最小宽度的快捷键，不会关闭窗格。需要终端工作区中已有打开的窗格，调整结果会保存。"
@@ -1035,7 +1035,7 @@ zh_basis = "ed53d10276d3bb43"
 
 ["config:tui.keymap.global.move_divider_left"]
 en = "Move the divider left when the side pane has focus."
-en_source = "openai/codex rust-v0.169.0-alpha.10: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.170.0-alpha.2: codex-rs/core/config.schema.json"
 en_hash = "217afb266d736329"
 zh_name = "左移窗格分隔线键"
 zh = "依据源码推断，自定义将窗格分隔线向左移动的快捷键，仅在侧边会话获得焦点时生效。每次按终端宽度约 2％ 的步长扩大侧边窗格，并保存宽度设置。"
@@ -1043,7 +1043,7 @@ zh_basis = "217afb266d736329"
 
 ["config:tui.keymap.global.move_divider_right"]
 en = "Move the divider right when the side pane has focus."
-en_source = "openai/codex rust-v0.169.0-alpha.10: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.170.0-alpha.2: codex-rs/core/config.schema.json"
 en_hash = "2b84542912e32842"
 zh_name = "右移窗格分隔线键"
 zh = "依据源码推断，自定义将窗格分隔线向右移动的快捷键，仅在侧边会话获得焦点时生效。每次按终端宽度约 2％ 的步长缩小侧边窗格，并保存宽度设置。"
@@ -1083,7 +1083,7 @@ zh_basis = "67d38a6e01371eb2"
 
 ["config:tui.keymap.global.resize_panes"]
 en = "Enter keyboard resize mode for visible dividers."
-en_source = "openai/codex rust-v0.169.0-alpha.10: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.170.0-alpha.2: codex-rs/core/config.schema.json"
 en_hash = "7c2ce9685d01a1bf"
 zh_name = "调整窗格宽度键"
 zh = "依据源码推断，自定义进入终端工作区窗格宽度调整模式的快捷键。模式内用左右方向键或 `h`、`l` 移动一列，配合 `Shift` 的方向键移动十列；`Enter` 或 `Esc` 都会结束调整并保存已预览的宽度。"
@@ -1099,7 +1099,7 @@ zh_basis = "ca9100434a367cbc"
 
 ["config:tui.keymap.global.sidebar_down"]
 en = "Switch to the next sidebar tab."
-en_source = "openai/codex rust-v0.169.0-alpha.10: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.170.0-alpha.2: codex-rs/core/config.schema.json"
 en_hash = "65f04ef6d873af2a"
 zh_name = "下一个侧边标签键"
 zh = "依据源码推断，自定义在终端工作区中切换到下一个侧边会话标签的快捷键，仅在侧边窗格获得焦点且标签选择器可用时响应。未自定义时默认先按前导键（默认 `Ctrl+X`）再按 `Tab`、`↓` 或 `j`。"
@@ -1107,7 +1107,7 @@ zh_basis = "65f04ef6d873af2a"
 
 ["config:tui.keymap.global.sidebar_up"]
 en = "Switch to the previous sidebar tab."
-en_source = "openai/codex rust-v0.169.0-alpha.10: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.170.0-alpha.2: codex-rs/core/config.schema.json"
 en_hash = "04e6a309512309be"
 zh_name = "上一个侧边标签键"
 zh = "依据源码推断，自定义在终端工作区中切换到上一个侧边会话标签的快捷键，仅在侧边窗格获得焦点且标签选择器可用时响应。未自定义时默认先按前导键（默认 `Ctrl+X`）再按 `Shift+Tab`、`↑` 或 `k`。"
@@ -1131,7 +1131,7 @@ zh_basis = "05255b713d94dc07"
 
 ["config:tui.keymap.global.toggle_pane_zoom"]
 en = "Zoom or restore the focused pane."
-en_source = "openai/codex rust-v0.169.0-alpha.10: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.170.0-alpha.2: codex-rs/core/config.schema.json"
 en_hash = "ac2a66f212e53884"
 zh_name = "窗格放大切换键"
 zh = "依据源码推断，自定义将当前聚焦窗格单独放大显示或恢复分栏的快捷键；放大时暂时不绘制另一窗格，不修改已保存的宽度。需要终端工作区中已有打开的窗格。"
@@ -2209,7 +2209,7 @@ zh_basis = "bf695b76e48b4b9e"
 
 ["config:tui.sidebar_width_percent"]
 en = "Preferred docked sidebar width as a percentage of the terminal. Defaults to one third."
-en_source = "openai/codex rust-v0.169.0-alpha.10: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.170.0-alpha.2: codex-rs/core/config.schema.json"
 en_hash = "ff50d50bb440d0bd"
 zh_name = "侧边窗格宽度比例"
 zh = "依据源码推断，指定终端工作区侧边会话窗格占终端宽度的百分比，未设置时约为三分之一。实际宽度会保证侧边窗格至少 36 列、父会话至少 64 列；拖动分隔线或用快捷键调宽会保存新的比例。"

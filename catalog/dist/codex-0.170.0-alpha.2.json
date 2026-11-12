@@ -1,15 +1,15 @@
 {
   "catalog_format": 1,
-  "codex_version": "0.169.0-alpha.10",
+  "codex_version": "0.170.0-alpha.2",
   "source": {
     "repo": "openai/codex",
-    "tag": "rust-v0.169.0-alpha.10",
-    "commit": "733b9c72182143d5c469f728da8df4bacbb7db51",
+    "tag": "rust-v0.170.0-alpha.2",
+    "commit": "1d787b3c4eca3050e7fa27c90927aae0d3ab4eda",
     "prerelease": true,
     "files": {
-      "codex-rs/core/config.schema.json": "14e34b3f4658c8a6d1d2a2ad8b64d185686a2cf8",
+      "codex-rs/core/config.schema.json": "b2de022d8068bbde702b50f0d9a57d6a92672dc4",
       "codex-rs/features/src/legacy.rs": "3e6df58ed1852665c58c3173550d18dbe43f2d06",
-      "codex-rs/features/src/lib.rs": "5c2c64b44d946291c3ee8977d6d868f91a7900f7"
+      "codex-rs/features/src/lib.rs": "6aa0a6e88b934476a11909d25b0303d8806fd5d9"
     }
   },
   "config_keys": [
@@ -1684,6 +1684,13 @@
       ]
     },
     {
+      "path": "features.daybreak_program_propagation",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ]
+    },
+    {
       "path": "features.default_mode_request_user_input",
       "kind": "boolean",
       "types": [
@@ -2128,6 +2135,16 @@
       "under_map": true
     },
     {
+      "path": "features.guardianv2.sync_elastic_sections.<name>.nested_tool_names",
+      "kind": "array",
+      "types": [
+        "array"
+      ],
+      "items": "string",
+      "description": "Exact Code Mode tool names for the transcript_selected_exec_results section.",
+      "under_map": true
+    },
+    {
       "path": "features.guardianv2.thread_context",
       "kind": "boolean",
       "types": [
@@ -2358,6 +2375,13 @@
     },
     {
       "path": "features.incremental_tools_legacy",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ]
+    },
+    {
+      "path": "features.incremental_tools_legacy_gcp",
       "kind": "boolean",
       "types": [
         "boolean"
@@ -2708,6 +2732,13 @@
     },
     {
       "path": "features.multi_env_copy_file",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ]
+    },
+    {
+      "path": "features.multi_environment_mcp",
       "kind": "boolean",
       "types": [
         "boolean"
@@ -11456,6 +11487,14 @@
       "rustdoc": "Automatically start the shared local daemon for eligible interactive launches."
     },
     {
+      "key": "daybreak_program_propagation",
+      "config_path": "features.daybreak_program_propagation",
+      "variant": "DaybreakProgramPropagation",
+      "stage": "under_development",
+      "default_enabled": false,
+      "rustdoc": "Capture the saved Daybreak choice for a native helper and its turns."
+    },
+    {
       "key": "default_mode_request_user_input",
       "config_path": "features.default_mode_request_user_input",
       "variant": "DefaultModeRequestUserInput",
@@ -11851,9 +11890,17 @@
       "key": "incremental_tools_legacy",
       "config_path": "features.incremental_tools_legacy",
       "variant": "IncrementalToolsLegacy",
-      "stage": "under_development",
+      "stage": "stable",
       "default_enabled": false,
-      "rustdoc": "Publish incremental tool declarations on regular Amazon Bedrock and GCP Responses."
+      "rustdoc": "Publish incremental tool declarations on regular Amazon Bedrock Responses."
+    },
+    {
+      "key": "incremental_tools_legacy_gcp",
+      "config_path": "features.incremental_tools_legacy_gcp",
+      "variant": "IncrementalToolsLegacyGcp",
+      "stage": "stable",
+      "default_enabled": true,
+      "rustdoc": "Publish incremental tool declarations on regular GCP Responses."
     },
     {
       "key": "instant_interrupt",
@@ -12026,6 +12073,14 @@
       "stage": "under_development",
       "default_enabled": false,
       "rustdoc": "Copy files between explicitly selected execution environments."
+    },
+    {
+      "key": "multi_environment_mcp",
+      "config_path": "features.multi_environment_mcp",
+      "variant": "MultiEnvironmentMcp",
+      "stage": "under_development",
+      "default_enabled": false,
+      "rustdoc": "Keep same-named HTTP servers discovered on different executors separate."
     },
     {
       "key": "network_proxy",

@@ -1,8 +1,8 @@
 {
   "format": 1,
-  "codex_version": "0.167.1",
+  "codex_version": "0.167.2",
   "sources": [
-    "openai/codex rust-v0.167.1: codex-rs/models-manager/models.json",
+    "openai/codex rust-v0.167.2: codex-rs/models-manager/models.json",
     "openai/codex rust-v0.157.1: codex-rs/models-manager/models.json",
     "catalog/models-extra.json"
   ],

@@ -1,10 +1,10 @@
 {
   "index_format": 1,
   "catalog_format": 1,
-  "serial": 21,
-  "generated": "2026-11-11",
+  "serial": 25,
+  "generated": "2026-11-12",
   "repo": "openai/codex",
-  "latest": "0.167.1",
+  "latest": "0.167.2",
   "versions": [
     {
       "version": "0.155.0",
@@ -223,12 +223,20 @@
       "changes": "dist/changes/codex-0.167.1.md"
     },
     {
-      "version": "0.169.0-alpha.10",
-      "tag": "rust-v0.169.0-alpha.10",
-      "commit": "733b9c72182143d5c469f728da8df4bacbb7db51",
+      "version": "0.167.2",
+      "tag": "rust-v0.167.2",
+      "commit": "ce21072c90d32c40af7a55b60b2fb35c84a43a6a",
+      "prerelease": false,
+      "path": "dist/codex-0.167.2.json",
+      "changes": "dist/changes/codex-0.167.2.md"
+    },
+    {
+      "version": "0.170.0-alpha.2",
+      "tag": "rust-v0.170.0-alpha.2",
+      "commit": "1d787b3c4eca3050e7fa27c90927aae0d3ab4eda",
       "prerelease": true,
-      "path": "dist/codex-0.169.0-alpha.10.json",
-      "changes": "dist/changes/codex-0.169.0-alpha.10.md"
+      "path": "dist/codex-0.170.0-alpha.2.json",
+      "changes": "dist/changes/codex-0.170.0-alpha.2.md"
     }
   ],
   "files": [
@@ -373,9 +381,14 @@
       "size": 336808
     },
     {
-      "path": "dist/codex-0.169.0-alpha.10.json",
-      "sha256": "940f28ac7668e8369220ab4d420745d9b815d0f09cd75142e5819fd3cffce286",
-      "size": 352569
+      "path": "dist/codex-0.167.2.json",
+      "sha256": "f46570613e4218de83031485432bdf4c677cfb09ae527f352ebd78801fae24e6",
+      "size": 337238
+    },
+    {
+      "path": "dist/codex-0.170.0-alpha.2.json",
+      "sha256": "2d5fba3e41d4640d687ad4260eaae849f02f07eefa1a5e6ea08102968c9529ac",
+      "size": 354195
     },
     {
       "path": "overlay/config-agents.toml",
@@ -384,8 +397,8 @@
     },
     {
       "path": "overlay/config-approvals.toml",
-      "sha256": "c93070abab7410f3032e3c45461005987ab643a5198dd6aa0d589a2cbf016459",
-      "size": 22259
+      "sha256": "530d8ed19756d1c379b3c3d6dbbb55f73452be3ed3ad35f9bed3fc16dbe81466",
+      "size": 22258
     },
     {
       "path": "overlay/config-apps.toml",
@@ -399,13 +412,13 @@
     },
     {
       "path": "overlay/config-features.toml",
-      "sha256": "a0c118c7cd3ae4d6ab1759ac079d71af3f167c75dab5293b569a122ac812de99",
-      "size": 46552
+      "sha256": "7a822f5f3be33408008e43870bc4258a195c30836af8fe39267dbab5368f9c52",
+      "size": 47214
     },
     {
       "path": "overlay/config-interface.toml",
-      "sha256": "ae3cd33740dc7f757e69aa5f49ff46c3428516f19faf772d3d57d10cc1dac11c",
-      "size": 114210
+      "sha256": "3b4883bba3e73df6789092174fc8ad3e8ef2c417a57a3d640adf03d2f797961e",
+      "size": 114192
     },
     {
       "path": "overlay/config-mcp.toml",
@@ -424,8 +437,8 @@
     },
     {
       "path": "overlay/config-provider.toml",
-      "sha256": "feaee880242ec1aa432986ecce0d853d251e0528049dcebd87772efc5c2dd435",
-      "size": 39002
+      "sha256": "f45811b29f6956bfdd15d8238bdb937f9afe962725959ec9f446eb3ecb5a7b33",
+      "size": 38996
     },
     {
       "path": "overlay/config-realtime.toml",
@@ -444,13 +457,13 @@
     },
     {
       "path": "overlay/config-tools.toml",
-      "sha256": "c38f48033484b28a2dc9715ac8cb4422930f787a74af858325c1d75f531d4658",
-      "size": 21844
+      "sha256": "fb5cb33bf39a3a3482f49af04b4a30ec5b040f47b5af29bacb94c64dbb1aa11d",
+      "size": 21843
     },
     {
       "path": "overlay/features.toml",
-      "sha256": "f2af9b1c4479a6782a7c4f788564fd1ac3ec60c273c7587f67187044c51a1bda",
-      "size": 71205
+      "sha256": "f348999721c1ad563edc06cacbf882e84365cd5899ab1b0709879198d405b540",
+      "size": 72787
     }
   ]
 }
