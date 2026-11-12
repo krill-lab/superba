@@ -153,6 +153,20 @@ pub enum Error {
         /// What timed out.
         what: String,
     },
+    /// The Codex bundled in an MSIX-packaged desktop app (under
+    /// `WindowsApps`) cannot be run by other programs, and no copy of it with
+    /// the same SHA-256 was found where the app extracts it (user bug 143,
+    /// GH#32).
+    #[error(
+        "Windows does not let other programs run the Codex inside the ChatGPT app package \
+         ({}), and no identical copy was found in %LOCALAPPDATA%\\OpenAI\\Codex\\bin. Open \
+         the ChatGPT app once so that it extracts its Codex there, then try again.",
+        crate::paths::display_path(path)
+    )]
+    PackagedCodex {
+        /// The bundled `codex.exe` inside the package.
+        path: PathBuf,
+    },
     /// Anything else.
     #[error("{message}")]
     Other {
@@ -183,6 +197,7 @@ impl Error {
             Error::Secret { .. } => "secret",
             Error::Cancelled => "cancelled",
             Error::Timeout { .. } => "timeout",
+            Error::PackagedCodex { .. } => "packaged_codex",
             Error::Other { .. } => "other",
         }
     }
@@ -271,6 +286,7 @@ impl Error {
             } => format!("HTTP {status} from {url}: {message}"),
             Error::Ssh { host, message } => format!("{host}: {message}"),
             Error::Wsl { distro, message } => format!("{distro}: {message}"),
+            Error::PackagedCodex { path } => crate::paths::display_path(path),
             Error::Cancelled => String::new(),
         }
     }

@@ -218,6 +218,33 @@ async fn packaged_app_launches_quits_and_relaunches() {
             ));
         }
     }
+    // User bug 143 (GH#32): the packaged codex.exe cannot be started from
+    // outside the package; Superba runs the app's extracted copy instead.
+    if let Some(binary) = &install.bundled_codex {
+        let runnable = superba_appctl::runnable::runnable_codex(binary, &ProcessEnv);
+        say(format!(
+            "first: runnable Codex for {}: {runnable:?}",
+            binary.display()
+        ));
+        let dump = ctl.codex_debug_models(binary, None).await;
+        say(format!(
+            "first: debug models --bundled through the controller: {}",
+            match &dump {
+                Ok(out) => format!("ok, {} bytes", out.len()),
+                Err(e) => format!("error {e}"),
+            }
+        ));
+        let dump = dump.expect("codex debug models --bundled runs for the MSIX app");
+        let catalog = std::env::temp_dir().join("superba-winapp-catalog.json");
+        std::fs::write(&catalog, &dump).unwrap();
+        let preflight = ctl.codex_debug_models(binary, Some(&catalog)).await;
+        say(format!(
+            "first: preflight of the bundled list as model_catalog_json: {:?}",
+            preflight.as_ref().map(|out| out.len())
+        ));
+        let _ = std::fs::remove_file(&catalog);
+        preflight.expect("the preflight runs for the MSIX app");
+    }
     let running = ctl
         .running_session()
         .await

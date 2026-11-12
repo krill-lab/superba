@@ -89,6 +89,10 @@ use superba_core::{
 
 pub use machine::{Effect, Input, MachineState, PlanTicket, SwitchMachine};
 pub use planner::ENV_SUPERBA_TEST_SITES;
+/// The Codex program to execute for an app's Codex path: the path itself, or
+/// for the MSIX app's packaged `codex.exe` its extracted copy with the same
+/// SHA-256 (user bug 143, GH#32). Blocking.
+pub use superba_appctl::runnable::runnable_codex as runnable_app_codex;
 /// Claude Code's `settings.json` helpers (pure parts shared by the GUI and
 /// `spb`).
 pub use superba_config::claude as claude_files;

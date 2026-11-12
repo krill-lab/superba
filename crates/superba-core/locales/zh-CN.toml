@@ -74,6 +74,7 @@ secret = "Key 存储错误：{detail}"
 cancelled = "已取消"
 timeout = "超时：{detail}"
 other = "{detail}"
+packaged_codex = "Windows 不允许其他程序直接运行 ChatGPT 应用包里的 Codex（{detail}），而 %LOCALAPPDATA%\\OpenAI\\Codex\\bin 下也没有与它完全一致的副本。请先打开一次 ChatGPT（它会把 Codex 解压到那里），再重试。"
 
 [error_io]
 too_many_open_files = "打开的文件太多（系统上限 {limit}）：无法打开 {path}。请退出不需要的程序后重试；如果仍然出现，请重启 Superba。（{message}）"

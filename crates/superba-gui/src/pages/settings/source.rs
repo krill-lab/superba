@@ -79,7 +79,13 @@ pub fn load(input: Input) -> Result<Model> {
             .overview
             .as_ref()
             .and_then(|o| std::fs::read_to_string(o.codex_home.join("config.toml")).ok());
-        match features_list(&binary.0, config_text.as_deref(), cache) {
+        // The MSIX app's packaged Codex runs as its extracted copy (user bug 143).
+        let listed = match &ctx {
+            Some(ctx) => superba_switch::runnable_app_codex(&binary.0, ctx.env.as_ref()),
+            None => Ok(binary.0.clone()),
+        }
+        .and_then(|runnable| features_list(&runnable, config_text.as_deref(), cache));
+        match listed {
             Ok(listed) => apply_runtime(&mut model, &binary.1, &listed),
             Err(e) => tracing::debug!("codex features list failed: {e}"),
         }
