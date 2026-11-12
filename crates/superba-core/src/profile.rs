@@ -349,6 +349,12 @@ pub struct Settings {
     /// is not running yet (GH#7), so it can be hot-switched. Off by default.
     #[serde(default, skip_serializing_if = "is_false")]
     pub open_app_on_start: bool,
+    /// Offer ChatGPT's own speed menu (Standard / Fast / Ultrafast) with the
+    /// API keys Superba writes: when Superba starts the app (with its
+    /// debugging port, so not in safe mode) it lets the window treat an
+    /// API-key sign-in like a ChatGPT one for the speed tier. On by default.
+    #[serde(default = "default_true", skip_serializing_if = "is_true")]
+    pub app_speed_menu: bool,
     /// Notifications to a phone or chat (GH#12). Off by default; secrets of the
     /// channels live in the key store.
     #[serde(skip_serializing_if = "crate::NotifySettings::is_default")]
@@ -473,6 +479,7 @@ impl Default for Settings {
             update_channel: None,
             reduce_motion: false,
             open_app_on_start: false,
+            app_speed_menu: true,
             notify: crate::NotifySettings::default(),
             analytics_preset_dropped: true,
             analytics_reapply: None,

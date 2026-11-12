@@ -548,6 +548,7 @@ impl Switcher {
             cleanup: Vec::new(),
         };
         let mut pc = crate::planner::PlanContext::bare(home, set.settings.safe_mode);
+        pc.app_speed_menu = set.settings.app_speed_menu;
         pc.install_id = install.map(|i| i.id);
         pc.session = session;
         pc.pin = Some(PinPlan {

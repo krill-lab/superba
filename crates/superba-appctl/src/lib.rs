@@ -43,6 +43,7 @@ pub mod project_restore;
 pub mod quit;
 pub mod renderer;
 pub mod runnable;
+pub mod speedmenu;
 pub mod stop;
 pub mod store;
 pub mod watch;
@@ -863,6 +864,9 @@ impl AppController for DesktopAppController {
             .unwrap_or_default();
         let program = launch::program_for(&install);
         let spec = launch::build_spec(&program, options, &app_args, plan.clone());
+        // Plan the speed menu while the app starts (cached per app build).
+        let speed_plan = (options.speed_menu && plan != CdpPlan::Disabled)
+            .then(|| speedmenu::start_planning(&install, self.ctx.data_dir.cache_dir()));
         let launched_at = Timestamp::now();
         tracing::info!(
             program = %program.display(),
@@ -903,6 +907,16 @@ impl AppController for DesktopAppController {
         })
         .await
         .map_err(blocking_err)??;
+        if let (Some(rx), Some(pid)) = (speed_plan, spawned.pid) {
+            // Detached: it outlives this call while the window settles.
+            tokio::spawn(speedmenu::attach_after_launch(
+                pid,
+                plan.clone(),
+                launched_at,
+                rx,
+                Duration::from_secs(20),
+            ));
+        }
         let ready_timeout = if options.ready_timeout_ms == 0 {
             self.tunables.ready_timeout
         } else {

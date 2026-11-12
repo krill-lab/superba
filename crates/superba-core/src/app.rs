@@ -183,6 +183,12 @@ pub struct LaunchOptions {
     /// Wait this long for the CDP bridge to become ready (0 = default 15 s).
     #[serde(default)]
     pub ready_timeout_ms: u64,
+    /// Offer the app's own speed menu (Standard / Fast / Ultrafast) with an
+    /// API-key sign-in: Superba registers its document-start script in the
+    /// window through the debugging port (needs CDP; see
+    /// `superba_appctl::speedmenu`).
+    #[serde(default)]
+    pub speed_menu: bool,
 }
 
 /// Result of probing the restart bridge.

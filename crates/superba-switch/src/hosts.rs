@@ -918,6 +918,7 @@ impl Switcher {
             cleanup: Vec::new(),
         };
         let mut pc = crate::planner::PlanContext::bare(home, set.settings.safe_mode);
+        pc.app_speed_menu = set.settings.app_speed_menu;
         pc.session = session;
         pc.hosts = vec![host];
         pc.host_sync = record.map(|r| (target_id, r));

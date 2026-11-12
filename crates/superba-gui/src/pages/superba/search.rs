@@ -7,6 +7,7 @@ use egui::{Id, Rect, Sense, Ui};
 pub const ROWS: &[(SuperbaSection, &str)] = &[
     (SuperbaSection::General, "settings.countdown.title"),
     (SuperbaSection::General, "settings.safe_mode.title"),
+    (SuperbaSection::General, "settings.speed_menu.title"),
     (SuperbaSection::General, "settings.open_on_start.title"),
     (SuperbaSection::General, "settings.auto_probe.title"),
     (SuperbaSection::General, "tray.prefs.close.title"),
@@ -198,6 +199,7 @@ pub(crate) fn row(
         matches!(
             key,
             "settings.safe_mode.title"
+                | "settings.speed_menu.title"
                 | "settings.open_on_start.title"
                 | "settings.auto_probe.title"
                 | "tray.prefs.start.title"

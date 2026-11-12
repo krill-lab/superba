@@ -506,8 +506,10 @@ def s19(run):
     onboarding(run, c)
     switch_to(run, c, "compat", "s19-use-compat-fast")
     line, e = app_turn(run, "E2E-SP2B")
-    c.ok(line == "d" and e.get("originator") == "Codex Desktop" and not e.get("tier_sent"),
-         f"the desktop app opened in API-key mode sends no tier (config service_tier = fast): {fmt(e)}")
+    # Superba opened it with its speed menu (Settings::app_speed_menu, on by default): the
+    # window honours the configured tier like a ChatGPT sign-in does.
+    c.ok(line == "d" and e.get("originator") == "Codex Desktop" and e.get("service_tier") == "priority",
+         f"the desktop app opened in API-key mode by Superba sends the configured tier (config service_tier = fast): {fmt(e)}")
     edit_and_switch(run, c, "s19-standard-compat", "speed", "standard", "--profile", "compat")
 
     # Ultrafast: needs a catalog file whose entries list `ultrafast` where the

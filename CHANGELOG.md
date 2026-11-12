@@ -5,6 +5,11 @@ All notable changes to Superba are documented here. The format follows
 [Semantic Versioning](https://semver.org/): later releases increment the patch
 number; the minor number changes only for breaking changes.
 
+## [Unreleased]
+
+### Added
+- ChatGPT's own speed menu (Standard / Fast / Ultrafast) works again with API keys. Since alpha.16 every Krill and custom-site key is written as an API key. With one, the desktop app hides its speed menu, ignores the `service_tier` Superba writes, and sends every turn at Standard (a ChatGPT sign-in or a personal access token got the menu). When Superba opens ChatGPT, it now attaches to the window over the loopback debugging port before the first page runs. It then swaps the four modules that make that check for copies that also accept the local host signed in with an API key. The menu offers the tiers each model's catalog entry lists (Ultrafast where the catalog has it), the chosen tier is sent as `service_tier` (`priority` / `ultrafast`), and the provider decides what it costs. Nothing on disk is changed. The copies are planned once per app build from its `app.asar` (about half a second, cached under `cache/speed-menu/`) and used only when the page registers exactly the planned module source. For an app build whose checks look different, the app runs unchanged and the log says why. Verified on app 26.1106 (Linux). On by default: Superba → Settings → General → "ChatGPT speed menu with API keys". It takes effect the next time Superba opens ChatGPT and is not available in safe mode. A window that was already open, or one opened while Superba was not running, keeps the app's own behaviour. The Models page shows "Set in the app's own speed menu" instead of "The desktop app runs Standard in API-key mode".
+
 ## [0.1.1-alpha.17] - 2026-11-12
 
 ### Fixed

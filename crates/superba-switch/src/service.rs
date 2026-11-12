@@ -494,6 +494,7 @@ impl Switcher {
                 cdp: launch_cdp_mode(set.settings.safe_mode, effective_root()),
                 env,
                 env_remove,
+                speed_menu: set.settings.app_speed_menu,
                 ..LaunchOptions::default()
             })
             .await;

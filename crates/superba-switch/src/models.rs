@@ -263,6 +263,23 @@ pub fn speed_support_with(
     }
 }
 
+/// The effects with the app's speed menu offered for API keys
+/// ([`superba_core::Settings::app_speed_menu`]): where the app would drop the
+/// tier, its own speed menu decides (starting from the configured
+/// `service_tier`, changeable per turn).
+pub fn with_app_menu(mut support: SpeedSupport) -> SpeedSupport {
+    let menu = |e: &mut SpeedEffect| {
+        if *e == SpeedEffect::AppForcesStandard {
+            *e = SpeedEffect::AppMenu;
+        }
+    };
+    menu(&mut support.app);
+    for t in &mut support.tiers {
+        menu(&mut t.app);
+    }
+    support
+}
+
 /// [`speed_support_with`]'s two effects for every tier, so the Models page shows
 /// what a tier picked but not saved yet will do. `cli_list(tier)` is the list
 /// Codex filters that tier with when it is not the provider's (the bundled list
@@ -1252,6 +1269,9 @@ impl Switcher {
             false,
             site.capabilities.tier_model_suffix,
         );
+        if set.settings.app_speed_menu && !set.settings.safe_mode {
+            speed = with_app_menu(speed);
+        }
         let record = current_record(&d.ctx.data_dir, home.root())
             .filter(|r| r.profile_id.as_ref() == Some(&profile.id));
         let catalog_file = match (&record, reasons.is_empty()) {

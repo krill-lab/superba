@@ -455,6 +455,21 @@ class App:
                 time.sleep(0.5)
             self.run.log(f"  the composer still holds {left} characters after Enter (try {attempt + 1}); pressing it again")
 
+    def click_css(self, selector):
+        """Click the centre of the first visible element matching `selector` with real
+        mouse events (menus of the app act on pointer events, not on element.click());
+        returns False when there is none."""
+        xy = self.eval("(() => { const e = [...document.querySelectorAll(%s)].find((e) =>"
+                       " e.getClientRects().length > 0); if (!e) return null;"
+                       " const r = e.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()"
+                       % json.dumps(selector))
+        if not xy:
+            return False
+        for typ in ("mouseMoved", "mousePressed", "mouseReleased"):
+            self.cdp("Input.dispatchMouseEvent", {"type": typ, "x": xy[0], "y": xy[1], "button": "left",
+                                                  "clickCount": 1})
+        return True
+
     def wait_idle(self, timeout=120):
         end = time.time() + timeout
         while time.time() < end:
