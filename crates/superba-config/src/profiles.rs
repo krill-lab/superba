@@ -58,6 +58,16 @@ impl JsonProfileStore {
                 tracing::warn!("profiles.json: could not record the bug 137 migration: {e}");
             }
         }
+        if !set.settings.features_preset_dropped {
+            let changed = drop_retired_feature_keys(&mut set);
+            set.settings.features_preset_dropped = true;
+            // The switch service writes the applied one again at start.
+            set.settings.features_cleanup = changed;
+            if let Err(e) = fsx::write_json(&path, &set) {
+                // Runs again at the next load; this one already has it.
+                tracing::warn!("profiles.json: could not record the bug 144 migration: {e}");
+            }
+        }
         Ok(set)
     }
 
@@ -82,6 +92,36 @@ pub fn drop_old_analytics_preset(set: &mut ProfileSet) -> Vec<superba_core::Prof
     for p in &mut set.profiles {
         if p.site_id.as_str() == catalog::KRILL_SITE_ID && p.codex_settings.openai_telemetry_off() {
             p.codex_settings.set_openai_telemetry_off(false);
+            changed.push(p.id.clone());
+        }
+    }
+    changed
+}
+
+/// One-time migration, user bug 144 (remove after alpha.17+N with
+/// [`superba_core::Settings::features_preset_dropped`]): Superba up to
+/// alpha.16 put the under-development context management and token budget
+/// features ([`superba_core::codex::RETIRED_PRESET_KEYS`]) into every new
+/// Krill profile and wrote them at every switch, over the user's own edits.
+/// Superba no longer writes them: drop every value a profile stores for them
+/// (any site, `true` or `false`); an entry that removes the key stays. The
+/// next switch then restores each one Superba wrote to its baseline (removed,
+/// or the user's own value) and leaves a value the user wrote alone. Returns
+/// the ids of the profiles it changed.
+pub fn drop_retired_feature_keys(set: &mut ProfileSet) -> Vec<superba_core::ProfileId> {
+    let mut changed = Vec::new();
+    for p in &mut set.profiles {
+        let mut dropped = false;
+        for path in superba_core::codex::RETIRED_PRESET_KEYS {
+            if matches!(
+                p.codex_settings.get(path),
+                Some(superba_core::SettingEntry::Set(_))
+            ) {
+                p.codex_settings.forget(path);
+                dropped = true;
+            }
+        }
+        if dropped {
             changed.push(p.id.clone());
         }
     }

@@ -58,11 +58,13 @@ async fn legacy_takeover_two_keys_and_byte_exact_original_restore() {
             .all(|c| c.path != k::CHATGPT_BASE_URL)
     );
     assert_eq!(
-        key_change(&plan, "features.context_management")
-            .after
-            .as_deref(),
+        key_change(&plan, "features.fast_mode").after.as_deref(),
         Some("true")
     );
+    // User bug 144: the old preset's feature keys are no longer written.
+    for path in superba_core::codex::RETIRED_PRESET_KEYS {
+        assert!(plan.key_changes.iter().all(|c| c.path != *path), "{path}");
+    }
     assert!(plan.key_changes.iter().all(|c| c.path != k::MODEL));
     let ac = plan.auth_change.clone().unwrap();
     assert_eq!(ac.before, AuthShape::Missing);

@@ -123,9 +123,9 @@ pub enum TomlLiteral {
     Bool(bool),
 }
 
-/// Keys the Krill PAT tutorial recommends (plan 9.1), as dotted paths. Written only
-/// in PAT mode; restored to the
-/// baseline when leaving PAT mode.
+/// Keys the Krill tutorial recommends (plan 9.1), as dotted paths: the preset
+/// of new Krill profiles ([`crate::CodexSettings::krill_recommended`]), which
+/// the user sees and edits like any other setting of the profile.
 pub const PAT_RECOMMENDED_KEYS: &[(&str, TomlLiteral)] = &[
     ("web_search", TomlLiteral::Str("live")),
     (
@@ -133,12 +133,20 @@ pub const PAT_RECOMMENDED_KEYS: &[(&str, TomlLiteral)] = &[
         TomlLiteral::Bool(true),
     ),
     ("features.fast_mode", TomlLiteral::Bool(true)),
-    ("features.context_management", TomlLiteral::Bool(true)),
-    ("features.token_budget.enabled", TomlLiteral::Bool(true)),
-    (
-        "features.token_budget.use_history_notes_extension",
-        TomlLiteral::Bool(true),
-    ),
+];
+
+/// Keys the Krill preset held up to alpha.16 and Superba no longer writes by
+/// itself (user bug 144): the under-development context management and token
+/// budget features of the Krill PAT tutorial. Codex keeps its own default
+/// (off). They stay paths Superba may own, so a value an older Superba wrote
+/// leaves `config.toml` at the next switch (back to the baseline: removed, or
+/// the user's value from before Superba), while a value the user wrote stays.
+/// The profile store drops them from stored profiles once
+/// (`superba-config`'s `drop_retired_feature_keys`).
+pub const RETIRED_PRESET_KEYS: &[&str] = &[
+    "features.context_management",
+    "features.token_budget.enabled",
+    "features.token_budget.use_history_notes_extension",
 ];
 
 /// `auth.json` field names.

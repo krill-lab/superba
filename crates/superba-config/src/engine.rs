@@ -1615,6 +1615,18 @@ mod tests;
 fn releases_ownership(hs: &HomeState, r: &Rendered, desired: &ResolvedProfile) -> bool {
     matches!(desired.mode, ResolvedMode::Release { .. })
         || (!hs.last_written().is_empty() && r.owned.is_empty())
+        || releases_retired_key(hs, r)
+}
+
+/// User bug 144: the apply stops owning a feature key of the old Krill preset
+/// ([`superba_core::codex::RETIRED_PRESET_KEYS`]), for example one the user
+/// already removed or changed by hand. It is committed even when neither file
+/// changes, so the key is not reported as changed outside Superba again.
+fn releases_retired_key(hs: &HomeState, r: &Rendered) -> bool {
+    hs.last_written().iter().any(|s| {
+        superba_core::codex::RETIRED_PRESET_KEYS.contains(&s.path.as_str())
+            && !r.owned.iter().any(|o| o.path == s.path)
+    })
 }
 
 fn short_id(id: &str) -> String {

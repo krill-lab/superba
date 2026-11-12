@@ -172,6 +172,15 @@ fn krill_recommended_preset_matches_the_tutorial_keys() {
         preset.get("web_search"),
         Some(&SettingEntry::Set("live".into()))
     );
+    // User bug 144: the under-development features of the old preset are
+    // left to Codex's own default; Superba never writes them by itself.
+    for path in codex::RETIRED_PRESET_KEYS {
+        assert_eq!(preset.get(path), None, "{path}");
+        assert!(
+            codex::PAT_RECOMMENDED_KEYS.iter().all(|(p, _)| p != path),
+            "{path}"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------

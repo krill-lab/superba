@@ -33,6 +33,8 @@ pub mod compaction;
 pub mod core_watch;
 mod data;
 pub mod executor;
+// One-time clean-up of user bug 144.
+mod features_cleanup;
 mod files;
 pub mod harness;
 mod harness_router;

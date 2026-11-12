@@ -374,6 +374,21 @@ pub struct Settings {
     /// other writers keep the stored value.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pat_migration: Option<PatMigration>,
+    /// One-time migration of user bug 144 ran: the feature keys of the old
+    /// Krill preset ([`crate::codex::RETIRED_PRESET_KEYS`]) were dropped from
+    /// stored profiles (`superba-config`'s profile store). A file without the
+    /// field has not been migrated (`false`); a new set needs nothing
+    /// (`true`). Remove after alpha.17+N together with the migration.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub features_preset_dropped: bool,
+    /// Profiles that migration changed: when one of them is applied, the
+    /// window's next start writes it once more, write-only, so the keys
+    /// Superba wrote leave `config.toml` without a manual switch (one
+    /// attempt; otherwise the next switch removes them). Set by the profile
+    /// store, used and cleared by the switch service; other writers keep the
+    /// stored value. Remove after alpha.17+N.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub features_cleanup: Vec<ProfileId>,
 }
 
 /// State of the one-off alpha.16 PAT→API-key migration
@@ -462,6 +477,8 @@ impl Default for Settings {
             analytics_preset_dropped: true,
             analytics_reapply: None,
             pat_migration: None,
+            features_preset_dropped: true,
+            features_cleanup: Vec::new(),
         }
     }
 }

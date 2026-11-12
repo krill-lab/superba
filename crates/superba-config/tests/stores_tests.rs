@@ -113,6 +113,8 @@ fn user_set() -> ProfileSet {
         analytics_preset_dropped: true,
         analytics_reapply: None,
         pat_migration: None,
+        features_preset_dropped: true,
+        features_cleanup: Vec::new(),
     };
     set
 }
