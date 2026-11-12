@@ -5,6 +5,14 @@ All notable changes to Superba are documented here. The format follows
 [Semantic Versioning](https://semver.org/): later releases increment the patch
 number; the minor number changes only for breaking changes.
 
+## [0.1.1-alpha.17] - 2026-11-12
+
+### Fixed
+- Superba no longer writes `features.context_management`, `features.token_budget.enabled` or `features.token_budget.use_history_notes_extension` into Codex's `config.toml` (user bug 144). New Krill profiles had them preset from the old PAT tutorial and every switch wrote them back, so removing or changing them by hand never stuck. Existing profiles drop the three keys; at the next start of the window Superba quietly removes the values it wrote from `config.toml` (once, configuration only, nothing is restarted; `spb`-only users get the same at their next switch). A value you set yourself is kept and no longer reported as "changed outside Superba".
+- New Krill profiles no longer preset `features.fast_mode = true` (already Codex's default) or `suppress_unstable_features_warning = true`. Existing profiles keep them. `web_search = "live"` stays.
+- Windows: when the ChatGPT/Codex desktop app is installed as an MSIX package, Superba runs the copy of Codex the app extracts to `%LOCALAPPDATA%\OpenAI\Codex\bin\…` (only if its size and SHA-256 match the packaged file) instead of the file inside `WindowsApps`, which some systems refuse to start ("Access is denied", os error 5) (user bug 143, GH#32). This covers the model catalog (Apply now, preflight), the version check, the settings page's feature list and the notification hooks check. Without a matching copy Superba says to open ChatGPT once and try again.
+- CI and release builds install Ubuntu packages through public mirrors when the runner's own mirrors don't resolve.
+
 ## [0.1.1-alpha.16] - 2026-11-12
 
 ### Added

@@ -4617,7 +4617,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "superba-appctl"
-version = "0.1.1-alpha.16"
+version = "0.1.1-alpha.17"
 dependencies = [
  "async-trait",
  "futures-util",
@@ -4649,7 +4649,7 @@ dependencies = [
 
 [[package]]
 name = "superba-catalog"
-version = "0.1.1-alpha.16"
+version = "0.1.1-alpha.17"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -4672,7 +4672,7 @@ dependencies = [
 
 [[package]]
 name = "superba-catalog-gen"
-version = "0.1.1-alpha.16"
+version = "0.1.1-alpha.17"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -4696,7 +4696,7 @@ dependencies = [
 
 [[package]]
 name = "superba-cli"
-version = "0.1.1-alpha.16"
+version = "0.1.1-alpha.17"
 dependencies = [
  "async-trait",
  "clap",
@@ -4717,7 +4717,7 @@ dependencies = [
 
 [[package]]
 name = "superba-config"
-version = "0.1.1-alpha.16"
+version = "0.1.1-alpha.17"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -4748,7 +4748,7 @@ dependencies = [
 
 [[package]]
 name = "superba-core"
-version = "0.1.1-alpha.16"
+version = "0.1.1-alpha.17"
 dependencies = [
  "async-trait",
  "pretty_assertions",
@@ -4764,7 +4764,7 @@ dependencies = [
 
 [[package]]
 name = "superba-gui"
-version = "0.1.1-alpha.16"
+version = "0.1.1-alpha.17"
 dependencies = [
  "anyhow",
  "core-foundation 0.10.1",
@@ -4814,7 +4814,7 @@ dependencies = [
 
 [[package]]
 name = "superba-import"
-version = "0.1.1-alpha.16"
+version = "0.1.1-alpha.17"
 dependencies = [
  "base64 0.23.1",
  "pretty_assertions",
@@ -4831,7 +4831,7 @@ dependencies = [
 
 [[package]]
 name = "superba-models"
-version = "0.1.1-alpha.16"
+version = "0.1.1-alpha.17"
 dependencies = [
  "hex",
  "pretty_assertions",
@@ -4843,7 +4843,7 @@ dependencies = [
 
 [[package]]
 name = "superba-msi-ca"
-version = "0.1.1-alpha.16"
+version = "0.1.1-alpha.17"
 dependencies = [
  "superba-core",
  "superba-storage",
@@ -4854,7 +4854,7 @@ dependencies = [
 
 [[package]]
 name = "superba-net"
-version = "0.1.1-alpha.16"
+version = "0.1.1-alpha.17"
 dependencies = [
  "async-trait",
  "futures-util",
@@ -4873,7 +4873,7 @@ dependencies = [
 
 [[package]]
 name = "superba-notify"
-version = "0.1.1-alpha.16"
+version = "0.1.1-alpha.17"
 dependencies = [
  "base64 0.23.1",
  "futures-util",
@@ -4896,7 +4896,7 @@ dependencies = [
 
 [[package]]
 name = "superba-remote"
-version = "0.1.1-alpha.16"
+version = "0.1.1-alpha.17"
 dependencies = [
  "async-trait",
  "hex",
@@ -4915,7 +4915,7 @@ dependencies = [
 
 [[package]]
 name = "superba-router"
-version = "0.1.1-alpha.16"
+version = "0.1.1-alpha.17"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -4959,7 +4959,7 @@ dependencies = [
 
 [[package]]
 name = "superba-sessions"
-version = "0.1.1-alpha.16"
+version = "0.1.1-alpha.17"
 dependencies = [
  "async-trait",
  "fs4",
@@ -4984,7 +4984,7 @@ dependencies = [
 
 [[package]]
 name = "superba-storage"
-version = "0.1.1-alpha.16"
+version = "0.1.1-alpha.17"
 dependencies = [
  "fs4",
  "libc",
@@ -4999,7 +4999,7 @@ dependencies = [
 
 [[package]]
 name = "superba-switch"
-version = "0.1.1-alpha.16"
+version = "0.1.1-alpha.17"
 dependencies = [
  "async-trait",
  "directories",
@@ -5036,7 +5036,7 @@ dependencies = [
 
 [[package]]
 name = "superba-tools"
-version = "0.1.1-alpha.16"
+version = "0.1.1-alpha.17"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -5059,7 +5059,7 @@ dependencies = [
 
 [[package]]
 name = "superba-versions"
-version = "0.1.1-alpha.16"
+version = "0.1.1-alpha.17"
 dependencies = [
  "async-trait",
  "flate2",
