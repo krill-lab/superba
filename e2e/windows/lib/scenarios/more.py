@@ -546,8 +546,10 @@ SPEED_MENU_JS = r"""(() => {
   const mark = (e, v) => { document.querySelectorAll('[data-e2e-speed]').forEach((x) => x.removeAttribute('data-e2e-speed'));
                            if (e) e.setAttribute('data-e2e-speed', v); return !!e; };
   const want = %s;
+  if (want === 'buttons') return [...document.querySelectorAll('button')].filter(vis)
+      .map((b) => (b.getAttribute('aria-label') || '') + ' | ' + (b.innerText || '').trim().slice(0, 60)).join('\n');
   if (want === 'model') return mark([...document.querySelectorAll('button')].find((b) => vis(b)
-      && /\n(None|Minimal|Low|Light|Medium|High|Extra High|Max|Ultra)$/.test((b.innerText || '').trim())), 'model');
+      && /^[^\n]+\n(None|Minimal|Low|Light|Medium|High|Extra High|Max|Ultra)(\n|$)/.test((b.innerText || '').trim())), 'model');
   if (want === 'control') {
     const t = document.querySelector('[role=menuitemcheckbox][aria-label$="mode"]');
     if (t) return mark(t, 'toggle') && 'toggle:' + t.getAttribute('aria-label') + ':' + t.getAttribute('aria-checked');
@@ -565,10 +567,21 @@ def pick_speed(run, s, tier):
     a = App(run)
     a.eval("document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}))")
     time.sleep(0.5)
-    if not a.eval(SPEED_MENU_JS % json.dumps("model")) or not a.click_css('[data-e2e-speed="model"]'):
-        return None
-    time.sleep(1.2)
-    control = a.eval(SPEED_MENU_JS % json.dumps("control"))
+    end = time.time() + 30
+    while not a.eval(SPEED_MENU_JS % json.dumps("model")):
+        if time.time() > end:
+            s.save(f"buttons-{tier}.txt", a.eval(SPEED_MENU_JS % json.dumps("buttons")) or "")
+            return None
+        time.sleep(2)
+    control = None
+    for _ in range(3):
+        a.click_css('[data-e2e-speed="model"]')
+        time.sleep(1.5)
+        control = a.eval(SPEED_MENU_JS % json.dumps("control"))
+        if control:
+            break
+        a.eval("document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}))")
+        time.sleep(1)
     s.info(f"speed control: {control!r}")
     if not control:
         return None

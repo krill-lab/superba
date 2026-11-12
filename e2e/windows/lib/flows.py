@@ -501,6 +501,18 @@ def wizard_krill(run, t, prefix="", line="a", lang="en"):
     net = run.net
     with t.step(prefix + "Setup wizard: Krill with the test key") as s:
         run.state["wizard_seen"] = True
+        # The first switch starts from a ChatGPT opened without Superba. The October
+        # images opened it at logon (its startup task); the images rebuilt in 2026-11
+        # (ChatGPT 26.1106) do not, so open it from the Start menu like a user would,
+        # before the wizard's Apply plans the switch.
+        before = app(run)
+        if not before.main():
+            s.info("ChatGPT is not running after logon: opening it from the Start menu (no Superba)")
+            before.activate()
+            started = before.wait_main(120, with_port=False)
+            s.check(started is not None and not before.cdp_port(started),
+                    "ChatGPT running without a debugging port before the wizard")
+            time.sleep(15)
         start_superba(run, s)
         s.check(u.exists(timeout=20, key="wizard.detect.title"), "wizard opens on the first start ('What Superba found')")
         s.ui_dump("wizard-detect")
