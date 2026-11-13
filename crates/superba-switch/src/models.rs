@@ -118,6 +118,38 @@ pub fn override_needs_catalog(o: &ModelOverride) -> bool {
     o.context_window.is_some() || o.auto_compact.is_some() || o.display_name.is_some() || o.hidden
 }
 
+/// Whether a Krill catalog keeps `spec`. Krill's `/v1/models`, merged in with
+/// the model source "auto" or "standard", also names models Codex does not
+/// offer as its own (grok, gemini, kimi, gpt-image, ...); the app would list
+/// every one of them as a bare entry. Kept: the models of Krill's Codex list,
+/// the models Codex knows (the app's bundled list, the signed model list) and
+/// the models with a per-model value that needs an entry. The configured model
+/// is added by the catalog builder in any case.
+pub fn krill_keeps(
+    spec: &ModelSpec,
+    template: &BundledCatalog,
+    feed: &[ModelSpec],
+    overrides: &BTreeMap<String, ModelOverride>,
+) -> bool {
+    spec.raw.is_some()
+        || spec.lists.contains(&superba_core::ModelListKind::Codex)
+        || template
+            .entries
+            .iter()
+            .any(|e| e.get("slug").and_then(|v| v.as_str()) == Some(spec.slug.as_str()))
+        || feed.iter().any(|m| m.slug == spec.slug)
+        || overrides
+            .get(&spec.slug)
+            .is_some_and(override_needs_catalog)
+}
+
+/// [`krill_keeps`] applied to `list`; a list it would empty is left whole.
+fn keep_krill_models(list: &mut ModelList, keep: &(dyn Fn(&ModelSpec) -> bool + Sync)) {
+    if list.models.iter().any(keep) {
+        list.models.retain(|m| keep(m));
+    }
+}
+
 /// The speed tier a profile runs with (Standard unless chosen).
 pub fn profile_speed(profile: &Profile) -> SpeedTier {
     profile.model.speed.unwrap_or_default()
@@ -881,15 +913,21 @@ impl Switcher {
         let d = &self.deps;
         let mut out = CatalogPlan::default();
         let profile = input.profile;
-        if input.routed {
-            // The live router supplies L0–L4; a static file would hide future
-            // discoveries and verified models from this consumer.
-            return out;
-        }
         let speed = profile_speed(profile);
         let set = d.profiles.load().await.unwrap_or_default();
         let app_menu = app_menu_on(&set.settings);
-        let mut reasons = catalog_reasons(profile, input.site, input.auth, app_menu);
+        // Routed, Codex signs in with an API key and never fetches the router's
+        // catalog (L0–L4): without a file the app lists only its bundled models.
+        // With the app's speed menu the file lists the members' models and tiers
+        // (a snapshot taken at the switch).
+        if input.routed && !app_menu {
+            return out;
+        }
+        let mut reasons = if input.routed {
+            vec![CatalogReason::AppSpeedMenu]
+        } else {
+            catalog_reasons(profile, input.site, input.auth, app_menu)
+        };
         if self.catalog_off.load(std::sync::atomic::Ordering::SeqCst) && !reasons.is_empty() {
             reasons.clear();
             out.notes
@@ -923,8 +961,17 @@ impl Switcher {
                 return out;
             }
         };
-        let list = if input.routed {
-            self.router_member_list(&app_version, &app_binary).await
+        let feeds = (d.feeds)(&set.settings.network);
+        let feed_models = feeds
+            .snapshot(false)
+            .await
+            .map(|s| s.models)
+            .unwrap_or_default();
+        let keep =
+            |m: &ModelSpec| krill_keeps(m, &template, &feed_models, &profile.model_overrides);
+        let mut list = if input.routed {
+            self.router_member_list(&app_version, &app_binary, &keep)
+                .await
         } else {
             self.model_list_for(
                 input.site,
@@ -937,22 +984,24 @@ impl Switcher {
             )
             .await
         };
+        if !input.routed && input.site.kind == SiteKind::Krill {
+            keep_krill_models(&mut list, &keep);
+        }
+        // The router members' union is the members' own lists: Krill's entries
+        // stay native (with the tiers Krill declares, such as Ultrafast).
         let source = match &list.source {
-            ModelListSource::Upstream { .. }
+            ModelListSource::Union { .. } if list.models.is_empty() => CatalogSource::Bundled,
+            ModelListSource::Upstream { .. } | ModelListSource::Union { .. }
                 if !list.models.is_empty() && list.models.iter().all(|m| m.raw.is_some()) =>
             {
                 CatalogSource::Native(list.models.clone())
             }
-            ModelListSource::Upstream { .. } => CatalogSource::OpenAiList(list.models.clone()),
+            ModelListSource::Upstream { .. } | ModelListSource::Union { .. } => {
+                CatalogSource::OpenAiList(list.models.clone())
+            }
             ModelListSource::Feed { .. } => CatalogSource::Feed(list.models.clone()),
             _ => CatalogSource::Bundled,
         };
-        let feeds = (d.feeds)(&set.settings.network);
-        let feed_models = feeds
-            .snapshot(false)
-            .await
-            .map(|s| s.models)
-            .unwrap_or_default();
         let prompt = feeds.prompt(&app_version).await.ok().flatten();
         let mut slugs: Vec<String> = list.models.iter().map(|m| m.slug.clone()).collect();
         if matches!(source, CatalogSource::Bundled) {
@@ -1087,7 +1136,13 @@ impl Switcher {
     }
 
     /// Union of the router members' lists (each from its own provider).
-    async fn router_member_list(&self, version: &CodexVersion, binary: &Path) -> ModelList {
+    /// Krill members keep only Codex's models (`keep`, see [`krill_keeps`]).
+    async fn router_member_list(
+        &self,
+        version: &CodexVersion,
+        binary: &Path,
+        keep: &(dyn Fn(&ModelSpec) -> bool + Sync),
+    ) -> ModelList {
         let d = &self.deps;
         let set = d.profiles.load().await.unwrap_or_default();
         let mut lists = Vec::new();
@@ -1099,7 +1154,7 @@ impl Switcher {
             let superba_core::ResolvedMode::Token { endpoints, key, .. } = &resolved.mode else {
                 continue;
             };
-            let list = self
+            let mut list = self
                 .model_list_for(
                     &site,
                     Some(&endpoints.openai_base_url),
@@ -1110,6 +1165,9 @@ impl Switcher {
                     p.model_source,
                 )
                 .await;
+            if site.kind == SiteKind::Krill {
+                keep_krill_models(&mut list, keep);
+            }
             lists.push((p.name.clone(), list));
         }
         match d.models.union(&lists) {
@@ -1237,6 +1295,7 @@ impl Switcher {
                 catalog_file: CatalogFileStatus::NotNeeded,
                 notes,
                 per_model: false,
+                codex_only: false,
                 applied: None,
             });
         }
@@ -1376,6 +1435,7 @@ impl Switcher {
             catalog_file,
             notes,
             per_model: true,
+            codex_only: site.kind == SiteKind::Krill && !routed,
             applied,
         })
     }
