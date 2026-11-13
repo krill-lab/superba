@@ -5,6 +5,21 @@ All notable changes to Superba are documented here. The format follows
 [Semantic Versioning](https://semver.org/): later releases increment the patch
 number; the minor number changes only for breaking changes.
 
+## [0.1.1-alpha.20] - 2026-11-14
+
+### Fixed
+- Router mode: ChatGPT now lists gpt-6.1-sol and offers Ultrafast with the local router, as on a direct switch. Through the router, Codex signs in with an API key and never asks the router for its list, so ChatGPT showed only the models built into its Codex (no 6.1, only Fast). With ChatGPT's speed menu on, the switch to router mode now writes a model catalog file from the members' lists, with Krill's own entries (and the tiers Krill declares) unchanged. It is a snapshot: a model a member adds later appears after the next switch.
+- Krill no longer brings every model of its `/v1/models` list into ChatGPT's picker (grok, gemini, kimi, deepseek, GLM, gpt-image...). With the model source "Auto" or "Standard" they were added as bare entries, and Krill's own models lost part of their entries. A Krill catalog (direct, and each Krill router member) now keeps the models of Krill's Codex list, the models Codex knows and the models with a per-model setting; the model a provider is set to is always kept. Custom sites are unchanged.
+- The local router no longer takes every line down when this computer's network blips (Wi-Fi change, proxy reload, waking up) and then answers errors for up to a minute while the lines are fine. One failed health probe only makes a line suspect (it keeps serving and is probed again 1.5 s later; a second failure takes it down), at start-up too. When every line is down at once, a request tries each of them instead of only one, all lines are probed every 2 s and the wait before the next try stays at 5 s instead of doubling to 60 s. A single line that is really down is skipped and retried as before.
+- macOS: Cmd+W closes Superba's window (into the menu bar, or as set in "When the window is closed"), like the close button. It did nothing.
+- A change made in ChatGPT's own model picker (model, reasoning effort, speed tier) is no longer offered "Let another tool manage it": that is no other tool, and the hand-off put Codex's whole configuration back to what it was before Superba (no Krill models, no Ultrafast). Take over and Keep remain.
+
+### Added
+- ChatGPT's model controls offer the Max reasoning effort with an API key. Desktop app 26.1106 shows only the efforts of its "Available reasoning efforts" setting (Settings → General), whose default leaves Max out, and may hide that setting with an API key. When Superba opens ChatGPT with the speed menu on and an API key or personal access token, it adds Max to that setting if it was never set (`enabled-reasoning-efforts` in `.codex-global-state.json`); a choice you made is kept, and a ChatGPT sign-in is left alone.
+
+### Changed
+- The Codex settings page's "Common" list adds the sub-agent settings (multi-agent on/off, sub-agents' default model and reasoning effort, how many run at once, nesting depth), the background terminal's longest wait, background pre-compaction and the end-of-turn compaction threshold, the approvals reviewer (automatic review), the goal token budget, developer instructions and the tool output token limit. The deprecated `features.multi_agent` and `personality` leave it (catalog serial 27).
+
 ## [0.1.1-alpha.19] - 2026-11-13
 
 ### Fixed
