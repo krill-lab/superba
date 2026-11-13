@@ -41,6 +41,7 @@ pub mod package;
 pub mod procs;
 pub mod project_restore;
 pub mod quit;
+mod reasoning_efforts;
 pub mod renderer;
 pub mod runnable;
 pub mod speedmenu;
@@ -889,6 +890,9 @@ impl AppController for DesktopAppController {
         let log = self.launch_log_path();
         let state_backups = self.ctx.data_dir.app_state_backups_dir();
         let app_state = self.ctx.data_dir.app_state_dir();
+        // With the speed menu, a token sign-in also gets Max in the app's
+        // reasoning efforts (see `reasoning_efforts`).
+        let offer_max = speed_plan.is_some();
         // LaunchServices may take several seconds to expose the new main pid.
         let spawned = tokio::task::spawn_blocking(move || {
             // After the running-instance check, before any platform starts the
@@ -902,6 +906,9 @@ impl AppController for DesktopAppController {
             if let Some(home) = &state_home {
                 account_state::seed(home, &state_backups, &app_state);
                 onboarding::seed(home);
+                if offer_max {
+                    reasoning_efforts::seed(home);
+                }
             }
             launch::spawn(&spawn_spec, &spawn_install, Some(&log))
         })
