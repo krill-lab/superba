@@ -238,9 +238,43 @@ fn breaker_opens_backs_off_and_recovers() {
     // Probes.
     assert!(h.on_probe(s(206), true, None));
     assert_eq!(h.state(s(206)), LineState::Healthy);
-    assert!(h.on_probe(s(207), false, Some("probe: HTTP 502".into())));
-    assert_eq!(h.state(s(207)), LineState::Open);
+    // One failed probe of a closed line only makes it suspect: it keeps
+    // serving and is probed again 1.5 s later.
+    assert!(!h.on_probe(s(207), false, Some("probe: HTTP 502".into())));
+    assert_eq!(h.state(s(207)), LineState::Healthy);
     assert_eq!(h.last_error(), Some("probe: HTTP 502"));
+    assert!(!h.recheck_due(s(207)));
+    assert!(h.recheck_due(s(209)));
+    // The second failure in a row opens it.
+    assert!(h.on_probe(s(209), false, Some("probe: HTTP 502".into())));
+    assert_eq!(h.state(s(209)), LineState::Open);
+    assert!(!h.recheck_due(s(300)));
+    // A failed probe of an open (half-open) line opens it again at once.
+    assert!(h.on_probe(s(300), true, None));
+    assert!(!h.on_probe(s(301), false, None));
+    assert!(h.on_probe(s(303), false, Some("probe: connect timeout".into())));
+    h.on_hard_failure(s(304), "connect failed");
+    assert!(!h.on_probe(s(400), false, None), "half-open: no transition");
+    assert_eq!(h.state(s(400)), LineState::Open);
+    // A suspect line that then serves a request is clear again.
+    let mut h = LineHealth::new(BreakerPolicy::default());
+    assert!(!h.on_probe(t0, false, None));
+    h.on_success(s(1), None);
+    assert!(!h.recheck_due(s(5)));
+    assert!(!h.on_probe(s(5), false, None), "suspect again, not open");
+}
+
+#[test]
+fn all_lines_down_keeps_the_backoff_at_its_first_step() {
+    let t0 = Instant::now();
+    let s = |n: u64| t0 + Duration::from_secs(n);
+    let mut h = LineHealth::new(BreakerPolicy::default());
+    h.on_hard_failure(t0, "connect failed"); // 5 s
+    h.on_hard_failure(s(5), "connect failed"); // 10 s
+    h.all_down();
+    h.on_hard_failure(s(15), "connect failed");
+    assert_eq!(h.state(s(19)), LineState::Open);
+    assert_eq!(h.state(s(20)), LineState::HalfOpen, "back to 5 s");
 }
 
 #[test]
@@ -339,10 +373,11 @@ fn candidate_order() {
     topo.ws_only = true;
     topo.open.clear();
     assert_eq!(order(&topo, Some((1, 0))), [(0, 0), (0, 1), (2, 0), (2, 1)]);
-    // Everything open: one attempt at the line that reopens first.
+    // Everything open (this computer's network blipped, most likely): every
+    // line, the soonest to reopen first, ties in priority order.
     topo.ws_only = false;
     topo.open = vec![(0, 0, 9), (0, 1, 4), (1, 0, 7), (2, 0, 4), (2, 1, 8)];
-    assert_eq!(order(&topo, None), [(0, 1)]);
+    assert_eq!(order(&topo, None), [(0, 1), (2, 0), (1, 0), (2, 1), (0, 0)]);
 }
 
 #[test]

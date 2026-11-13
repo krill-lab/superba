@@ -8,12 +8,23 @@
 //!   default). Afterwards the line is half-open: the next request or health probe
 //!   decides; a failure re-opens it with the doubled backoff, a success closes it
 //!   and resets the backoff.
+//! - A failed health probe of a closed line only makes it suspect: the line keeps
+//!   serving and is probed again after [`RECHECK`]; a second failure in a row
+//!   opens it. One blip of this computer's network must not take a good line
+//!   out of service.
+//! - When every line is open at once ([`LineHealth::all_down`]), the cause is
+//!   most likely this computer's network rather than every line together: the
+//!   router probes all of them every few seconds and keeps their backoff at its
+//!   first step (see `probe::health_loop`).
 //!
 //! Pure state over [`Instant`]s passed in, so tests drive it deterministically.
 
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
+
+/// Delay before a suspect line (one failed probe) is probed again.
+pub const RECHECK: Duration = Duration::from_millis(1500);
 
 /// Breaker parameters.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -58,6 +69,8 @@ pub struct LineHealth {
     last_error: Option<String>,
     last_ok: Option<Instant>,
     ttfb_ms: Option<f64>,
+    /// A probe failed while the line was closed: probe again at this time.
+    recheck_at: Option<Instant>,
 }
 
 impl LineHealth {
@@ -71,6 +84,7 @@ impl LineHealth {
             last_error: None,
             last_ok: None,
             ttfb_ms: None,
+            recheck_at: None,
         }
     }
 
@@ -118,6 +132,7 @@ impl LineHealth {
     pub fn on_success(&mut self, now: Instant, ttfb: Option<Duration>) {
         self.consecutive_failures = 0;
         self.open_until = None;
+        self.recheck_at = None;
         self.next_backoff = self.policy.base;
         self.last_ok = Some(now);
         if let Some(t) = ttfb {
@@ -149,17 +164,39 @@ impl LineHealth {
         }
     }
 
-    /// Result of an unauthenticated health probe.
+    /// Result of an unauthenticated health probe. A failure opens an open or
+    /// half-open line again, but a closed line only after a second failed probe
+    /// in a row ([`RECHECK`] apart). Returns true when the breaker opened or
+    /// closed.
     pub fn on_probe(&mut self, now: Instant, alive: bool, detail: Option<String>) -> bool {
         if alive {
             let was_open = self.open_until.is_some();
             self.consecutive_failures = 0;
             self.open_until = None;
+            self.recheck_at = None;
             self.next_backoff = self.policy.base;
             was_open
         } else {
-            self.on_hard_failure(now, detail.unwrap_or_else(|| "health probe failed".into()))
+            let detail = detail.unwrap_or_else(|| "health probe failed".into());
+            if self.open_until.is_none() && self.recheck_at.is_none() {
+                self.last_error = Some(detail);
+                self.recheck_at = Some(now + RECHECK);
+                return false;
+            }
+            self.recheck_at = None;
+            self.on_hard_failure(now, detail)
         }
+    }
+
+    /// A suspect line is due for its second probe at `now`.
+    pub fn recheck_due(&self, now: Instant) -> bool {
+        self.open_until.is_none() && self.recheck_at.is_some_and(|at| at <= now)
+    }
+
+    /// Every line is open: keep the next open period at its first step, so the
+    /// lines come back as soon as this computer's network does.
+    pub fn all_down(&mut self) {
+        self.next_backoff = self.policy.base;
     }
 
     fn open(&mut self, now: Instant) -> bool {

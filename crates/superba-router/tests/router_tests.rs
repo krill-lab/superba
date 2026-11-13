@@ -822,8 +822,15 @@ async fn health_probes_open_dead_lines_at_start() {
     )]);
     cfg.tuning.active_probes = true;
     let r = start(cfg).await;
+    // One failed probe only makes the line suspect; the second, 1.5 s later
+    // (the loop ticks every second), opens it.
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(
+        r.status().await.members[0].lines[0].state,
+        LineState::Healthy
+    );
     let mut st = r.status().await;
-    for _ in 0..50 {
+    for _ in 0..200 {
         if st.members[0].lines[0].state == LineState::Open {
             break;
         }
@@ -848,4 +855,63 @@ async fn health_probes_open_dead_lines_at_start() {
     // The probe was unauthenticated: the fake upstream recorded nothing.
     assert_eq!(up.hits(), 0);
     assert_eq!(route(&r.post(None, BODY).await), "krill/b");
+}
+
+/// A TCP gate in front of `target`: while closed it drops every connection
+/// before an answer (as when this computer's network blips), while open it
+/// relays the bytes.
+async fn gate(target: std::net::SocketAddr) -> (url::Url, Arc<std::sync::atomic::AtomicBool>) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let open = Arc::new(AtomicBool::new(false));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let flag = open.clone();
+    tokio::spawn(async move {
+        loop {
+            let Ok((mut inbound, _)) = listener.accept().await else {
+                return;
+            };
+            if !flag.load(Ordering::SeqCst) {
+                drop(inbound);
+                continue;
+            }
+            tokio::spawn(async move {
+                if let Ok(mut outbound) = tokio::net::TcpStream::connect(target).await {
+                    let _ = tokio::io::copy_bidirectional(&mut inbound, &mut outbound).await;
+                }
+            });
+        }
+    });
+    (url::Url::parse(&format!("http://{addr}/up")).unwrap(), open)
+}
+
+#[tokio::test]
+async fn when_every_line_is_down_a_request_still_tries_each_of_them() {
+    use std::sync::atomic::Ordering;
+    let up = upstream(Mode::Json(200, OK)).await;
+    let (a, _a_open) = gate(up.addr).await;
+    let (b, b_open) = gate(up.addr).await;
+    let cfg = test_config(vec![member(
+        "krill",
+        MemberKind::Krill,
+        false,
+        vec![line("a", a), line("b", b)],
+    )]);
+    let r = start(cfg).await;
+    // The network blips: both lines fail the request and open.
+    let failed = r.post(None, BODY).await;
+    assert!(failed.status().is_server_error(), "{}", failed.status());
+    let st = r.status().await;
+    assert_eq!(st.members[0].lines[0].state, LineState::Open);
+    assert_eq!(st.members[0].lines[1].state, LineState::Open);
+    // It is back for line b while both breakers are still open: the next
+    // request tries a (first to reopen), then b, instead of failing on a alone.
+    b_open.store(true, Ordering::SeqCst);
+    let ok = r.post(None, BODY).await;
+    assert_eq!(ok.status(), 200);
+    assert_eq!(route(&ok), "krill/b");
+    assert_eq!(
+        r.status().await.members[0].lines[1].state,
+        LineState::Healthy
+    );
 }
