@@ -1,8 +1,8 @@
 {
   "index_format": 1,
   "catalog_format": 1,
-  "serial": 25,
-  "generated": "2026-11-12",
+  "serial": 27,
+  "generated": "2026-11-13",
   "repo": "openai/codex",
   "latest": "0.167.2",
   "versions": [
@@ -242,8 +242,8 @@
   "files": [
     {
       "path": "curation.toml",
-      "sha256": "e0c5dcdeb1bfc1fe6772ce8cbf439a5b9b6965097b8954ac1b38d96583128beb",
-      "size": 6907
+      "sha256": "caa791d7ad75e2db664eb3df5b5392cff20630113aceb077edf6d572e83ec1c1",
+      "size": 7283
     },
     {
       "path": "dist/codex-0.155.0.json",
