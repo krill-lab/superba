@@ -4,9 +4,11 @@
 //! 2. The pinned member's other lines, in priority order.
 //! 3. The other members in priority order, each with its lines in order.
 //!
-//! Open lines are skipped. When every eligible line is open, the one whose backoff
-//! ends first is tried anyway, so a request is never refused without at least one
-//! attempt (the breakers may be stale).
+//! Open lines are skipped. When every eligible line is open, all of them are
+//! tried anyway, the one whose backoff ends first first: every line failing at
+//! once is most often this computer's network blipping, and the breakers are
+//! stale as soon as it is back, so a request is refused only after each line
+//! failed it.
 
 use std::time::Instant;
 
@@ -70,9 +72,7 @@ pub fn candidates(topo: &dyn Topology, pin: Option<Pin>, now: Instant) -> Vec<Ca
     if !available.is_empty() {
         return available;
     }
+    // Stable: lines that reopen together keep the priority order.
+    order.sort_by_key(|c| topo.reopens_at(c.member, c.line));
     order
-        .into_iter()
-        .min_by_key(|c| topo.reopens_at(c.member, c.line))
-        .into_iter()
-        .collect()
 }

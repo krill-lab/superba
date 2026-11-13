@@ -85,6 +85,15 @@ pub fn tool_name(cx: &Cx<'_>, source: &ChangeSource) -> String {
     }
 }
 
+/// Whether to offer the hand-off for a change from `source`. Not for the
+/// Codex app's own model picker (model, reasoning effort, speed tier): that
+/// is no other tool, and handing off would put the whole configuration back
+/// to what it was before Superba (user report: the speed menu's tier change
+/// banner, then no Krill models).
+pub fn offers_hand_off(source: &ChangeSource) -> bool {
+    !matches!(source, ChangeSource::CodexApp)
+}
+
 /// The hand-off button: "Let <tool> manage it" (`key` with `{tool}`), or
 /// "Keep my edits, stop managing" for the user's own edit in Superba's file
 /// editor (GitHub issue 9).
@@ -209,10 +218,11 @@ pub fn show(ctx: &egui::Context, cx: &Cx<'_>, state: &mut ExternalDialog, out: &
                 close = true;
             }
             let hand_off = hand_off_label(cx, &change.source, "external.hand_off");
-            if ui
-                .add(Button::new(hand_off).enabled(!cx.busy))
-                .on_hover_text(tr.t("external.hand_off_tip"))
-                .clicked()
+            if offers_hand_off(&change.source)
+                && ui
+                    .add(Button::new(hand_off).enabled(!cx.busy))
+                    .on_hover_text(tr.t("external.hand_off_tip"))
+                    .clicked()
             {
                 out.push(Action::Plan(Box::new(hand_off_request(&change.source))));
                 close = true;

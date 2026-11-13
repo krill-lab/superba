@@ -854,6 +854,11 @@ pub struct ModelsView {
     /// profile (through a catalog file), including PAT profiles. `false` for
     /// the official login.
     pub per_model: bool,
+    /// Krill, not routed: the catalog file keeps only Codex's models (see
+    /// `superba_switch::models::krill_keeps`), so a model named only by the
+    /// standard `/v1/models` list is never "missing" from it.
+    #[serde(default)]
+    pub codex_only: bool,
     /// What Codex reads now, when this profile is the applied one (to tell
     /// saved values from applied ones); `None` for other profiles.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -888,6 +893,9 @@ impl ModelsView {
             && self.router_catalog.is_none()
             && matches!(self.list.source, ModelListSource::Upstream { .. })
             && spec.supported_in_api
+            && !(self.codex_only
+                && spec.raw.is_none()
+                && !spec.lists.contains(&ModelListKind::Codex))
             && matches!(
                 spec.visibility,
                 ModelVisibility::List | ModelVisibility::Other

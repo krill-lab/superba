@@ -2,7 +2,12 @@
 //! answers 401 quickly; any answer other than 502-504 or an edge interception
 //! means the line is reachable). All lines are probed at start; afterwards a line
 //! is probed when its open breaker turns half-open, so a dead line is retried with
-//! the breaker's exponential backoff even when no request arrives.
+//! the breaker's exponential backoff even when no request arrives, and a suspect
+//! line (one failed probe, see [`crate::health`]) is probed again shortly after.
+//! When every line is open at once, all of them are probed every
+//! [`ALL_DOWN_PROBE`] with the backoff held at its first step: that is this
+//! computer's network far more often than every line failing together, and the
+//! lines must come back as soon as it does.
 //!
 //! A probe only proves a line dead when it cannot connect (DNS, TCP, TLS), times
 //! out, or gets 502-504 / an edge interception. A peer that accepts the
@@ -25,6 +30,9 @@ use crate::status::RouteEventKind;
 
 /// How often the background task looks for half-open lines.
 const TICK: Duration = Duration::from_secs(1);
+
+/// How often every line is probed while all of them are open.
+pub const ALL_DOWN_PROBE: Duration = Duration::from_secs(2);
 
 /// Probe one line and update its health.
 pub(crate) async fn probe_line(
@@ -106,6 +114,7 @@ pub(crate) async fn health_loop(shared: Arc<Shared>) {
     // Long member outages go to the notification channels (GH#12); only a
     // router with a data directory (the service, not in-memory tests).
     let mut outages = crate::outage::OutageTracker::default();
+    let mut all_down_probed: Option<Instant> = None;
     let data_dir = shared
         .paths
         .as_ref()
@@ -126,9 +135,27 @@ pub(crate) async fn health_loop(shared: Arc<Shared>) {
             continue;
         }
         let now = Instant::now();
+        let all_down = all_lines_open(&generation, now);
+        if all_down {
+            for m in &generation.members {
+                for l in &m.lines {
+                    lock(&l.health).all_down();
+                }
+            }
+        }
+        let probe_all_now =
+            all_down && all_down_probed.is_none_or(|at| now.duration_since(at) >= ALL_DOWN_PROBE);
+        if probe_all_now {
+            all_down_probed = Some(now);
+        } else if !all_down {
+            all_down_probed = None;
+        }
         for (mi, m) in generation.members.iter().enumerate() {
             for (li, l) in m.lines.iter().enumerate() {
-                let due = lock(&l.health).open_until().is_some_and(|u| u <= now);
+                let due = probe_all_now || {
+                    let h = lock(&l.health);
+                    h.open_until().is_some_and(|u| u <= now) || h.recheck_due(now)
+                };
                 if due && !l.probing.load(Ordering::Acquire) {
                     let s = shared.clone();
                     let g = generation.clone();
@@ -137,4 +164,18 @@ pub(crate) async fn health_loop(shared: Arc<Shared>) {
             }
         }
     }
+}
+
+/// Every line of every member is open at `now` (and there is at least one).
+fn all_lines_open(generation: &Generation, now: Instant) -> bool {
+    let mut any = false;
+    for m in &generation.members {
+        for l in &m.lines {
+            if lock(&l.health).is_available(now) {
+                return false;
+            }
+            any = true;
+        }
+    }
+    any
 }

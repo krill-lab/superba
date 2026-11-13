@@ -152,6 +152,7 @@ pub fn fake_v3() -> FakeV3 {
             catalog_file: CatalogFileStatus::NotNeeded,
             notes: Vec::new(),
             per_model: true,
+            codex_only: false,
             applied: None,
         },
         model_edits: Vec::new(),

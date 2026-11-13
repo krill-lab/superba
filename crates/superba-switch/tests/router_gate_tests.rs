@@ -182,6 +182,36 @@ async fn router_globals_are_folded_into_live_entries_not_global_codex_keys() {
 }
 
 #[tokio::test]
+async fn with_the_speed_menu_a_routed_codex_gets_the_members_models_in_a_catalog_file() {
+    // Codex signs in to the router with an API key and never fetches the
+    // router's catalog: the app would list only its bundled models.
+    let (w, sw) = users_state().await;
+    w.profiles.set.lock().unwrap().settings.app_speed_menu = true;
+    let plan = sw.plan(router_on_request()).await.unwrap();
+    assert!(!plan.is_blocked(), "{:?}", plan.primary);
+    let desired = plan.config.as_ref().unwrap().desired.as_ref().unwrap();
+    assert!(
+        desired.model_catalog.is_some(),
+        "a catalog file from the members' lists"
+    );
+    assert!(desired.model.context_window.is_none());
+    // A file that cannot be made does not block router mode.
+    *w.app.preflight_error.lock().unwrap() = Some(superba_core::Error::parse(
+        "model_catalog_json",
+        "missing field `base_instructions`",
+    ));
+    let plan = sw.plan(router_on_request()).await.unwrap();
+    assert!(!plan.is_blocked(), "{:?}", plan.primary);
+    let desired = plan.config.as_ref().unwrap().desired.as_ref().unwrap();
+    assert!(desired.model_catalog.is_none());
+    assert!(
+        plan.warnings
+            .iter()
+            .any(|n| n.text.key == "switch.models.menu_catalog_later")
+    );
+}
+
+#[tokio::test]
 async fn a_krill_member_with_its_key_turns_router_mode_on_with_a_local_pat() {
     let (w, sw) = users_state().await;
     let set = sw.profile_set().await.unwrap();

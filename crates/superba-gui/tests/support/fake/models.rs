@@ -324,6 +324,7 @@ pub fn view_for(profile: &Profile, site: &Site, now: Timestamp) -> ModelsView {
         catalog_file: CatalogFileStatus::NotNeeded,
         notes,
         per_model: !official,
+        codex_only: false,
         applied: None,
     }
 }

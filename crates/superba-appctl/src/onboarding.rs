@@ -32,6 +32,28 @@ pub(crate) fn seed(home: &CodexHome) {
 
 /// Only a missing flag is ours to seed; even `false` belongs to the app.
 pub(crate) fn ensure_completed(home: &CodexHome) -> Result<()> {
+    edit_global_state(home, |object| {
+        let atoms = object
+            .entry(ATOMS)
+            .or_insert_with(|| Value::Object(Default::default()))
+            .as_object_mut()
+            .ok_or_else(|| Error::invalid("desktop persisted atom state is not an object"))?;
+        if atoms.contains_key(COMPLETED) {
+            return Ok(false);
+        }
+        atoms.insert(COMPLETED.into(), Value::Bool(true));
+        Ok(true)
+    })
+}
+
+/// Apply `edit` to the top-level object of `<CODEX_HOME>/.codex-global-state.json`
+/// (an empty object when the file is missing) and replace the file atomically
+/// when `edit` returns `true`; `false` leaves the file byte for byte as it was.
+/// An unreadable or non-object file is an error and is left intact.
+pub(crate) fn edit_global_state(
+    home: &CodexHome,
+    edit: impl FnOnce(&mut serde_json::Map<String, Value>) -> Result<bool>,
+) -> Result<()> {
     let path = state_file(&home.global_state_json())?;
     let (mut state, permissions) = match fs::read(&path) {
         Ok(bytes) => {
@@ -58,15 +80,9 @@ pub(crate) fn ensure_completed(home: &CodexHome) -> Result<()> {
     let object = state
         .as_object_mut()
         .ok_or_else(|| Error::invalid("desktop global state is not an object"))?;
-    let atoms = object
-        .entry(ATOMS)
-        .or_insert_with(|| Value::Object(Default::default()))
-        .as_object_mut()
-        .ok_or_else(|| Error::invalid("desktop persisted atom state is not an object"))?;
-    if atoms.contains_key(COMPLETED) {
+    if !edit(object)? {
         return Ok(());
     }
-    atoms.insert(COMPLETED.into(), Value::Bool(true));
 
     // preserve_order keeps all existing keys in place, including unknown ones.
     let bytes = serde_json::to_vec(&state)

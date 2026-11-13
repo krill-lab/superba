@@ -1930,6 +1930,17 @@ impl SuperbaApp {
     // -------------------------------------------------------------------
 
     fn keyboard(&mut self, ctx: &egui::Context) {
+        // Cmd+W closes the window like its close button (the close request
+        // goes through `tray::close`: hide into the menu bar or quit). The
+        // window draws its own title bar and winit's default macOS menu has
+        // no "Close Window" item, so nothing else maps the key. Even with a
+        // dialog open, as the close button.
+        if cfg!(target_os = "macos") {
+            let close = egui::KeyboardShortcut::new(egui::Modifiers::MAC_CMD, egui::Key::W);
+            if ctx.input_mut(|i| i.consume_shortcut(&close)) {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+        }
         if self.pages.superba.storage.busy() {
             return;
         }

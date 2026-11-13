@@ -1610,7 +1610,9 @@ fn choices(
                         }
                         let hand_off =
                             crate::external::hand_off_label(cx, source, "banner.conflict.hand_off");
-                        if ui.add(Button::new(hand_off).small()).clicked() {
+                        if crate::external::offers_hand_off(source)
+                            && ui.add(Button::new(hand_off).small()).clicked()
+                        {
                             flow.request(crate::external::hand_off_request(source), now);
                         }
                         if auth.is_none()
