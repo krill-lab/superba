@@ -534,9 +534,13 @@ fn member_row(
         ui.spacing_mut().item_spacing.y = space::XS;
         ui.add(
             egui::Label::new(Text::body(
+                // A disabled line gets no request: not part of the order.
                 crate::pages::shared::priority_text(
                     cx.tr,
-                    m.lines.iter().map(|l| line_name(&l.id)),
+                    m.lines
+                        .iter()
+                        .filter(|l| l.health != LineHealth::Disabled)
+                        .map(|l| line_name(&l.id)),
                 ),
                 cx.pal,
             ))
