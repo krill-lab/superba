@@ -1,15 +1,15 @@
 {
   "catalog_format": 1,
-  "codex_version": "0.170.0-alpha.2",
+  "codex_version": "0.168.0",
   "source": {
     "repo": "openai/codex",
-    "tag": "rust-v0.170.0-alpha.2",
-    "commit": "1d787b3c4eca3050e7fa27c90927aae0d3ab4eda",
-    "prerelease": true,
+    "tag": "rust-v0.168.0",
+    "commit": "9480ec100c3edee9fc69172e8e80a4730444094d",
+    "prerelease": false,
     "files": {
-      "codex-rs/core/config.schema.json": "b2de022d8068bbde702b50f0d9a57d6a92672dc4",
+      "codex-rs/core/config.schema.json": "321a7801d56882858e926ee5322fbcdbfc05d1dc",
       "codex-rs/features/src/legacy.rs": "3e6df58ed1852665c58c3173550d18dbe43f2d06",
-      "codex-rs/features/src/lib.rs": "6aa0a6e88b934476a11909d25b0303d8806fd5d9"
+      "codex-rs/features/src/lib.rs": "1b1c0cbf3d1cdb4db9637b2322d198bd70e38bb9"
     }
   },
   "config_keys": [
@@ -633,6 +633,22 @@
         "string"
       ],
       "description": "Experimental replacement for the history-retrieval instructions when history tools and Apps are enabled. Omitted or blank values use the built-in prompt."
+    },
+    {
+      "path": "auto_review.experimental_policy_template",
+      "kind": "string",
+      "types": [
+        "string"
+      ],
+      "description": "Experimental full Guardian prompt template containing the tenant policy placeholder."
+    },
+    {
+      "path": "auto_review.extra_policy",
+      "kind": "string",
+      "types": [
+        "string"
+      ],
+      "description": "Additional policy text inserted into the Guardian template's `{{ extra_policy }}` slot."
     },
     {
       "path": "auto_review.policy",
@@ -1684,13 +1700,6 @@
       ]
     },
     {
-      "path": "features.daybreak_program_propagation",
-      "kind": "boolean",
-      "types": [
-        "boolean"
-      ]
-    },
-    {
       "path": "features.default_mode_request_user_input",
       "kind": "boolean",
       "types": [
@@ -1811,13 +1820,6 @@
     },
     {
       "path": "features.fast_mode",
-      "kind": "boolean",
-      "types": [
-        "boolean"
-      ]
-    },
-    {
-      "path": "features.gateway_setup_wizard",
       "kind": "boolean",
       "types": [
         "boolean"
@@ -2135,16 +2137,6 @@
       "under_map": true
     },
     {
-      "path": "features.guardianv2.sync_elastic_sections.<name>.nested_tool_names",
-      "kind": "array",
-      "types": [
-        "array"
-      ],
-      "items": "string",
-      "description": "Exact Code Mode tool names for the transcript_selected_exec_results section.",
-      "under_map": true
-    },
-    {
       "path": "features.guardianv2.thread_context",
       "kind": "boolean",
       "types": [
@@ -2374,20 +2366,6 @@
       ]
     },
     {
-      "path": "features.incremental_tools_legacy",
-      "kind": "boolean",
-      "types": [
-        "boolean"
-      ]
-    },
-    {
-      "path": "features.incremental_tools_legacy_gcp",
-      "kind": "boolean",
-      "types": [
-        "boolean"
-      ]
-    },
-    {
       "path": "features.instant_interrupt",
       "kind": "boolean",
       "types": [
@@ -2452,13 +2430,6 @@
     },
     {
       "path": "features.mcp_connection_sharing",
-      "kind": "boolean",
-      "types": [
-        "boolean"
-      ]
-    },
-    {
-      "path": "features.mcp_lazy_stdio_startup",
       "kind": "boolean",
       "types": [
         "boolean"
@@ -2732,13 +2703,6 @@
     },
     {
       "path": "features.multi_env_copy_file",
-      "kind": "boolean",
-      "types": [
-        "boolean"
-      ]
-    },
-    {
-      "path": "features.multi_environment_mcp",
       "kind": "boolean",
       "types": [
         "boolean"
@@ -5327,7 +5291,7 @@
         "object"
       ],
       "description": "Optional command whose exported credentials replace the AWS SDK credential chain.",
-      "definition": "CredentialExportConfig",
+      "definition": "AwsCredentialExportConfig",
       "under_map": true
     },
     {
@@ -5494,14 +5458,13 @@
     },
     {
       "path": "model_providers.<name>.gateway_oauth",
-      "kind": "union",
+      "kind": "table",
       "types": [
         "object"
       ],
-      "description": "Gateway access token from OAuth or a credential export command.",
+      "description": "Secondary OAuth credentials required by the provider's gateway.",
       "definition": "GatewayOAuthConfig",
-      "under_map": true,
-      "discriminator": "<branch>"
+      "under_map": true
     },
     {
       "path": "model_providers.<name>.gateway_oauth.authorization_url",
@@ -5509,10 +5472,7 @@
       "types": [
         "string"
       ],
-      "under_map": true,
-      "variant_of": [
-        "model_providers.<name>.gateway_oauth:#0"
-      ]
+      "under_map": true
     },
     {
       "path": "model_providers.<name>.gateway_oauth.client_id",
@@ -5520,10 +5480,7 @@
       "types": [
         "string"
       ],
-      "under_map": true,
-      "variant_of": [
-        "model_providers.<name>.gateway_oauth:#0"
-      ]
+      "under_map": true
     },
     {
       "path": "model_providers.<name>.gateway_oauth.credentials_store",
@@ -5543,10 +5500,7 @@
       ],
       "description": "Where Codex stores this gateway's OAuth credentials. Defaults to the keyring-backed store.",
       "definition": "OAuthCredentialsStore",
-      "under_map": true,
-      "variant_of": [
-        "model_providers.<name>.gateway_oauth:#0"
-      ]
+      "under_map": true
     },
     {
       "path": "model_providers.<name>.gateway_oauth.delivery",
@@ -5563,11 +5517,7 @@
       "description": "Omit to send the gateway token via the Authorization header",
       "definition": "GatewayOAuthDelivery",
       "under_map": true,
-      "discriminator": "kind",
-      "variant_of": [
-        "model_providers.<name>.gateway_oauth:#0",
-        "model_providers.<name>.gateway_oauth:#1"
-      ]
+      "discriminator": "kind"
     },
     {
       "path": "model_providers.<name>.gateway_oauth.delivery.kind",
@@ -5619,18 +5569,6 @@
       ]
     },
     {
-      "path": "model_providers.<name>.gateway_oauth.device_authorization_url",
-      "kind": "string",
-      "types": [
-        "string"
-      ],
-      "description": "Optional device endpoint used when the terminal cannot open a browser for gateway sign-in.",
-      "under_map": true,
-      "variant_of": [
-        "model_providers.<name>.gateway_oauth:#0"
-      ]
-    },
-    {
       "path": "model_providers.<name>.gateway_oauth.redirect_port",
       "kind": "integer",
       "types": [
@@ -5638,10 +5576,7 @@
       ],
       "format": "uint16",
       "minimum": 0.0,
-      "under_map": true,
-      "variant_of": [
-        "model_providers.<name>.gateway_oauth:#0"
-      ]
+      "under_map": true
     },
     {
       "path": "model_providers.<name>.gateway_oauth.resource",
@@ -5649,10 +5584,7 @@
       "types": [
         "string"
       ],
-      "under_map": true,
-      "variant_of": [
-        "model_providers.<name>.gateway_oauth:#0"
-      ]
+      "under_map": true
     },
     {
       "path": "model_providers.<name>.gateway_oauth.scopes",
@@ -5663,10 +5595,7 @@
       "items": "string",
       "default": [],
       "default_source": "schema",
-      "under_map": true,
-      "variant_of": [
-        "model_providers.<name>.gateway_oauth:#0"
-      ]
+      "under_map": true
     },
     {
       "path": "model_providers.<name>.gateway_oauth.token_url",
@@ -5674,66 +5603,7 @@
       "types": [
         "string"
       ],
-      "under_map": true,
-      "variant_of": [
-        "model_providers.<name>.gateway_oauth:#0"
-      ]
-    },
-    {
-      "path": "model_providers.<name>.gateway_oauth.credential_export",
-      "kind": "table",
-      "types": [
-        "object"
-      ],
-      "description": "Command that prints a gateway access token.",
-      "definition": "CredentialExportConfig",
-      "under_map": true,
-      "variant_of": [
-        "model_providers.<name>.gateway_oauth:#1"
-      ]
-    },
-    {
-      "path": "model_providers.<name>.gateway_oauth.credential_export.args",
-      "kind": "array",
-      "types": [
-        "array"
-      ],
-      "items": "string",
-      "default": [],
-      "default_source": "schema",
-      "description": "Arguments passed to the credential export command.",
-      "under_map": true,
-      "variant_of": [
-        "model_providers.<name>.gateway_oauth:#1"
-      ]
-    },
-    {
-      "path": "model_providers.<name>.gateway_oauth.credential_export.command",
-      "kind": "string",
-      "types": [
-        "string"
-      ],
-      "description": "Executable to invoke directly, without a shell.",
-      "under_map": true,
-      "variant_of": [
-        "model_providers.<name>.gateway_oauth:#1"
-      ]
-    },
-    {
-      "path": "model_providers.<name>.gateway_oauth.credential_export.timeout_ms",
-      "kind": "integer",
-      "types": [
-        "integer"
-      ],
-      "format": "uint64",
-      "minimum": 1.0,
-      "default": 30000,
-      "default_source": "schema",
-      "description": "Maximum time to wait for the credential export command to complete.",
-      "under_map": true,
-      "variant_of": [
-        "model_providers.<name>.gateway_oauth:#1"
-      ]
+      "under_map": true
     },
     {
       "path": "model_providers.<name>.http_headers",
@@ -8194,16 +8064,6 @@
       "description": "Generate automatic conversation recaps when the terminal is unfocused. Defaults to `true`. Disabling this leaves `/recap` available on demand."
     },
     {
-      "path": "tui.collapse_turn_details",
-      "kind": "boolean",
-      "types": [
-        "boolean"
-      ],
-      "default": false,
-      "default_source": "schema",
-      "description": "Summarize tool calls and collapse completed turns in the full-screen transcript. Defaults to `false`."
-    },
-    {
       "path": "tui.copy_on_select",
       "kind": "enum",
       "types": [
@@ -8432,7 +8292,6 @@
         "global": {
           "change_host": null,
           "clear_terminal": null,
-          "close_sidebar_tab": null,
           "copy": null,
           "equalize_pane_widths": null,
           "find_transcript": null,
@@ -8441,7 +8300,6 @@
           "focus_pane_left": null,
           "focus_pane_right": null,
           "focus_sidebar_content": null,
-          "focus_sidebar_tabs": null,
           "hide_pane": null,
           "leader": null,
           "maximize_pane_width": null,
@@ -8454,8 +8312,6 @@
           "queue": null,
           "resize_panes": null,
           "select_transcript": null,
-          "sidebar_down": null,
-          "sidebar_up": null,
           "submit": null,
           "toggle_fast_mode": null,
           "toggle_pane_zoom": null,
@@ -9212,7 +9068,6 @@
       "schema_default": {
         "change_host": null,
         "clear_terminal": null,
-        "close_sidebar_tab": null,
         "copy": null,
         "equalize_pane_widths": null,
         "find_transcript": null,
@@ -9221,7 +9076,6 @@
         "focus_pane_left": null,
         "focus_pane_right": null,
         "focus_sidebar_content": null,
-        "focus_sidebar_tabs": null,
         "hide_pane": null,
         "leader": null,
         "maximize_pane_width": null,
@@ -9234,8 +9088,6 @@
         "queue": null,
         "resize_panes": null,
         "select_transcript": null,
-        "sidebar_down": null,
-        "sidebar_up": null,
         "submit": null,
         "toggle_fast_mode": null,
         "toggle_pane_zoom": null,
@@ -9264,16 +9116,6 @@
         "array"
       ],
       "description": "Clear the terminal UI.",
-      "definition": "KeybindingsSpec"
-    },
-    {
-      "path": "tui.keymap.global.close_sidebar_tab",
-      "kind": "union",
-      "types": [
-        "string",
-        "array"
-      ],
-      "description": "Close the active sidebar tab.",
       "definition": "KeybindingsSpec"
     },
     {
@@ -9354,16 +9196,6 @@
         "array"
       ],
       "description": "Focus the side conversation, or hide it when already focused.",
-      "definition": "KeybindingsSpec"
-    },
-    {
-      "path": "tui.keymap.global.focus_sidebar_tabs",
-      "kind": "union",
-      "types": [
-        "string",
-        "array"
-      ],
-      "description": "Open the sidebar tab chooser.",
       "definition": "KeybindingsSpec"
     },
     {
@@ -9484,26 +9316,6 @@
         "array"
       ],
       "description": "Enter keyboard selection mode for the transcript.",
-      "definition": "KeybindingsSpec"
-    },
-    {
-      "path": "tui.keymap.global.sidebar_down",
-      "kind": "union",
-      "types": [
-        "string",
-        "array"
-      ],
-      "description": "Switch to the next sidebar tab.",
-      "definition": "KeybindingsSpec"
-    },
-    {
-      "path": "tui.keymap.global.sidebar_up",
-      "kind": "union",
-      "types": [
-        "string",
-        "array"
-      ],
-      "description": "Switch to the previous sidebar tab.",
       "definition": "KeybindingsSpec"
     },
     {
@@ -11314,16 +11126,16 @@
       "key": "code_mode_host_grpc",
       "config_path": "features.code_mode_host_grpc",
       "variant": "CodeModeHostGrpc",
-      "stage": "stable",
-      "default_enabled": true,
+      "stage": "under_development",
+      "default_enabled": false,
       "rustdoc": "Use gRPC over stdio for the process-owned code-mode host."
     },
     {
       "key": "code_mode_host_output_truncation",
       "config_path": "features.code_mode_host_output_truncation",
       "variant": "CodeModeHostOutputTruncation",
-      "stage": "stable",
-      "default_enabled": true,
+      "stage": "under_development",
+      "default_enabled": false,
       "rustdoc": "Truncate output in the process-owned code-mode host before sending it to Core."
     },
     {
@@ -11487,14 +11299,6 @@
       "rustdoc": "Automatically start the shared local daemon for eligible interactive launches."
     },
     {
-      "key": "daybreak_program_propagation",
-      "config_path": "features.daybreak_program_propagation",
-      "variant": "DaybreakProgramPropagation",
-      "stage": "under_development",
-      "default_enabled": false,
-      "rustdoc": "Capture the saved Daybreak choice for a native helper and its turns."
-    },
-    {
       "key": "default_mode_request_user_input",
       "config_path": "features.default_mode_request_user_input",
       "variant": "DefaultModeRequestUserInput",
@@ -11621,14 +11425,6 @@
       "stage": "stable",
       "default_enabled": true,
       "rustdoc": "Enable Fast mode selection in the TUI and request layer."
-    },
-    {
-      "key": "gateway_setup_wizard",
-      "config_path": "features.gateway_setup_wizard",
-      "variant": "GatewaySetupWizard",
-      "stage": "stable",
-      "default_enabled": false,
-      "rustdoc": "Offer custom gateway setup during TUI sign-in onboarding."
     },
     {
       "key": "gcp_setup_wizard",
@@ -11887,22 +11683,6 @@
       "rustdoc": "Track top-level tool definitions in world state and emit incremental context updates."
     },
     {
-      "key": "incremental_tools_legacy",
-      "config_path": "features.incremental_tools_legacy",
-      "variant": "IncrementalToolsLegacy",
-      "stage": "stable",
-      "default_enabled": false,
-      "rustdoc": "Publish incremental tool declarations on regular Amazon Bedrock Responses."
-    },
-    {
-      "key": "incremental_tools_legacy_gcp",
-      "config_path": "features.incremental_tools_legacy_gcp",
-      "variant": "IncrementalToolsLegacyGcp",
-      "stage": "stable",
-      "default_enabled": true,
-      "rustdoc": "Publish incremental tool declarations on regular GCP Responses."
-    },
-    {
       "key": "instant_interrupt",
       "config_path": "features.instant_interrupt",
       "variant": "InstantInterrupt",
@@ -11987,14 +11767,6 @@
       "rustdoc": "Discover and share eligible local stdio connections across chats."
     },
     {
-      "key": "mcp_lazy_stdio_startup",
-      "config_path": "features.mcp_lazy_stdio_startup",
-      "variant": "McpLazyStdioStartup",
-      "stage": "under_development",
-      "default_enabled": false,
-      "rustdoc": "Defer optional stdio server startup in regular chats with a warm tool catalog."
-    },
-    {
       "key": "mcp_oauth_refresh_coordination",
       "config_path": "features.mcp_oauth_refresh_coordination",
       "variant": "McpOAuthRefreshCoordination",
@@ -12075,14 +11847,6 @@
       "rustdoc": "Copy files between explicitly selected execution environments."
     },
     {
-      "key": "multi_environment_mcp",
-      "config_path": "features.multi_environment_mcp",
-      "variant": "MultiEnvironmentMcp",
-      "stage": "under_development",
-      "default_enabled": false,
-      "rustdoc": "Keep same-named HTTP servers discovered on different executors separate."
-    },
-    {
       "key": "network_proxy",
       "config_path": "features.network_proxy",
       "variant": "NetworkProxy",
@@ -12147,9 +11911,9 @@
       "key": "plugin_discovery_prefetch",
       "config_path": "features.plugin_discovery_prefetch",
       "variant": "PluginDiscoveryPrefetch",
-      "stage": "removed",
-      "default_enabled": false,
-      "rustdoc": "Removed compatibility flag for plugin discovery prefetch."
+      "stage": "stable",
+      "default_enabled": true,
+      "rustdoc": "Prefetch the plugin directory, featured plugins, and recommendations at app-server startup. Inventory-only hosts can disable this. Legacy suggestions read the cached directory."
     },
     {
       "key": "plugin_hooks",
@@ -12643,7 +12407,7 @@
       "variant": "TuiExtensionsStatusLine",
       "stage": "under_development",
       "default_enabled": false,
-      "rustdoc": "Enable experimental MCP status line providers."
+      "rustdoc": "Render the configured status line through the experimental TUI Extensions renderer."
     },
     {
       "key": "tui_multi_backend",
@@ -12729,8 +12493,8 @@
       "key": "untrusted_as_tool_output",
       "config_path": "features.untrusted_as_tool_output",
       "variant": "UntrustedAsToolOutput",
-      "stage": "stable",
-      "default_enabled": true,
+      "stage": "under_development",
+      "default_enabled": false,
       "rustdoc": "Render client-supplied untrusted context as standalone named tool outputs."
     },
     {
@@ -12896,7 +12660,6 @@
       "js_repl",
       "js_repl_tools_only",
       "personality",
-      "plugin_discovery_prefetch",
       "plugin_hooks",
       "realtime_conversation",
       "remote_compaction_v2",
@@ -12937,9 +12700,9 @@
     "AuthCredentialsStoreMode": "Determine where Codex should store CLI auth credentials.",
     "AutoCompactTokenLimitScope": "Selects which part of the active context is charged against `model_auto_compact_token_limit`.",
     "AwsAuthRefreshConfig": "Command used to refresh AWS credentials for a model provider.",
+    "AwsCredentialExportConfig": "Command used to export AWS signing credentials for a model provider.",
     "CloudToml": "Cloud-owned feature settings.",
     "CopyOnSelect": "When mouse selections are copied on release.",
-    "CredentialExportConfig": "Command used to export credentials for a model provider.",
     "CredentialProviderConfig": "Declarative description of an environment-backed credential family.",
     "CurrentTimeReminderDeliveryMode": "Which inference boundaries may receive current-time reminders.",
     "ExternalConfigMigrationPrompts": "Settings for notices we display to users via the tui and app-server clients (primarily the Codex IDE extension). NOTE: these are different from notifications - notices are warnings, NUX screens, acknowledgements, etc.",
