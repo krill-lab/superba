@@ -83,7 +83,10 @@ fn mixed_models_leave_out_media_models_and_get_readable_names() {
     ] {
         assert!(!is_chat_model(media), "{media}");
     }
-    assert_eq!(display_name_of("deepseek-v4.1-flash"), "DeepSeek V4.1 Flash");
+    assert_eq!(
+        display_name_of("deepseek-v4.1-flash"),
+        "DeepSeek V4.1 Flash"
+    );
     assert_eq!(display_name_of("kimi-k3.1-pro"), "Kimi K3.1 Pro");
     assert_eq!(display_name_of("gpt-6.1-sol"), "GPT 6.1 Sol");
     assert_eq!(display_name_of("GLM-5.3"), "GLM-5.3");

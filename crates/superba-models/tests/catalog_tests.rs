@@ -670,7 +670,10 @@ fn prices_are_found_whatever_the_case_and_for_dated_snapshots() {
     );
     assert_eq!(price_names("gpt-x-20261017"), ["gpt-x-20261017", "gpt-x"]);
     // Not a date: kept whole (a version, a size).
-    assert_eq!(price_names("grok-4.20-0309-reasoning"), ["grok-4.20-0309-reasoning"]);
+    assert_eq!(
+        price_names("grok-4.20-0309-reasoning"),
+        ["grok-4.20-0309-reasoning"]
+    );
     assert_eq!(price_names("qwen3-coder-2507"), ["qwen3-coder-2507"]);
     assert_eq!(price_names("model-1999"), ["model-1999"]);
 }

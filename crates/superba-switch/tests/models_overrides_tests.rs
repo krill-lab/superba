@@ -635,7 +635,10 @@ async fn mixed_models_add_the_providers_chat_models_next_to_codex_entries() {
     };
     // Krill's own entry is kept whole, not rebuilt from the bundled one.
     let native = krill_native(false).models[0].raw.clone().unwrap();
-    assert_eq!(entry("gpt-6-astra")["service_tiers"], native["service_tiers"]);
+    assert_eq!(
+        entry("gpt-6-astra")["service_tiers"],
+        native["service_tiers"]
+    );
     let deepseek = entry("deepseek-v4.1-flash");
     assert_eq!(deepseek["display_name"], "DeepSeek V4.1 Flash");
     // Every reasoning effort Codex offers, with its default: the efforts of
@@ -664,11 +667,14 @@ async fn mixed_models_add_the_providers_chat_models_next_to_codex_entries() {
     assert_eq!(deepseek["visibility"], "list");
     // The Models page reads the lists as the switch does: nothing missing.
     let v = view(&sw).await;
-    assert!(v.catalog_changes().missing.is_empty(), "{:?}", v.catalog_changes());
+    assert!(
+        v.catalog_changes().missing.is_empty(),
+        "{:?}",
+        v.catalog_changes()
+    );
 
     // Codex's models only: the provider's other models leave the file.
-    w.profiles.set.lock().unwrap().settings.router.catalog.mode =
-        superba_core::CatalogMode::Codex;
+    w.profiles.set.lock().unwrap().settings.router.catalog.mode = superba_core::CatalogMode::Codex;
     let plan = switch(&sw).await;
     write_config(&w, &plan);
     if let Some(path) = plan

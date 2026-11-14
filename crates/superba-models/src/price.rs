@@ -128,7 +128,8 @@ fn without_date_suffix(model: &str) -> Option<&str> {
         // A four-digit tail is a date only when it reads as one (MMDD).
         if tail.len() == 4 {
             let (mm, dd) = (&tail[..2], &tail[2..]);
-            let ok = matches!(mm.parse::<u8>(), Ok(1..=12)) && matches!(dd.parse::<u8>(), Ok(1..=31));
+            let ok =
+                matches!(mm.parse::<u8>(), Ok(1..=12)) && matches!(dd.parse::<u8>(), Ok(1..=31));
             if !ok {
                 return None;
             }
