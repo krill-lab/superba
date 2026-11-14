@@ -5,6 +5,29 @@ All notable changes to Superba are documented here. The format follows
 [Semantic Versioning](https://semver.org/): later releases increment the patch
 number; the minor number changes only for breaking changes.
 
+## [0.1.1] - 2026-11-14
+
+The first stable release since 0.1.0: everything in the 0.1.1 alphas (the entries below give the details), the same code as 0.1.1-alpha.21. Installs on the stable channel update from 0.1.0; installs on the preview channel update from the alphas.
+
+### Breaking
+- Krill and custom-site keys are always written as API keys; personal access token (PAT) mode is gone (alpha.16). A saved PAT profile reads as an API-key profile, and the first start after the upgrade rewrites an applied PAT provider as an API key with the same key.
+
+### Highlights
+- ChatGPT's own speed menu (Standard / Fast / Ultrafast) works with API keys, and its model controls offer Max.
+- "Models in ChatGPT": Codex's own models only, or mixed with the providers' other chat models, flat or per provider through the router, with reasoning efforts, context windows and prices for them.
+- The optional local router: failover across lines and providers, a merged model catalog, protocol conversion between OpenAI Responses, Chat Completions, Anthropic Messages and Gemini, request statistics and a Usage page, and a watchdog that switches Codex back to direct when the router stops. A network blip no longer takes every line down.
+- Claude Code and other coding tools (dsh, opencode, pi, ZCode, WorkBuddy): connection, models, settings, installation and updates.
+- Notifications for finished tasks, approvals and failures through Telegram, Feishu, WeCom, DingTalk, WeChat relays, Bark, ntfy and webhooks.
+- One-click import from the Krill website (`superba://import/v1`, alpha.16), from cc-switch and AI Toolbox, and a hand-off to those tools.
+- Sessions: a session browser, legacy session migration, and recovery of projects the desktop app dropped.
+- Codex settings: the full catalog with Chinese descriptions up to Codex 0.170.0-alpha.2, a "Common" list including sub-agents, background work and compaction, and "New in latest".
+- macOS and Windows packages are signed; Superba updates itself.
+
+### Known issues
+- A ChatGPT conversation that once fell back from WebSocket to HTTP (for example after a mixed model the router serves over HTTP) stays on HTTP until a new conversation or an app restart: Codex keeps that choice for the session.
+- With "Mixed models" on a direct Krill connection, models outside Krill's Codex list go to Krill's Codex endpoint; use the local router if one does not answer there.
+- gemini-4-carbon's price changes on 2026-12-01; this release still has the earlier price.
+
 ## [0.1.1-alpha.21] - 2026-11-14
 
 ### Added
