@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "rev": "2026-10-27",
+  "rev": "2026-11-14",
   "entries": {
     "codex-mini-latest": {
       "input": 1.5,
@@ -1400,6 +1400,83 @@
       ],
       "source": "https://docs.x.ai/developers/models",
       "rev": "2026-10-21"
+    },
+    "deepseek-v4.1-flash": {
+      "input": 0.3,
+      "cached_input": 0.006,
+      "output": 1.2,
+      "windows": [
+        {
+          "label": "off-peak",
+          "start": "10:00",
+          "end": "01:00",
+          "utc_offset_minutes": 0,
+          "input": 0.15,
+          "cached_input": 0.003,
+          "output": 0.6,
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ]
+        },
+        {
+          "label": "off-peak",
+          "start": "04:00",
+          "end": "06:00",
+          "utc_offset_minutes": 0,
+          "input": 0.15,
+          "cached_input": 0.003,
+          "output": 0.6,
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ]
+        },
+        {
+          "label": "off-peak (weekend)",
+          "start": "00:00",
+          "end": "00:00",
+          "utc_offset_minutes": 0,
+          "input": 0.15,
+          "cached_input": 0.003,
+          "output": 0.6,
+          "weekdays": [
+            6,
+            7
+          ]
+        }
+      ],
+      "source": "https://api-docs.deepseek.com/quick_start/pricing/",
+      "rev": "2026-11-14"
+    },
+    "kimi-k3.1-pro": {
+      "input": 2.0,
+      "cached_input": 0.2,
+      "cache_write": 2.0,
+      "cache_write_1h": 4.0,
+      "output": 10.0,
+      "source": "https://platform.kimi.ai/docs/pricing/chat",
+      "rev": "2026-11-14"
+    },
+    "gemini-4-hydrogen": {
+      "input": 1.5,
+      "cached_input": 0.075,
+      "output": 7.5,
+      "source": "https://aistudio.google.com/docs/pricing",
+      "rev": "2026-11-14"
+    },
+    "gemini-4-carbon": {
+      "input": 2.0,
+      "cached_input": 0.1,
+      "output": 10.0,
+      "source": "https://aistudio.google.com/docs/pricing",
+      "rev": "2026-11-14"
     }
   }
 }

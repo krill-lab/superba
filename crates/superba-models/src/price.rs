@@ -94,7 +94,57 @@ pub fn lookup(
             .or_else(|| table.get(slug))
             .cloned()
     };
-    Ok(find(model).or_else(|| crate::split_tier_suffix(model).and_then(|(base, _)| find(base))))
+    let base = |m: &str| find(m).or_else(|| crate::split_tier_suffix(m).and_then(|(b, _)| find(b)));
+    Ok(price_names(model).into_iter().find_map(|m| base(&m)))
+}
+
+/// The names a model's price is looked up under, in order: as written, in
+/// lower case (providers write `GLM-5.3` where the vendor's table has
+/// `glm-5.3`), then without a trailing date snapshot (`deepseek-v4.1-flash-1017`,
+/// `gpt-x-2026-10-17`, `x-20261017`), which costs what its model costs.
+pub fn price_names(model: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut push = |n: String| {
+        if !n.is_empty() && !out.contains(&n) {
+            out.push(n);
+        }
+    };
+    push(model.to_owned());
+    push(model.to_ascii_lowercase());
+    if let Some(undated) = without_date_suffix(model) {
+        push(undated.to_owned());
+        push(undated.to_ascii_lowercase());
+    }
+    out
+}
+
+/// `model` without a trailing date: `-MMDD`, `-YYYYMMDD` or `-YYYY-MM-DD`.
+fn without_date_suffix(model: &str) -> Option<&str> {
+    let digits = |s: &str, n: usize| s.len() == n && s.bytes().all(|b| b.is_ascii_digit());
+    if let Some((head, tail)) = model.rsplit_once('-')
+        && (digits(tail, 4) || digits(tail, 8))
+        && !head.is_empty()
+    {
+        // A four-digit tail is a date only when it reads as one (MMDD).
+        if tail.len() == 4 {
+            let (mm, dd) = (&tail[..2], &tail[2..]);
+            let ok = matches!(mm.parse::<u8>(), Ok(1..=12)) && matches!(dd.parse::<u8>(), Ok(1..=31));
+            if !ok {
+                return None;
+            }
+        }
+        return Some(head);
+    }
+    // -YYYY-MM-DD
+    let b = model.as_bytes();
+    if b.len() > 11 && b[b.len() - 11] == b'-' {
+        let tail = &model[b.len() - 10..];
+        let parts: Vec<&str> = tail.split('-').collect();
+        if parts.len() == 3 && digits(parts[0], 4) && digits(parts[1], 2) && digits(parts[2], 2) {
+            return Some(&model[..b.len() - 11]);
+        }
+    }
+    None
 }
 
 /// The profile's price ratio (1x when unset).
