@@ -218,6 +218,12 @@ pub trait RouterControl: Send + Sync + std::fmt::Debug {
         Err(Error::not_implemented("router catalog"))
     }
 
+    /// The entries the running router publishes to Codex for `client_version`.
+    async fn published_catalog(&self, client_version: &str) -> Result<Vec<serde_json::Value>> {
+        let _ = client_version;
+        Err(Error::not_implemented("router published catalog"))
+    }
+
     /// Test one model through the running router.
     async fn test_model(&self, _model: &str) -> Result<superba_core::RouterModelTest> {
         Err(Error::not_implemented("router model test"))
@@ -539,6 +545,12 @@ impl RouterControl for SystemRouterControl {
     async fn catalog(&self) -> Result<superba_core::RouterCatalogView> {
         superba_router::client::AdminClient::from_runtime(self.manager.paths())?
             .catalog()
+            .await
+    }
+
+    async fn published_catalog(&self, client_version: &str) -> Result<Vec<serde_json::Value>> {
+        superba_router::client::AdminClient::from_runtime(self.manager.paths())?
+            .published_catalog(client_version)
             .await
     }
 

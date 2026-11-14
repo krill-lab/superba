@@ -222,10 +222,15 @@ fn save_settings(state: &mut State, cx: &Cx<'_>, settings: RouterCatalogSettings
 /// (title and the mode's explanation on the left, the mode and the provider
 /// prefixes on the right), with a hairline below.
 pub(super) fn mode_row(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, view: &ModelsView) {
-    let Some(catalog) = &view.router_catalog else {
+    // With the router its catalog; a direct switch follows the same setting.
+    let catalog = view.router_catalog.as_ref();
+    let Some(current) = catalog
+        .map(|c| &c.settings)
+        .or(view.catalog_settings.as_ref())
+    else {
         return;
     };
-    let mode = catalog.settings.mode;
+    let mode = current.mode;
     let mut picked = None;
     let mut fix_clicked = false;
     let enabled = state.catalog_save.is_none() && !cx.busy && !view.read_only;
@@ -277,9 +282,14 @@ pub(super) fn mode_row(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, view: &Model
                             }
                         });
                     } else {
-                        ui.add(
-                            egui::Label::new(Text::small(mode_help(cx.tr, mode), cx.pal)).wrap(),
-                        );
+                        // Without the router one provider serves every model:
+                        // the per-provider names have nothing to pin.
+                        let help = if catalog.is_none() && mode == CatalogMode::Prefixed {
+                            cx.tr.t("models.router.mode.prefixed_direct_help")
+                        } else {
+                            mode_help(cx.tr, mode)
+                        };
+                        ui.add(egui::Label::new(Text::small(help, cx.pal)).wrap());
                     }
                 });
             },
@@ -302,7 +312,9 @@ pub(super) fn mode_row(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, view: &Model
                             }
                         });
                 });
-                prefixes(ui, cx, state, catalog, enabled);
+                if let Some(catalog) = catalog {
+                    prefixes(ui, cx, state, catalog, enabled);
+                }
             },
         );
     let used = row.controls_rect.width();
@@ -321,7 +333,7 @@ pub(super) fn mode_row(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, view: &Model
         picked = Some(CatalogMode::Extended);
     }
     if let Some(choice) = picked.filter(|m| *m != mode) {
-        let mut settings = catalog.settings.clone();
+        let mut settings = current.clone();
         settings.mode = choice;
         save_settings(state, cx, settings);
     }
@@ -741,7 +753,9 @@ pub fn guidance(view: &ModelsView, saved: CatalogMode) -> Option<Guidance> {
             Some(Guidance::Withheld(c.withheld.len()))
         }
         Some(_) => None,
-        None if !view.read_only && saved.extends() => Some(Guidance::Direct),
+        // Mixed models work on a direct connection too; only the
+        // per-provider names need the router.
+        None if !view.read_only && saved.prefixes() => Some(Guidance::Direct),
         None => None,
     }
 }
@@ -751,7 +765,7 @@ pub fn guidance(view: &ModelsView, saved: CatalogMode) -> Option<Guidance> {
 pub enum Guidance {
     /// Codex mode keeps this many provider models from Codex.
     Withheld(usize),
-    /// A direct connection: the modes need the local router.
+    /// A direct connection with provider prefixes, which need the router.
     Direct,
 }
 
@@ -824,7 +838,7 @@ pub(super) fn guidance_row(
 /// at once (a hot restart of its core through the normal apply flow), when
 /// the page's provider is the applied one and goes through the router.
 pub(super) fn refresh_request(cx: &Cx<'_>, view: &ModelsView) -> Option<crate::pages::Action> {
-    (view.router_catalog.is_some()
+    ((view.router_catalog.is_some() || view.catalog_settings.is_some())
         && !cx.busy
         && crate::pages::shared::providers::applied_profile_id(cx.data) == Some(&view.profile_id))
     .then(|| {

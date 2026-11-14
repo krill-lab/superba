@@ -82,6 +82,32 @@ where
             StatusCode::OK,
             &crate::merged_catalog::report(&shared.current()).await,
         ),
+        // What the router would publish to Codex at `/models` (the mode's
+        // list, aliases included), for the catalog file Superba writes: an
+        // API-key Codex never fetches the router's list itself.
+        (&Method::GET, "catalog/published") => {
+            let version = req
+                .uri()
+                .query()
+                .and_then(|q| {
+                    q.split('&')
+                        .find_map(|kv| kv.strip_prefix("client_version="))
+                })
+                .filter(|v| {
+                    !v.is_empty()
+                        && v.len() <= 64
+                        && v.bytes()
+                            .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-')
+                })
+                .unwrap_or("0.163.0")
+                .to_owned();
+            let snap = crate::merged_catalog::published(
+                &shared.current(),
+                &format!("client_version={version}"),
+            )
+            .await;
+            json(StatusCode::OK, &serde_json::json!({ "models": snap }))
+        }
         (&Method::POST, "catalog/test") => {
             let body = match http_body_util::Limited::new(req.into_body(), 4096)
                 .collect()

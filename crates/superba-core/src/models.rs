@@ -859,6 +859,11 @@ pub struct ModelsView {
     /// standard `/v1/models` list is never "missing" from it.
     #[serde(default)]
     pub codex_only: bool,
+    /// "Models in ChatGPT" (the router's catalog settings, which a direct
+    /// switch follows too) when the router does not serve this profile; with
+    /// the router they are in [`Self::router_catalog`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub catalog_settings: Option<crate::RouterCatalogSettings>,
     /// What Codex reads now, when this profile is the applied one (to tell
     /// saved values from applied ones); `None` for other profiles.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -896,6 +901,7 @@ impl ModelsView {
             && !(self.codex_only
                 && spec.raw.is_none()
                 && !spec.lists.contains(&ModelListKind::Codex))
+            && (spec.raw.is_some() || is_chat_model(&spec.slug))
             && matches!(
                 spec.visibility,
                 ModelVisibility::List | ModelVisibility::Other
@@ -1158,6 +1164,123 @@ impl CompactLimit {
             CompactLimit::Percent(p) => window.saturating_mul(u64::from(p)) / 100,
         }
     }
+}
+
+/// Whether a provider's model id names a chat model Codex can run turns on.
+/// Image, video, audio, speech, embedding, moderation and rerank models
+/// (`gpt-image-2`, `grok-imagine-video`, `text-embedding-3`, `tts-1`, ...)
+/// are not: mixed model lists leave them out of Codex's picker.
+pub fn is_chat_model(id: &str) -> bool {
+    const NOT_CHAT: &[&str] = &[
+        "image",
+        "imagine",
+        "video",
+        "dall-e",
+        "sora",
+        "embedding",
+        "embed-",
+        "tts",
+        "whisper",
+        "transcribe",
+        "audio",
+        "speech",
+        "realtime",
+        "moderation",
+        "rerank",
+    ];
+    let id = id.to_ascii_lowercase();
+    !NOT_CHAT.iter().any(|w| id.contains(w))
+}
+
+/// Reasoning efforts for a provider's model whose list says nothing about
+/// them, when no Codex model is at hand to copy them from (normally they are
+/// the installed Codex's first model's): Codex's current levels.
+pub const DEFAULT_REASONING_LEVELS: [(&str, &str); 6] = [
+    ("low", "Fast responses with lighter reasoning"),
+    (
+        "medium",
+        "Balances speed and reasoning depth for everyday tasks",
+    ),
+    ("high", "Greater reasoning depth for complex problems"),
+    ("xhigh", "Extra high reasoning depth for complex problems"),
+    ("max", "Maximum reasoning depth"),
+    ("ultra", "Ultra reasoning depth"),
+];
+
+/// The default of [`DEFAULT_REASONING_LEVELS`].
+pub const DEFAULT_REASONING_LEVEL: &str = "medium";
+
+/// [`DEFAULT_REASONING_LEVELS`] as Codex `supported_reasoning_levels` JSON.
+pub fn default_reasoning_levels_json() -> serde_json::Value {
+    serde_json::Value::Array(
+        DEFAULT_REASONING_LEVELS
+            .iter()
+            .map(|(effort, description)| {
+                serde_json::json!({"effort": effort, "description": description})
+            })
+            .collect(),
+    )
+}
+
+/// The context window to assume for a provider's model whose list gives none
+/// (a standard `/v1/models` id), by family: what the vendors document for
+/// their current models, rounded down where versions differ. It is an
+/// estimate (Codex compacts at 90 % of it); a model's own metadata always
+/// wins, and the Models page sets the exact value per model.
+pub fn family_context_window(id: &str) -> u64 {
+    // Vendor-qualified ids (`deepseek-ai/DeepSeek-V3`) name the family last.
+    let family = id.rsplit('/').next().unwrap_or(id).to_ascii_lowercase();
+    let starts = |prefixes: &[&str]| prefixes.iter().any(|p| family.starts_with(p));
+    if starts(&["gpt-", "codex", "o3", "o4"]) {
+        272_000
+    } else if starts(&["gemini"]) {
+        1_048_576
+    } else if starts(&["kimi", "qwen", "doubao", "grok"]) {
+        256_000
+    } else if starts(&["claude", "glm"]) {
+        200_000
+    } else {
+        // deepseek and anything else: Codex's own fallback window.
+        272_000
+    }
+}
+
+/// A readable name for a provider's model id that has none:
+/// `deepseek-v4.1-flash` -> `DeepSeek V4.1 Flash`, `kimi-k3.1-pro` ->
+/// `Kimi K3.1 Pro`, `GLM-5.3` -> `GLM-5.3`. Words are split on `-` and `_`;
+/// a word with a digit keeps its letters upper-cased (`v4.1` -> `V4.1`),
+/// known brands keep their spelling, other words get a capital initial. An
+/// id already written with capitals is kept as it is.
+pub fn display_name_of(id: &str) -> String {
+    if id.chars().any(|c| c.is_ascii_uppercase()) || id.contains('/') {
+        return id.to_owned();
+    }
+    const BRANDS: &[(&str, &str)] = &[
+        ("gpt", "GPT"),
+        ("glm", "GLM"),
+        ("deepseek", "DeepSeek"),
+        ("qwen", "Qwen"),
+        ("minimax", "MiniMax"),
+        ("openai", "OpenAI"),
+        ("xai", "xAI"),
+    ];
+    id.split(['-', '_'])
+        .filter(|w| !w.is_empty())
+        .map(|w| {
+            if let Some((_, brand)) = BRANDS.iter().find(|(k, _)| *k == w) {
+                return (*brand).to_owned();
+            }
+            if w.chars().any(|c| c.is_ascii_digit()) {
+                return w.to_ascii_uppercase();
+            }
+            let mut c = w.chars();
+            match c.next() {
+                Some(f) => f.to_uppercase().chain(c).collect(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// The threshold Codex actually uses: `min(limit, 90 % of window)`, or 90 % of the

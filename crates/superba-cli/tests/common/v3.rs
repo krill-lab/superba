@@ -153,6 +153,7 @@ pub fn fake_v3() -> FakeV3 {
             notes: Vec::new(),
             per_model: true,
             codex_only: false,
+            catalog_settings: None,
             applied: None,
         },
         model_edits: Vec::new(),

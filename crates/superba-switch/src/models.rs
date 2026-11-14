@@ -110,6 +110,10 @@ pub enum CatalogReason {
     /// bundled list lacks) with the tiers Krill declares (Ultrafast), as a
     /// ChatGPT sign-in gets them from its remote list.
     AppSpeedMenu,
+    /// "Mixed models" ([`superba_core::CatalogMode::extends`]): the providers'
+    /// other models next to Codex's own (Codex reads them from no list of its
+    /// own with an API key).
+    MixedModels,
 }
 
 /// An override that needs a catalog entry (an upstream name alone edits the
@@ -916,17 +920,37 @@ impl Switcher {
         let speed = profile_speed(profile);
         let set = d.profiles.load().await.unwrap_or_default();
         let app_menu = app_menu_on(&set.settings);
+        // "Models in ChatGPT": Codex's own models, or mixed with the providers'
+        // other models (flat, or per provider with the router). One setting
+        // for direct and routed switches.
+        let mode = set.settings.router.catalog.mode;
+        let mixed = mode.extends();
         // Routed, Codex signs in with an API key and never fetches the router's
         // catalog (L0–L4): without a file the app lists only its bundled models.
-        // With the app's speed menu the file lists the members' models and tiers
-        // (a snapshot taken at the switch).
-        if input.routed && !app_menu {
+        // With the app's speed menu or mixed models the file lists what the
+        // router publishes (a snapshot taken at the switch).
+        if input.routed && !app_menu && !mixed {
             return out;
         }
         let mut reasons = if input.routed {
-            vec![CatalogReason::AppSpeedMenu]
+            let mut r = Vec::new();
+            if app_menu {
+                r.push(CatalogReason::AppSpeedMenu);
+            }
+            if mixed {
+                r.push(CatalogReason::MixedModels);
+            }
+            r
         } else {
-            catalog_reasons(profile, input.site, input.auth, app_menu)
+            let mut r = catalog_reasons(profile, input.site, input.auth, app_menu);
+            if mixed
+                && !profile.is_builtin()
+                && input.site.kind != SiteKind::Official
+                && input.auth.uses_key()
+            {
+                r.push(CatalogReason::MixedModels);
+            }
+            r
         };
         if self.catalog_off.load(std::sync::atomic::Ordering::SeqCst) && !reasons.is_empty() {
             reasons.clear();
@@ -936,7 +960,9 @@ impl Switcher {
         if reasons.is_empty() {
             return out;
         }
-        out.optional = reasons == [CatalogReason::AppSpeedMenu];
+        out.optional = reasons
+            .iter()
+            .all(|r| matches!(r, CatalogReason::AppSpeedMenu | CatalogReason::MixedModels));
         let (app, cli) = local_codexes(input.install_id, input.installs, input.binaries);
         let Some(app) = app.filter(|a| a.binary.is_some() && a.version.is_some()) else {
             out.failed = Some(text("switch.models.no_consumer"));
@@ -970,9 +996,26 @@ impl Switcher {
         let keep =
             |m: &ModelSpec| krill_keeps(m, &template, &feed_models, &profile.model_overrides);
         let mut list = if input.routed {
-            self.router_member_list(&app_version, &app_binary, &keep)
-                .await
+            // What the router publishes for this mode (its merged catalog:
+            // Codex's models, the members' other models, `krill/...` aliases);
+            // the members' raw lists when the router cannot answer now.
+            match self.router_published_list(&app_version).await {
+                Some(list) => list,
+                None => {
+                    self.router_member_list(&app_version, &app_binary, &keep, mixed)
+                        .await
+                }
+            }
         } else {
+            // Mixed models read both lists (unless the profile reads only the
+            // standard one); Codex's models only the profile's choice.
+            let source = match (mixed, input.profile.model_source) {
+                (true, Some(superba_core::ModelSource::Standard)) => {
+                    Some(superba_core::ModelSource::Standard)
+                }
+                (true, _) => Some(superba_core::ModelSource::Auto),
+                (false, s) => s,
+            };
             self.model_list_for(
                 input.site,
                 input.endpoints.map(|e| &e.openai_base_url),
@@ -980,19 +1023,26 @@ impl Switcher {
                 Some(&app_version),
                 Some(&app_binary),
                 false,
-                input.profile.model_source,
+                source,
             )
             .await
         };
-        if !input.routed && input.site.kind == SiteKind::Krill {
-            keep_krill_models(&mut list, &keep);
+        if !input.routed {
+            if mixed {
+                // Image, video and audio models are no chat models.
+                list.models
+                    .retain(|m| m.raw.is_some() || superba_core::is_chat_model(&m.slug));
+            } else if input.site.kind == SiteKind::Krill {
+                keep_krill_models(&mut list, &keep);
+            }
         }
-        // The router members' union is the members' own lists: Krill's entries
-        // stay native (with the tiers Krill declares, such as Ultrafast).
+        // A provider's Codex entries stay native (with the tiers it declares,
+        // such as Ultrafast) next to the models only its standard list names,
+        // which get generic entries.
         let source = match &list.source {
             ModelListSource::Union { .. } if list.models.is_empty() => CatalogSource::Bundled,
             ModelListSource::Upstream { .. } | ModelListSource::Union { .. }
-                if !list.models.is_empty() && list.models.iter().all(|m| m.raw.is_some()) =>
+                if list.models.iter().any(|m| m.raw.is_some()) =>
             {
                 CatalogSource::Native(list.models.clone())
             }
@@ -1136,12 +1186,47 @@ impl Switcher {
     }
 
     /// Union of the router members' lists (each from its own provider).
-    /// Krill members keep only Codex's models (`keep`, see [`krill_keeps`]).
+    /// The router's published list for `version` as a model list (each entry
+    /// native); `None` when the router does not answer or publishes nothing.
+    async fn router_published_list(&self, version: &CodexVersion) -> Option<ModelList> {
+        let entries = match self
+            .deps
+            .router
+            .published_catalog(&version.to_string())
+            .await
+        {
+            Ok(e) => e,
+            Err(e) => {
+                tracing::info!(error = %e, "router catalog unavailable; using the members' lists");
+                return None;
+            }
+        };
+        let models: Vec<ModelSpec> = entries
+            .iter()
+            .filter_map(ModelSpec::from_codex_entry)
+            .collect();
+        if models.is_empty() {
+            return None;
+        }
+        Some(ModelList {
+            source: ModelListSource::Union {
+                members: vec!["router".into()],
+            },
+            models,
+            fallback_reason: None,
+            sources: Vec::new(),
+        })
+    }
+
+    /// Union of the router members' lists (each from its own provider). With
+    /// Codex's models only, Krill members keep only those (`keep`, see
+    /// [`krill_keeps`]); mixed, non-chat models are left out.
     async fn router_member_list(
         &self,
         version: &CodexVersion,
         binary: &Path,
         keep: &(dyn Fn(&ModelSpec) -> bool + Sync),
+        mixed: bool,
     ) -> ModelList {
         let d = &self.deps;
         let set = d.profiles.load().await.unwrap_or_default();
@@ -1165,7 +1250,10 @@ impl Switcher {
                     p.model_source,
                 )
                 .await;
-            if site.kind == SiteKind::Krill {
+            if mixed {
+                list.models
+                    .retain(|m| m.raw.is_some() || superba_core::is_chat_model(&m.slug));
+            } else if site.kind == SiteKind::Krill {
                 keep_krill_models(&mut list, keep);
             }
             lists.push((p.name.clone(), list));
@@ -1296,6 +1384,7 @@ impl Switcher {
                 notes,
                 per_model: false,
                 codex_only: false,
+                catalog_settings: None,
                 applied: None,
             });
         }
@@ -1319,7 +1408,17 @@ impl Switcher {
                 app_version.as_ref(),
                 app_binary.as_deref(),
                 req.refresh,
-                profile.model_source,
+                // As the switch reads it (see `plan_catalog_file`).
+                match (
+                    set.settings.router.catalog.mode.extends(),
+                    profile.model_source,
+                ) {
+                    (true, Some(superba_core::ModelSource::Standard)) => {
+                        Some(superba_core::ModelSource::Standard)
+                    }
+                    (true, _) => Some(superba_core::ModelSource::Auto),
+                    (false, s) => s,
+                },
             )
             .await;
         let routed =
@@ -1345,7 +1444,10 @@ impl Switcher {
             .clone()
             .or_else(|| state.as_ref().and_then(|s| s.model.clone()));
         let app_menu = app_menu_on(&set.settings);
-        let reasons = catalog_reasons(profile, &site, auth, app_menu);
+        let mut reasons = catalog_reasons(profile, &site, auth, app_menu);
+        if set.settings.router.catalog.mode.extends() && auth.uses_key() && !profile.is_builtin() {
+            reasons.push(CatalogReason::MixedModels);
+        }
         // Without a catalog file an API-key Codex filters the tier with its own
         // bundled list (it never fetches the provider's). Whether there is one
         // depends on the tier too (Ultrafast and tier-suffix names need it).
@@ -1435,7 +1537,10 @@ impl Switcher {
             catalog_file,
             notes,
             per_model: true,
-            codex_only: site.kind == SiteKind::Krill && !routed,
+            codex_only: site.kind == SiteKind::Krill
+                && !routed
+                && !set.settings.router.catalog.mode.extends(),
+            catalog_settings: (!routed).then(|| set.settings.router.catalog.clone()),
             applied,
         })
     }

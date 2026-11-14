@@ -57,3 +57,35 @@ fn krill_keeps_codex_models_and_drops_the_rest() {
     assert!(!keeps(&standard_only));
     assert!(!keeps(&spec("gpt-image-2")));
 }
+
+#[test]
+fn mixed_models_leave_out_media_models_and_get_readable_names() {
+    use superba_core::{display_name_of, is_chat_model};
+    for chat in [
+        "deepseek-v4.1-flash",
+        "kimi-k3.1-pro",
+        "GLM-5.3",
+        "grok-4.7",
+        "gemini-4-argon",
+        "doubao-seed-2-1-pro",
+    ] {
+        assert!(is_chat_model(chat), "{chat}");
+    }
+    for media in [
+        "gpt-image-2",
+        "grok-imagine-video-1.5",
+        "grok-imagine-image",
+        "text-embedding-3-large",
+        "tts-1",
+        "whisper-1",
+        "gpt-4o-realtime-preview",
+        "sora-2",
+    ] {
+        assert!(!is_chat_model(media), "{media}");
+    }
+    assert_eq!(display_name_of("deepseek-v4.1-flash"), "DeepSeek V4.1 Flash");
+    assert_eq!(display_name_of("kimi-k3.1-pro"), "Kimi K3.1 Pro");
+    assert_eq!(display_name_of("gpt-6.1-sol"), "GPT 6.1 Sol");
+    assert_eq!(display_name_of("GLM-5.3"), "GLM-5.3");
+    assert_eq!(display_name_of("krill/deepseek-x"), "krill/deepseek-x");
+}

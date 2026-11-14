@@ -144,7 +144,9 @@ async fn merge_replaces_l0_whole_retains_speed_fields_and_reports_pending_source
         .unwrap();
     assert_eq!(entry, &native("gpt-test"));
     assert!(listed(&v, "fallback") && listed(&v, "krill/gpt-test"));
-    assert!(!listed(&v, "deepseek-test"));
+    // An untested standard model is offered too (the Models page tests it on
+    // demand); it is a provider's chat model.
+    assert!(listed(&v, "deepseek-test"));
     let view = report(&r).await;
     assert_eq!(view.sources.len(), 2);
     let pending = view
@@ -198,7 +200,8 @@ async fn successful_tool_roundtrip_publishes_model_and_routes_only_to_standard_e
     let up = upstream(responder(200, 200, true)).await;
     let other = upstream(Mode::Json(200, r#"{"models":[],"data":[]}"#)).await;
     let r = start(config(&[("krill", &up), ("other", &other)])).await;
-    assert!(!listed(&models(&r).await, "deepseek-test"));
+    // Offered before its test, and routed to the provider that lists it.
+    assert!(listed(&models(&r).await, "deepseek-test"));
     let test = probe(&r, "krill/deepseek-test").await;
     assert!(test.passed, "{}", test.detail);
     assert!(probe(&r, "deepseek-test").await.passed);
@@ -586,7 +589,12 @@ async fn settings_reload_preserves_probes_but_key_changes_invalidate_them() {
             .status(),
         200
     );
-    assert!(!listed(&models(&r).await, "deepseek-test"));
+    // The new key's evidence starts over: untested again (still offered).
+    let view = report(&r).await;
+    assert_eq!(
+        view.model("deepseek-test").unwrap().readiness,
+        CatalogReadiness::Pending
+    );
     r.handle.shutdown();
     task.await.unwrap().unwrap();
 }
@@ -847,18 +855,33 @@ async fn known_standard_ids_reuse_full_metadata_and_unknown_ids_get_family_budge
     assert_eq!(office_l1.layer, CatalogLayer::StandardKnown);
     assert_eq!(office_l1.readiness, Some(CatalogReadiness::Pending));
     // Unknown ids: family operating budgets, never written as a maximum.
-    for (id, window) in [("gpt-9-unknown", 272_000), ("deepseek-x", 64_000)] {
+    for (id, window) in [("gpt-9-unknown", 272_000), ("deepseek-x", 272_000)] {
         let row = view.model(id).unwrap();
         assert_eq!(row.entry["context_window"], window, "{id}");
         assert!(row.entry.get("max_context_window").is_none(), "{id}");
         assert!(row.estimated(), "{id}");
         assert_eq!(row.readiness, CatalogReadiness::Pending);
     }
-    let published = slugs_of(&models(&r).await);
-    assert_eq!(published, ["gpt-5.4-nano", "gpt-l1-only", "gpt-test"]);
-    // A passing test publishes a pending model; still no aliases.
+    // Untested models are offered too; a flat list has no aliases.
+    let mut published = slugs_of(&models(&r).await);
+    published.sort();
+    assert_eq!(
+        published,
+        [
+            "deepseek-x",
+            "gpt-5.4-nano",
+            "gpt-9-unknown",
+            "gpt-l1-only",
+            "gpt-test"
+        ]
+    );
+    // A passing test makes it ready; it stays offered, still no aliases.
     let test = probe(&r, "deepseek-x").await;
     assert!(test.passed, "{}", test.detail);
+    assert_eq!(
+        report(&r).await.model("deepseek-x").unwrap().readiness,
+        CatalogReadiness::Ready
+    );
     let published = slugs_of(&models(&r).await);
     assert!(published.contains(&"deepseek-x".to_owned()));
     assert!(published.iter().all(|s| !s.contains('/')));
@@ -875,20 +898,21 @@ async fn prefixed_mode_adds_pinned_aliases_without_extra_rows() {
     assert_eq!(view.models.len(), extended_rows, "aliases are not rows");
     let published = models(&r).await;
     let slugs = slugs_of(&published);
+    // Every provider's offer gets its alias, untested ones included (their
+    // test runs on demand).
     for alias in [
         "krill/gpt-test",
         "p2/gpt-test",
         "krill/gpt-5.4-nano",
         "p2/gpt-5.4-nano",
         "krill/gpt-l1-only",
+        "p2/gpt-l1-only",
+        "p2/deepseek-x",
     ] {
         assert!(slugs.contains(&alias.to_owned()), "{alias}: {slugs:?}");
         assert!(view.aliases.contains_key(alias), "{alias}");
     }
-    // Unverified targets get no alias until their own test passes.
-    for missing in ["p2/gpt-l1-only", "p2/deepseek-x", "deepseek-x"] {
-        assert!(!slugs.contains(&missing.to_owned()), "{missing}");
-    }
+    assert!(slugs.contains(&"deepseek-x".to_owned()));
     let entry = |id: &str| {
         published["models"]
             .as_array()
@@ -1022,7 +1046,16 @@ async fn single_provider_gets_an_alias_and_real_slash_ids_win_over_generated_one
     let real = view.model("p1/gpt-test").unwrap();
     assert_eq!(real.sources[0].upstream_id, "p1/gpt-test");
     assert_eq!(real.sources[0].layer, CatalogLayer::Synthesized);
-    assert!(view.aliases.is_empty());
+    // No alias pins gpt-test (it would be the real id p1/gpt-test); the real
+    // id, offered untested, may get its own.
+    assert!(
+        view.aliases
+            .values()
+            .all(|canonical| canonical != "gpt-test"),
+        "{:?}",
+        view.aliases
+    );
+    assert!(!view.aliases.contains_key("p1/gpt-test"));
     r.handle.shutdown();
     // Without the collision a single provider still gets its alias.
     let office = upstream(office_reply(json!({"data":[{"id":"gpt-test"}]}))).await;

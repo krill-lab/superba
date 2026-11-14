@@ -18,20 +18,7 @@ use crate::translate::ir::Protocol;
 /// as `max_context_window`, real metadata always wins and the user can
 /// override them. An exact L0/L1 match never gets here.
 pub(super) fn family_budget(id: &str) -> u64 {
-    // Vendor-qualified ids (`deepseek-ai/DeepSeek-V3`) name the family last.
-    let family = id.rsplit('/').next().unwrap_or(id).to_ascii_lowercase();
-    let starts = |prefixes: &[&str]| prefixes.iter().any(|p| family.starts_with(p));
-    if starts(&["gpt-", "codex"]) {
-        272_000
-    } else if starts(&["claude"]) {
-        200_000
-    } else if starts(&["gemini"]) {
-        128_000
-    } else if starts(&["deepseek", "qwen", "glm", "kimi", "doubao", "grok"]) {
-        64_000
-    } else {
-        32_000
-    }
+    superba_core::family_context_window(id)
 }
 
 /// A Codex entry for a standard-list id with no known metadata: conservative
@@ -46,9 +33,11 @@ pub(super) fn synthesized(id: &str, metadata: &Value, priority: i64) -> Value {
         })
         .unwrap_or_else(|| family_budget(id));
     json!({
-        "slug": id, "display_name": metadata["display_name"].as_str().unwrap_or(id),
+        "slug": id, "display_name": metadata["display_name"].as_str().map_or_else(|| superba_core::display_name_of(id), str::to_owned),
         "description": "Standard model list · Superba router",
-        "supported_reasoning_levels": [], "shell_type": "unified_exec",
+        "supported_reasoning_levels": superba_core::default_reasoning_levels_json(),
+        "default_reasoning_level": superba_core::DEFAULT_REASONING_LEVEL,
+        "shell_type": "unified_exec",
         "visibility": "list", "supported_in_api": true, "priority": priority,
         "support_verbosity": false, "truncation_policy": {"mode":"bytes","limit":10000},
         "experimental_supported_tools": [],
@@ -158,6 +147,12 @@ fn probe_state(g: &Generation, member: usize, id: &str) -> (CatalogReadiness, Op
     }
 }
 
+/// Not tested yet, on the provider's native Responses endpoint: offered and
+/// routed before its test (a converted protocol waits for it).
+fn untested_native(f: &Found) -> bool {
+    f.readiness == CatalogReadiness::Pending && !f.proof.translated()
+}
+
 /// The best readiness of a model's providers.
 fn best(states: impl IntoIterator<Item = CatalogReadiness>) -> CatalogReadiness {
     let rank = |r: &CatalogReadiness| match r {
@@ -238,6 +233,22 @@ pub(super) async fn build(g: &Arc<Generation>, query: &str) -> Snapshot {
     .await;
     fetched.sort_by_key(|(i, _, _)| *i);
     let bundled = builtin(config);
+    // Efforts for a model only a standard list names: the installed Codex's
+    // first listed model's, so every level Codex offers is offered.
+    let efforts = bundled
+        .iter()
+        .find(|e| {
+            e["visibility"] == "list"
+                && e["supported_reasoning_levels"]
+                    .as_array()
+                    .is_some_and(|l| !l.is_empty())
+        })
+        .map(|e| {
+            (
+                e["supported_reasoning_levels"].clone(),
+                e["default_reasoning_level"].clone(),
+            )
+        });
     // The installed Codex's own identities: the whole list in Codex mode.
     let official: BTreeSet<String> = bundled
         .iter()
@@ -356,7 +367,14 @@ pub(super) async fn build(g: &Arc<Generation>, query: &str) -> Snapshot {
                     "standard list; complete metadata of the known model",
                 ),
                 None => (
-                    synthesized(id, metadata, priority),
+                    {
+                        let mut entry = synthesized(id, metadata, priority);
+                        if let Some((levels, default)) = &efforts {
+                            entry["supported_reasoning_levels"] = levels.clone();
+                            entry["default_reasoning_level"] = default.clone();
+                        }
+                        entry
+                    },
                     CatalogLayer::Synthesized,
                     "standard list; family defaults until the tool probe passes",
                 ),
@@ -403,26 +421,34 @@ pub(super) async fn build(g: &Arc<Generation>, query: &str) -> Snapshot {
     let mut snap = Snapshot::default();
     let mut aliases = Vec::new();
     for (id, providers) in found {
+        // Providers that serve the model: the tested ones first, then the
+        // untested ones on a native Responses endpoint (offered without their
+        // tool test; the Models page runs it on demand), in member order. A
+        // converted protocol still needs its test, and a failed test or a
+        // protocol without a route keeps a provider out.
         let ready: Vec<&Found> = providers
             .iter()
             .filter(|f| f.readiness == CatalogReadiness::Ready)
+            .chain(providers.iter().filter(|f| untested_native(f)))
             .collect();
         let readiness = best(providers.iter().map(|f| f.readiness));
-        // The canonical entry: the first ready provider's (member order),
+        // The canonical entry: the first serving provider's (member order),
         // then the model's own settings on top.
         let base = ready.first().copied().unwrap_or(&providers[0]);
         let mut entry = base.entry.clone();
         canonical(settings, &id, &mut entry);
-        // A model the user verified is shown in Codex's picker unless they hid
+        // A provider's model is shown in Codex's picker unless the user hid
         // it themselves (user bug 106: a passed model stayed hidden, from
         // metadata or a provider-side setting the user never chose here).
-        let verified = ready.iter().any(|f| f.target.standard);
+        let offered = ready.iter().any(|f| f.target.standard);
         let hidden_by_user = settings.visibility.get(&id) == Some(&false)
             || settings.overrides.get(&id).is_some_and(|o| o.hidden);
-        if verified && !hidden_by_user && !settings.visibility.contains_key(&id) {
+        if offered && !hidden_by_user && !settings.visibility.contains_key(&id) {
             entry["visibility"] = json!("list");
         }
-        let listed = mode.extends() || official.contains(&id);
+        // Image, video and audio models are no chat models: never offered
+        // in mixed modes (a name a session uses still routes).
+        let listed = official.contains(&id) || (mode.extends() && superba_core::is_chat_model(&id));
         if !ready.is_empty() {
             snap.routes
                 .insert(id.clone(), ready.iter().map(|f| f.target.clone()).collect());
@@ -440,8 +466,9 @@ pub(super) async fn build(g: &Arc<Generation>, query: &str) -> Snapshot {
             };
             let mut pinned = f.entry.clone();
             canonical(settings, &id, &mut pinned);
+            let serves = f.readiness == CatalogReadiness::Ready || untested_native(f);
             if f.target.standard
-                && f.readiness == CatalogReadiness::Ready
+                && serves
                 && !hidden_by_user
                 && !settings.visibility.contains_key(&id)
             {
@@ -453,7 +480,7 @@ pub(super) async fn build(g: &Arc<Generation>, query: &str) -> Snapshot {
                 pinned["display_name"].as_str().unwrap_or(&id),
                 f.name
             ));
-            if f.readiness == CatalogReadiness::Ready {
+            if serves {
                 snap.routes.insert(alias.clone(), vec![f.target.clone()]);
                 if listed && mode.prefixes() {
                     snap.view.aliases.insert(alias.clone(), id.clone());

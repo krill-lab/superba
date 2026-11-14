@@ -706,6 +706,7 @@ fn models_view(
         notes: Vec::new(),
         per_model: true,
         codex_only: false,
+        catalog_settings: None,
         applied: None,
     }
 }

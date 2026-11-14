@@ -655,3 +655,22 @@ fn every_note_key_exists_in_the_core_catalog() {
         assert!(cat.get(&n.text.key).is_some(), "{}", n.text.key);
     }
 }
+
+#[test]
+fn prices_are_found_whatever_the_case_and_for_dated_snapshots() {
+    use superba_models::price::price_names;
+    assert_eq!(price_names("GLM-5.3"), ["GLM-5.3", "glm-5.3"]);
+    assert_eq!(
+        price_names("deepseek-v4.1-flash-1017"),
+        ["deepseek-v4.1-flash-1017", "deepseek-v4.1-flash"]
+    );
+    assert_eq!(
+        price_names("gpt-x-2026-10-17"),
+        ["gpt-x-2026-10-17", "gpt-x"]
+    );
+    assert_eq!(price_names("gpt-x-20261017"), ["gpt-x-20261017", "gpt-x"]);
+    // Not a date: kept whole (a version, a size).
+    assert_eq!(price_names("grok-4.20-0309-reasoning"), ["grok-4.20-0309-reasoning"]);
+    assert_eq!(price_names("qwen3-coder-2507"), ["qwen3-coder-2507"]);
+    assert_eq!(price_names("model-1999"), ["model-1999"]);
+}

@@ -287,6 +287,11 @@ pub(crate) fn models_etag(g: &Generation) -> String {
         .unwrap_or_else(|| format!("\"superba-{:p}\"", g as *const Generation))
 }
 
+/// The entries `/models` returns for `query` (the mode's list).
+pub(crate) async fn published(g: &Arc<Generation>, query: &str) -> Vec<Value> {
+    snapshot(g, query).await.published
+}
+
 pub(crate) async fn report(g: &Arc<Generation>) -> RouterCatalogView {
     snapshot(g, "client_version=0.163.0").await.view
 }

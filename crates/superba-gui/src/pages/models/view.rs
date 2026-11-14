@@ -99,7 +99,7 @@ pub(super) fn page(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
         prices: &prices,
     };
     let routed = view.router_catalog.is_some();
-    if routed {
+    if routed || (view.catalog_settings.is_some() && view.per_model && !view.read_only) {
         super::catalog::mode_row(ui, cx, state, &view);
         ui.add_space(space::XS);
     }
