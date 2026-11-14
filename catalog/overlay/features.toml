@@ -170,6 +170,11 @@ zh_name = "Browser Use 完整 CDP"
 zh = "桌面 app 的管理开关：是否允许 Browser Use 集成使用完整的 Chrome DevTools Protocol（CDP）能力。应由管理员在托管配置（requirements）中设置；Codex CLI 本身不读取它。默认开启。"
 zh_basis = ""
 
+["feature:catalog_apps_instructions"]
+en = ""
+en_hash = ""
+zh = ""
+
 ["feature:chronicle"]
 en = ""
 en_hash = ""
@@ -1129,6 +1134,11 @@ en_hash = ""
 zh_name = "运行时指标"
 zh = "启用运行时指标快照（通过手动读取器采集），随 OpenTelemetry 遥测上报。开发中，默认关闭。"
 zh_basis = ""
+
+["feature:safe_image_decoder"]
+en = ""
+en_hash = ""
+zh = ""
 
 ["feature:search_tool"]
 en = ""

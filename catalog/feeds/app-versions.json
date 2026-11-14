@@ -2,6 +2,54 @@
   "format": 1,
   "releases": [
     {
+      "version": "26.1111.21308",
+      "date": 1794532511000,
+      "bundled_codex": "0.169.0-alpha.11.1",
+      "packages": [
+        {
+          "os": "linux",
+          "kind": "deb",
+          "arch": "amd64",
+          "url": "https://persistent.oaistatic.com/codex-app-prod/linux/deb/pool/main/c/chatgpt/chatgpt_26.1111.21308_amd64.deb",
+          "sha256": "4b443bc557350a1b193bc2f1bae207c9ea3c9fb5d94f7c94a5d3dbaa8b552352",
+          "size": 567877422
+        },
+        {
+          "os": "linux",
+          "kind": "deb",
+          "arch": "arm64",
+          "url": "https://persistent.oaistatic.com/codex-app-prod/linux/deb/pool/main/c/chatgpt/chatgpt_26.1111.21308_arm64.deb",
+          "sha256": "c5c5aa090968ef7a28b27caed3d03374889d7c8250768814eb4cae5d9b9d9a25",
+          "size": 553033238
+        },
+        {
+          "os": "linux",
+          "kind": "rpm",
+          "arch": "aarch64",
+          "url": "https://persistent.oaistatic.com/codex-app-prod/linux/rpm/aarch64/chatgpt-26.1111.21308-1.aarch64.rpm",
+          "sha256": "7c11fee8bcc1ac497795497509735e18f46e359d479cc52555578501c0b24054",
+          "size": 611317537
+        },
+        {
+          "os": "linux",
+          "kind": "rpm",
+          "arch": "x86_64",
+          "url": "https://persistent.oaistatic.com/codex-app-prod/linux/rpm/x86_64/chatgpt-26.1111.21308-1.x86_64.rpm",
+          "sha256": "f13414a31c53c67fc71dead403f5e06d50447aab97688ac72626a3c96c28ab92",
+          "size": 630671241
+        },
+        {
+          "os": "macos",
+          "kind": "mac_zip",
+          "arch": "arm64",
+          "url": "https://persistent.oaistatic.com/codex-app-prod/ChatGPT-darwin-arm64-26.1111.21308.zip",
+          "size": 835870020,
+          "signature": "9IiyzEE+Th3iPaIGe+oNrIpfasuDfv8zuh2b+ee/ScPj1noe6cDrZQbFGFhtAJ17dACQ/V7XA+tZMav+ii+WDA=="
+        }
+      ],
+      "store_product_id": "9PLM9XGG6VKS"
+    },
+    {
       "version": "26.1106.51428",
       "date": 1794352612000,
       "bundled_codex": "0.167.0-alpha.4.1",
