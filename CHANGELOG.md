@@ -5,6 +5,19 @@ All notable changes to Superba are documented here. The format follows
 [Semantic Versioning](https://semver.org/): later releases increment the patch
 number; the minor number changes only for breaking changes.
 
+## [0.1.1-alpha.21] - 2026-11-14
+
+### Added
+- One setting decides which models ChatGPT and Codex offer, for direct and routed switches alike: Models → "Models in ChatGPT". "Codex models only" (the default) keeps Codex's own models with their reasoning efforts, speed tiers and context windows. "Mixed models · flat" adds the providers' other chat models under their own names (for example `deepseek-v4.1-flash`, shown as "DeepSeek V4.1 Flash"); image, video, audio and embedding models are left out, and a model several providers list appears once. "Mixed models · provider prefixes" adds one entry per provider (`krill/deepseek-v4.1-flash`, "DeepSeek V4.1 Flash · Krill") that stays on that provider; it needs the local router, and a direct connection offers the flat list. The setting is the router's former "Router model list" and keeps its value; the Models page now shows it with or without the router.
+- With the router, the model list Codex reads is what the router publishes. Since alpha.16 an API-key Codex never asked the router for its list, so the router's modes, provider prefixes and hidden models did not reach ChatGPT. A provider's model that only its standard list names is offered right away on a native Responses endpoint; its tool test on the Models page is optional (a protocol conversion still needs it).
+- Official list prices for deepseek-v4.1-flash (DeepSeek's `deepseek-flash`, with its off-peak prices), kimi-k3.1-pro, gemini-4-hydrogen and gemini-4-carbon (its new prices from 2026-12-01 are not in this table yet). Doubao Seed 2.1 is priced only in CNY by its vendor and is not added; set its price on the Models page.
+
+### Fixed
+- Krill's mixed models keep their Codex entries whole: 6.1 Sol and 6 Astra keep Ultrafast and every reasoning effort next to models from Krill's standard list. Before, one such model turned every entry into a reduced one.
+- A provider's model without metadata offers every reasoning effort the installed Codex offers (low to ultra) instead of none, and a context window for its family instead of 64K (or a copied 272K on a direct connection): Gemini 1M; Kimi, Qwen, Doubao, Grok 256K; GLM, Claude 200K; DeepSeek and others 272K. Set the exact window per model on the Models page.
+- Prices are found whatever the case of the model name (`GLM-5.3` uses `glm-5.3`) and for dated snapshots (`deepseek-v4.1-flash-1017` uses `deepseek-v4.1-flash`).
+- The Router page's line order leaves disabled lines out ("国内极速（首选） → 三网优化 CDN", not "… → 海外线路" when that line is off).
+
 ## [0.1.1-alpha.20] - 2026-11-14
 
 ### Fixed
