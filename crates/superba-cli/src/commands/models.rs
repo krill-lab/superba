@@ -308,6 +308,7 @@ fn reason_key(r: CatalogReason) -> &'static str {
         CatalogReason::Ultrafast => "cli.models.reason.ultrafast",
         CatalogReason::TierSuffix => "cli.models.reason.suffix",
         CatalogReason::AppSpeedMenu => "cli.models.reason.app_menu",
+        CatalogReason::MixedModels => "cli.models.reason.mixed",
     }
 }
 

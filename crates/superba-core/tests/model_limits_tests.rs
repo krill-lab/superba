@@ -261,6 +261,7 @@ fn catalog_view(models: &[(&str, ModelVisibility)], applied: &[&str]) -> ModelsV
         notes: Vec::new(),
         per_model: true,
         codex_only: false,
+        catalog_settings: None,
         applied: Some(AppliedModels {
             catalog: Some("/home/u/.codex/superba/models-0a1b2c3d.json".into()),
             models: applied

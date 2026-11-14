@@ -416,7 +416,7 @@ async fn picking_a_mode_saves_it_and_a_test_reports_as_a_toast() {
         &data,
         service.clone(),
         &mut state,
-        &["仅 Codex 模型", "Codex + 供应商模型"],
+        &["仅 Codex 模型", "混合模型 · 平铺"],
         |_, _| !fake.router_catalog_saves().is_empty(),
     );
     let saves = fake.router_catalog_saves();
@@ -511,9 +511,10 @@ async fn codex_mode_says_what_it_withholds_and_switches_in_one_click() {
     }
 }
 
-/// User bug 106 (d): a direct connection ignores the router model list. Once
-/// the user picked a mode that adds models, the page says so and offers to
-/// turn the local router on (a switch, previewed as usual).
+/// User bug 106 (d), as of mixed models: a direct connection offers mixed
+/// models itself; only the provider prefixes need the router, so with that
+/// mode the page says so and offers to turn the local router on (a switch,
+/// previewed as usual).
 #[tokio::test]
 async fn a_direct_connection_says_the_mode_needs_the_router() {
     let fake = service();
@@ -523,14 +524,15 @@ async fn a_direct_connection_says_the_mode_needs_the_router() {
         .await
         .unwrap();
     assert!(view.router_catalog.is_none() && !view.read_only);
-    // The default mode changes nothing on a direct connection: no notice.
+    // Codex's models and flat mixed models work directly: no notice.
     assert_eq!(models_page::guidance(&view, CatalogMode::Codex), None);
+    assert_eq!(models_page::guidance(&view, CatalogMode::Extended), None);
     assert_eq!(
-        models_page::guidance(&view, CatalogMode::Extended),
+        models_page::guidance(&view, CatalogMode::Prefixed),
         Some(models_page::Guidance::Direct)
     );
     if let Some(set) = data.profiles.value.as_mut() {
-        set.settings.router.catalog.mode = CatalogMode::Extended;
+        set.settings.router.catalog.mode = CatalogMode::Prefixed;
     }
     let tr = Tr::new(Locale::ZhCn);
     let fix = tr.t("models.router.direct_fix");

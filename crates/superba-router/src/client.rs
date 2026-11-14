@@ -103,6 +103,23 @@ impl AdminClient {
         .await
     }
 
+    /// The entries the router publishes to Codex for `client_version` (the
+    /// catalog mode's list, provider aliases included).
+    pub async fn published_catalog(&self, client_version: &str) -> Result<Vec<serde_json::Value>> {
+        let url = format!(
+            "{}?client_version={}",
+            self.url("catalog/published"),
+            client_version
+        );
+        let body: serde_json::Value = self
+            .call(
+                self.authed(self.http.get(&url).timeout(Duration::from_secs(60))),
+                &url,
+            )
+            .await?;
+        Ok(body["models"].as_array().cloned().unwrap_or_default())
+    }
+
     /// Run the selected model's test and cache its capability evidence.
     pub async fn test_model(&self, model: &str) -> Result<superba_core::RouterModelTest> {
         let url = self.url("catalog/test");

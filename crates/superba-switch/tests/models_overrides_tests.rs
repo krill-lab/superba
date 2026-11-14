@@ -581,3 +581,104 @@ async fn without_per_model_values_codex_reads_the_providers_list_itself() {
     assert!(!v.missing_from_catalog(spec(&v, "gpt-6.1-terra")));
     assert!(v.catalog_changes().is_empty());
 }
+
+/// "Models in ChatGPT": mixed models put a provider's other chat models next
+/// to its Codex entries (which stay whole); image models stay out, and
+/// "Codex models only" leaves the others out again.
+#[tokio::test]
+async fn mixed_models_add_the_providers_chat_models_next_to_codex_entries() {
+    let w = World::new();
+    set_profile(&w, api_key);
+    let mut list = krill_native(false);
+    for id in ["deepseek-v4.1-flash", "gpt-image-2"] {
+        list.models.push(superba_core::ModelSpec {
+            lists: vec![superba_core::ModelListKind::Standard],
+            ..superba_core::ModelSpec::new(id)
+        });
+    }
+    *w.prober.model_list.lock().unwrap() = Some(Ok(list));
+    w.profiles.set.lock().unwrap().settings.router.catalog.mode =
+        superba_core::CatalogMode::Extended;
+    let sw = switcher(&w);
+    let catalog = |plan: &SwitchPlan| -> serde_json::Value {
+        let path = plan
+            .config
+            .as_ref()
+            .and_then(|c| c.desired.as_ref())
+            .and_then(|d| d.model_catalog.clone())
+            .expect("a catalog file");
+        serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+    };
+    let slugs = |file: &serde_json::Value| -> Vec<String> {
+        file["models"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["slug"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    let plan = switch(&sw).await;
+    write_config(&w, &plan);
+    let file = catalog(&plan);
+    let all = slugs(&file);
+    assert!(all.contains(&"gpt-6-astra".to_owned()), "{all:?}");
+    assert!(all.contains(&"deepseek-v4.1-flash".to_owned()), "{all:?}");
+    assert!(!all.contains(&"gpt-image-2".to_owned()), "{all:?}");
+    let entry = |slug: &str| {
+        file["models"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["slug"] == slug)
+            .unwrap()
+            .clone()
+    };
+    // Krill's own entry is kept whole, not rebuilt from the bundled one.
+    let native = krill_native(false).models[0].raw.clone().unwrap();
+    assert_eq!(entry("gpt-6-astra")["service_tiers"], native["service_tiers"]);
+    let deepseek = entry("deepseek-v4.1-flash");
+    assert_eq!(deepseek["display_name"], "DeepSeek V4.1 Flash");
+    // Every reasoning effort Codex offers, with its default: the efforts of
+    // the consumer's first model.
+    let bundled: serde_json::Value = serde_json::from_str(BUNDLED).unwrap();
+    let first = bundled["models"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["visibility"] == "list")
+        .unwrap();
+    assert_eq!(
+        deepseek["supported_reasoning_levels"],
+        first["supported_reasoning_levels"]
+    );
+    assert_eq!(
+        deepseek["default_reasoning_level"],
+        first["default_reasoning_level"]
+    );
+    assert!(
+        !deepseek["supported_reasoning_levels"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(deepseek["visibility"], "list");
+    // The Models page reads the lists as the switch does: nothing missing.
+    let v = view(&sw).await;
+    assert!(v.catalog_changes().missing.is_empty(), "{:?}", v.catalog_changes());
+
+    // Codex's models only: the provider's other models leave the file.
+    w.profiles.set.lock().unwrap().settings.router.catalog.mode =
+        superba_core::CatalogMode::Codex;
+    let plan = switch(&sw).await;
+    write_config(&w, &plan);
+    if let Some(path) = plan
+        .config
+        .as_ref()
+        .and_then(|c| c.desired.as_ref())
+        .and_then(|d| d.model_catalog.clone())
+    {
+        let file: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        assert!(!slugs(&file).contains(&"deepseek-v4.1-flash".to_owned()));
+    }
+}

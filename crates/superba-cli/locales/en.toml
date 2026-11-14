@@ -698,6 +698,7 @@ picker = "the provider's models in the picker"
 ultrafast = "Ultrafast"
 suffix = "speed tier in the model name"
 app_menu = "ChatGPT's speed menu: Krill's models and tiers"
+mixed = "Mixed models: the providers' other models next to Codex's"
 
 [cli.models.source]
 upstream = "The provider ({path})"

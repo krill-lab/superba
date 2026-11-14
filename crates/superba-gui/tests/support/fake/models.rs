@@ -325,6 +325,7 @@ pub fn view_for(profile: &Profile, site: &Site, now: Timestamp) -> ModelsView {
         notes,
         per_model: !official,
         codex_only: false,
+        catalog_settings: None,
         applied: None,
     }
 }

@@ -11,8 +11,6 @@ use superba_core::{
 use crate::bundled::{effective_required, fill_missing, required_fields, slug_of, template_fields};
 use crate::{BundledCatalog, CatalogFile, CatalogInput, CatalogSource, content_name, text};
 
-/// Codex's fallback window for unknown models (`model_info_from_slug`).
-const FALLBACK_CONTEXT_WINDOW: u64 = 272_000;
 /// Codex's default usable share of the window.
 const FALLBACK_EFFECTIVE_PERCENT: u64 = 95;
 /// Priority of generic entries: after every bundled model.
@@ -586,7 +584,14 @@ fn generic_entry(
 ) -> Map<String, Value> {
     let mut o = base.clone();
     o.insert("slug".into(), json!(spec.slug));
-    o.insert("display_name".into(), json!(spec.label()));
+    o.insert(
+        "display_name".into(),
+        json!(
+            spec.display_name
+                .clone()
+                .unwrap_or_else(|| superba_core::display_name_of(&spec.slug))
+        ),
+    );
     let description = spec.description.clone().unwrap_or_default();
     match o.get("description") {
         Some(Value::Null) if description.is_empty() => {}
@@ -607,13 +612,33 @@ fn generic_entry(
             })
         })
         .collect();
-    o.insert("supported_reasoning_levels".into(), Value::Array(levels));
-    match &spec.default_reasoning_level {
-        Some(d) if !spec.reasoning_levels.is_empty() => {
-            o.insert("default_reasoning_level".into(), json!(d));
+    if levels.is_empty() {
+        // The list says nothing about efforts: the same efforts and default as
+        // the Codex model the entry is built from (the consumer's first listed
+        // model), so the model controls offer every level Codex offers.
+        if !base
+            .get("supported_reasoning_levels")
+            .and_then(Value::as_array)
+            .is_some_and(|l| !l.is_empty())
+        {
+            o.insert(
+                "supported_reasoning_levels".into(),
+                superba_core::default_reasoning_levels_json(),
+            );
+            o.insert(
+                "default_reasoning_level".into(),
+                json!(superba_core::DEFAULT_REASONING_LEVEL),
+            );
         }
-        _ => {
-            o.shift_remove("default_reasoning_level");
+    } else {
+        o.insert("supported_reasoning_levels".into(), Value::Array(levels));
+        match &spec.default_reasoning_level {
+            Some(d) => {
+                o.insert("default_reasoning_level".into(), json!(d));
+            }
+            None => {
+                o.shift_remove("default_reasoning_level");
+            }
         }
     }
     for (key, value) in [
@@ -662,10 +687,11 @@ fn generic_entry(
         o.shift_remove(key);
     }
     set_tiers(&mut o, tiers, spec.default_service_tier.as_deref());
+    // A model the list gives no window for: its family's (an estimate).
     let window = spec
         .context_window
         .or(spec.max_context_window)
-        .unwrap_or(FALLBACK_CONTEXT_WINDOW);
+        .unwrap_or_else(|| superba_core::family_context_window(&spec.slug));
     let max = spec.max_context_window.unwrap_or(window).max(window);
     o.insert("context_window".into(), json!(window));
     o.insert("max_context_window".into(), json!(max));

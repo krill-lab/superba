@@ -434,6 +434,7 @@ fn models_view_edit_and_report_round_trip() {
         notes: vec![Notice::warning(LocalizedText::new("a.b", "frozen"))],
         per_model: true,
         codex_only: false,
+        catalog_settings: None,
         applied: Some(AppliedModels {
             model: Some("gpt-6-astra".into()),
             context_window: None,

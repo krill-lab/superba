@@ -259,11 +259,13 @@ fn every_listed_model_is_priced_or_known_to_have_no_official_price() {
         );
     }
     // Every entry names the official page it was read from and the date.
-    const OFFICIAL: [&str; 10] = [
+    const OFFICIAL: [&str; 11] = [
         "https://developers.openai.com/",
         "https://openai.com/",
         "https://platform.claude.com/",
         "https://ai.google.dev/",
+        // Google's Gemini API pricing moved here (ai.google.dev redirects).
+        "https://aistudio.google.com/",
         "https://api-docs.deepseek.com/",
         "https://www.alibabacloud.com/",
         "https://docs.z.ai/",
