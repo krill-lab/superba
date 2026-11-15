@@ -218,6 +218,12 @@ zh_name = "单个插件市场"
 zh = "某个插件市场的记录，表名为市场名称，包含来源类型、来源地址、Git 引用和同步状态。"
 zh_basis = ""
 
+["config:marketplaces.<name>.auto_update"]
+en = "Check for updates to installed Git plugins from this marketplace when plugins are listed."
+en_source = "openai/codex rust-v0.171.0-alpha.5: codex-rs/core/config.schema.json"
+en_hash = "5ea8247edbca0bae"
+zh = ""
+
 ["config:marketplaces.<name>.last_revision"]
 en = "Git revision Codex last successfully activated for this marketplace."
 en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"

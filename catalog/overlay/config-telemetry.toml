@@ -205,6 +205,18 @@ zh_name = "日志 HTTP 客户端私钥"
 zh = "双向 TLS 使用的客户端私钥文件路径（PEM 格式），必须与 `client-certificate` 一起设置。"
 zh_basis = ""
 
+["config:otel.headers_helper"]
+en = "Command that prints a JSON object of HTTP headers for explicit OTLP HTTP exporters. Runs from CODEX_HOME. Repository-local configuration cannot set OTel options."
+en_source = "openai/codex rust-v0.171.0-alpha.5: codex-rs/core/config.schema.json"
+en_hash = "c2791b695237bec5"
+zh = ""
+
+["config:otel.headers_helper_refresh_interval_ms"]
+en = "Interval between helper executions in milliseconds. Defaults to 29 minutes."
+en_source = "openai/codex rust-v0.171.0-alpha.5: codex-rs/core/config.schema.json"
+en_hash = "3c88db20eb9ce9cb"
+zh = ""
+
 ["config:otel.log_agent_responses"]
 en = "Opt in to logging final main-agent and spawned-subagent responses to an OTLP log exporter. Defaults to false. Response text can be sensitive and is capped at 64 KiB."
 en_source = "openai/codex rust-v0.158.0: codex-rs/core/config.schema.json"
