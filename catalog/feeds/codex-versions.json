@@ -2,6 +2,51 @@
   "format": 1,
   "releases": [
     {
+      "version": "0.169.0",
+      "tag": "rust-v0.169.0",
+      "date": 1794545300000,
+      "prerelease": false,
+      "sha256": {
+        "aarch64-apple-darwin": "8a232260df7a12c5e83e0b4b7659e1c8d9259b41942517bc0068d8ab55c36461",
+        "aarch64-pc-windows-msvc": "75318180f853d1846f6542f3f6409bfeae4553b91cac6aaaa08c64ee16e7a534",
+        "aarch64-unknown-linux-musl": "c8d0b4ab2a97c595b70b10412d36d0d5464dcef1e1d3246b073d48017cdf5a4f",
+        "x86_64-apple-darwin": "0a3c392235b4712409495ced02bbe0662ce7a038232766d1c1c34af74e905c2f",
+        "x86_64-pc-windows-msvc": "456db280d16f4393cd99a398f11b4a14a3ede68b6bd31610ce41fb10d6b65737",
+        "x86_64-unknown-linux-musl": "3b8ed091149cc63a59046b9f094bcfa21cdb4dda15ede441ce369bcee4a71ba0"
+      }
+    },
+    {
+      "version": "0.169.0-alpha.11.1",
+      "tag": "rust-v0.169.0-alpha.11.1",
+      "date": 1794427193000,
+      "prerelease": true,
+      "bundled_by": [
+        "26.1111.21308"
+      ],
+      "sha256": {
+        "aarch64-apple-darwin": "5fe94e3ed3ec4ec0d161ba6d29e10bd7537388c24b455838ce71e4238041868f",
+        "aarch64-pc-windows-msvc": "f3f2f412fb8f27c6ca9ceab4ece88c256af4ea54d57f3ea324925fb1895d889f",
+        "aarch64-unknown-linux-musl": "7bff88a0dab32529f6a03125839ea7c1f19d99b1a2650ffda3258f89963b034a",
+        "x86_64-apple-darwin": "ef63818ad72f96d114d7d1f43c38cc9f1e06801d8343ede27b0508aa4c068df1",
+        "x86_64-pc-windows-msvc": "c65501b9c5f06141be5236cdff6db75fda2393e76e747c5af5c9be986e5308e8",
+        "x86_64-unknown-linux-musl": "28b341edf3d34f6f06582cf87aa658e443377d0d95186c55876f6c0a7f61a071"
+      }
+    },
+    {
+      "version": "0.168.0",
+      "tag": "rust-v0.168.0",
+      "date": 1794518947000,
+      "prerelease": false,
+      "sha256": {
+        "aarch64-apple-darwin": "2795694bb5b89234e3da0dd0c2c9e7a71764521080caed17bf12c1e0458058ca",
+        "aarch64-pc-windows-msvc": "0964634b15f7224b7a508130d37f0626970dc459e1797b69371c5e2d9854cdcc",
+        "aarch64-unknown-linux-musl": "127d5990f5b48bb327cf48a1bd1d09d65b7a626186158608189b37e84846dd07",
+        "x86_64-apple-darwin": "67993fcb3051a1261c68751e1171f9c5a01662dfa42268cc58ea39cd175981a5",
+        "x86_64-pc-windows-msvc": "f6757eb2a4daaad569b01b3ea519c9009d38d0bac5fc4082ff02517e00537797",
+        "x86_64-unknown-linux-musl": "3acbff91c0a8e30767d47c8b6941279a603ab4087280aa3e546537cef3622cb8"
+      }
+    },
+    {
       "version": "0.167.2",
       "tag": "rust-v0.167.2",
       "date": 1794427437000,

@@ -66,7 +66,7 @@ zh_basis = "0c3bee0c63af47c1"
 
 ["config:approval_policy.granular.sandbox_approval"]
 en = "Whether to allow sandbox escalation approval requests, including inline `with_additional_permissions` and `require_escalated` requests. Dangerous commands can still request approval within existing permissions."
-en_source = "openai/codex rust-v0.170.0-alpha.2: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.168.0: codex-rs/core/config.schema.json"
 en_hash = "d5ead3985f58588e"
 zh_name = "沙箱提权审批"
 zh = "依据源码推断，控制是否允许沙箱权限升级审批，包括命令中的 `with_additional_permissions` 和 `require_escalated` 请求；设为 `false` 会拒绝这类请求。危险命令若不申请额外权限，仍可能在现有权限内要求审批；执行规则触发的审批另由 `rules` 控制。"

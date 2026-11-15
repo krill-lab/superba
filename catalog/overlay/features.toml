@@ -170,6 +170,13 @@ zh_name = "Browser Use 完整 CDP"
 zh = "桌面 app 的管理开关：是否允许 Browser Use 集成使用完整的 Chrome DevTools Protocol（CDP）能力。应由管理员在托管配置（requirements）中设置；Codex CLI 本身不读取它。默认开启。"
 zh_basis = ""
 
+["feature:catalog_apps_instructions"]
+en = ""
+en_hash = ""
+zh_name = "模型目录应用连接器说明"
+zh = "依据源码推断，启用后，提供给模型的应用连接器（Apps）使用说明改用所选模型在模型目录中提供的文字（目录给出空字符串时不再发送该说明，未提供时仍用 Codex 内置说明）；说明在会话中途变化时，会注明新说明替换旧说明或旧说明不再适用。仅在应用连接器可用且模型需要该说明时生效。开发中，默认关闭。"
+zh_basis = ""
+
 ["feature:chronicle"]
 en = ""
 en_hash = ""
@@ -720,14 +727,14 @@ zh_basis = ""
 en = ""
 en_hash = ""
 zh_name = "旧格式增量工具定义"
-zh = "依据源码推断，对不使用 Responses Lite 格式的模型，在内置 Amazon Bedrock 供应商（`amazon-bedrock`、`amazon-bedrock-runtime`）上像 `incremental_tools` 一样跟踪工具定义，新的上下文窗口只发送工具变化的增量更新。0.169.0-alpha.10 曾同时管 Google Cloud（`gcp`），0.170 起 `gcp` 改由 `incremental_tools_legacy_gcp` 控制。默认关闭；其他供应商不受影响。"
+zh = "依据源码推断，对不使用 Responses Lite 格式的模型，在内置 Amazon Bedrock 供应商（`amazon-bedrock`、`amazon-bedrock-runtime`）上像 `incremental_tools` 一样跟踪工具定义，新的上下文窗口只发送工具变化的增量更新。默认关闭；Google Cloud（`gcp`）由 `incremental_tools_legacy_gcp` 单独控制（0.169.0-alpha.10 中曾由本开关一并控制），其他供应商不受影响。0.168.0 中没有此开关。"
 zh_basis = ""
 
 ["feature:incremental_tools_legacy_gcp"]
 en = ""
 en_hash = ""
 zh_name = "Google Cloud 增量工具定义"
-zh = "依据源码推断，对不使用 Responses Lite 格式的模型，在内置 Google Cloud 供应商（`gcp`）上像 `incremental_tools` 一样跟踪工具定义，新的上下文窗口只发送工具变化的增量更新。0.170 起从 `incremental_tools_legacy` 中拆出，为稳定功能并默认开启；设为 `false` 可让 `gcp` 每次发送完整的工具定义。其他供应商不受影响。"
+zh = "依据源码推断，对不使用 Responses Lite 格式的模型，在内置 Google Cloud 供应商（`gcp`）上像 `incremental_tools` 一样跟踪工具定义，新的上下文窗口只发送工具变化的增量更新。稳定，默认开启；设为 `false` 可让 `gcp` 每次发送完整的工具定义，其他供应商不受影响。0.168.0 中没有此开关。"
 zh_basis = ""
 
 ["feature:instant_interrupt"]
@@ -1106,7 +1113,7 @@ zh_basis = ""
 en = ""
 en_hash = ""
 zh_name = "保留客户端工具输出"
-zh = "依据源码推断，在远程压缩和跨上下文窗口处理时，保留客户端明确标记需要留存的工具输出，避免将它们当作普通旧工具结果改写或丢弃。稳定，默认开启；0.167.0、0.167.1 中仍为开发中、默认关闭。"
+zh = "依据源码推断，在远程压缩和跨上下文窗口处理时，保留客户端明确标记需要留存的工具输出，避免将它们当作普通旧工具结果改写或丢弃。0.168 起为稳定功能并默认开启，0.167 各版本中为开发中、默认关闭。"
 zh_basis = ""
 
 ["feature:rollout_budget"]
@@ -1128,6 +1135,13 @@ en = ""
 en_hash = ""
 zh_name = "运行时指标"
 zh = "启用运行时指标快照（通过手动读取器采集），随 OpenTelemetry 遥测上报。开发中，默认关闭。"
+zh_basis = ""
+
+["feature:safe_image_decoder"]
+en = ""
+en_hash = ""
+zh_name = "安全图片解码"
+zh = "依据源码推断，用经过审核的图片清理器处理发给模型的图片：解码后重新编码并去除源文件元数据，应用 JPEG 方向和受支持的 ICC 色彩转换（转为 sRGB），PNG、GIF 输出为 PNG，JPEG、WebP 输出为 JPEG，并限制输入字节数和解码后的像素数。同样用于 `view_image` 和 MCP 图片的校验；开发中，默认关闭。"
 zh_basis = ""
 
 ["feature:search_tool"]
@@ -1379,7 +1393,7 @@ zh_basis = ""
 en = ""
 en_hash = ""
 zh_name = "终端会话工作区"
-zh = "依据源码推断，在由 Codex 管理的全屏终端界面中保留主会话和侧边会话的视图，支持窗格焦点切换、隐藏、分栏及宽度调整。开发中，默认关闭；普通终端滚动输出模式不启用这些工作区行为。"
+zh = "依据源码推断，在由 Codex 管理的全屏终端界面中保留主会话和侧边会话的视图，支持窗格焦点切换、隐藏、分栏及宽度调整。0.171.0-alpha.5 起为稳定功能并默认开启，此前为开发中、默认关闭；普通终端滚动输出模式不启用这些工作区行为。"
 zh_basis = ""
 
 ["feature:ultrafast_mode"]
