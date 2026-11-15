@@ -104,6 +104,10 @@ pub struct FakeService {
 #[derive(Debug, Default)]
 struct Areas {
     storage: Mutex<Option<Result<superba_core::data::DataUsage>>>,
+    codex_data: Mutex<(
+        Option<superba_core::data::CodexDataLocation>,
+        Option<superba_core::data::CodexDataPlan>,
+    )>,
     claude: Mutex<claude::State>,
     files: Mutex<files::State>,
     maintenance: Mutex<maintenance::State>,
@@ -179,6 +183,15 @@ impl FakeService {
     /// Fixture returned by the data block's asynchronous storage scan.
     pub fn set_data_usage(&self, result: Result<superba_core::data::DataUsage>) {
         *self.areas.storage.lock().unwrap() = Some(result);
+    }
+
+    /// Fixtures of the Codex data card: its placement and the next preview.
+    pub fn set_codex_data(
+        &self,
+        location: superba_core::data::CodexDataLocation,
+        plan: Option<superba_core::data::CodexDataPlan>,
+    ) {
+        *self.areas.codex_data.lock().unwrap() = (Some(location), plan);
     }
 
     /// Construct an isolated fake world without inspecting the real machine.
@@ -1706,6 +1719,29 @@ impl SwitchService for FakeService {
 
     async fn data_where(&self) -> Result<superba_core::data::DataLocation> {
         self.data_usage().await.map(|u| u.location)
+    }
+
+    async fn codex_data_where(&self) -> Result<superba_core::data::CodexDataLocation> {
+        self.areas
+            .codex_data
+            .lock()
+            .unwrap()
+            .0
+            .clone()
+            .ok_or_else(|| Error::not_implemented("codex data location"))
+    }
+
+    async fn codex_data_plan(
+        &self,
+        _directory: Option<std::path::PathBuf>,
+    ) -> Result<superba_core::data::CodexDataPlan> {
+        self.areas
+            .codex_data
+            .lock()
+            .unwrap()
+            .1
+            .clone()
+            .ok_or_else(|| Error::not_implemented("codex data plan"))
     }
 
     async fn overview(&self) -> Result<Overview> {
