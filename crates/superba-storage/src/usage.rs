@@ -44,7 +44,7 @@ fn category(path: &Path) -> &'static str {
     }
 }
 
-fn walk(root: &Path, visit: &mut impl FnMut(&Path, u64), skipped: &mut u64) {
+pub(crate) fn walk(root: &Path, visit: &mut impl FnMut(&Path, u64), skipped: &mut u64) {
     let mut todo = vec![root.to_path_buf()];
     while let Some(path) = todo.pop() {
         let meta = match fs::symlink_metadata(&path) {
@@ -126,6 +126,28 @@ pub fn usage(ctx: &LocalContext) -> DataUsage {
         },
         &mut skipped,
     );
+    // Session folders moved to another disk (Codex data location) are links:
+    // count what they point to, as Codex sees it, instead of skipping them.
+    for dir in [home.sessions_dir(), home.archived_sessions_dir()] {
+        let linked = fs::symlink_metadata(&dir).is_ok_and(|m| crate::validation::is_link(&m));
+        if !linked {
+            continue;
+        }
+        match superba_core::paths::canonical(&dir) {
+            Ok(target) if target.is_dir() => {
+                skipped = skipped.saturating_sub(1);
+                walk(
+                    &target,
+                    &mut |_, bytes| {
+                        codex_home_bytes = codex_home_bytes.saturating_add(bytes);
+                        codex_sessions_bytes = codex_sessions_bytes.saturating_add(bytes);
+                    },
+                    &mut skipped,
+                );
+            }
+            _ => {}
+        }
+    }
     let mut codex_sqlite_bytes = 0u64;
     if home.sqlite_home() != home.root() {
         for suffix in ["", "-wal", "-shm"] {
