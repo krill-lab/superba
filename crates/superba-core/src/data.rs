@@ -139,6 +139,38 @@ pub fn error_text(key: &str) -> Option<crate::LocalizedText> {
             "An interrupted switch needs recovery. Restart Superba, let recovery finish, then move the data."
         }
         "data.router.stop" => "The router did not stop. The original data location is kept.",
+        "data.codex.running" => {
+            "Codex is running. Quit the ChatGPT app and close Codex in terminals and editors, then move the session data."
+        }
+        "data.codex.pending" => {
+            "An interrupted move of Codex's session data needs recovery. Restart Superba (or run spb recover), then try again."
+        }
+        "data.codex.overlap" => {
+            "Choose a folder outside the Codex home and outside Superba's data folder."
+        }
+        "data.codex.name" => {
+            "The folder path must not contain a folder named sessions or archived_sessions."
+        }
+        "data.codex.unmanaged" => {
+            "Codex's session folder is a link Superba did not create. Superba leaves it alone; change it by hand."
+        }
+        "data.codex.other" => {
+            "Codex's session folder is not a folder. Superba leaves it alone; check it by hand."
+        }
+        "data.codex.not_moved" => "Codex's session data is already in the Codex home.",
+        "data.codex.same" => "Codex's session data is already in this folder.",
+        "data.codex.unreachable" => {
+            "The folder holding Codex's session data cannot be reached. Connect the drive again, then retry."
+        }
+        "data.codex.in_use" => {
+            "A program still has Codex's session files open. Close Codex in the app, terminals and editors, then retry. Nothing was changed."
+        }
+        "data.codex.links" => {
+            "This system does not allow Superba to create the link Codex needs. Nothing was changed."
+        }
+        "data.codex.journal" => {
+            "The record of an interrupted move of Codex's session data is invalid. Both copies are kept; check them before retrying."
+        }
         _ => return None,
     };
     Some(crate::LocalizedText::new(key, fallback))
@@ -164,4 +196,132 @@ pub struct DataCleanupReport {
     pub reclaimed_bytes: u64,
     /// Fresh usage after cleanup.
     pub usage: DataUsage,
+}
+
+/// The directories of a Codex home that "Codex data location" can place on
+/// another disk (GitHub issue 15): the conversation rollouts. Both move
+/// together, because Codex archives a conversation with a plain rename from
+/// `sessions/` to `archived_sessions/`, which fails across volumes.
+pub const CODEX_DATA_DIRS: [&str; 2] = ["sessions", "archived_sessions"];
+
+/// How one of [`CODEX_DATA_DIRS`] is placed in the Codex home.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CodexDirPlacement {
+    /// Not created yet (Codex creates it on first use).
+    Missing,
+    /// An ordinary directory inside the Codex home.
+    InHome,
+    /// A directory junction (Windows) or symbolic link to `target`.
+    Linked {
+        /// Where the data is (the link target as stored).
+        target: PathBuf,
+        /// Superba created this link (its move record names it).
+        managed: bool,
+        /// The target exists and is a directory (false: the drive is
+        /// unplugged or the folder was removed).
+        reachable: bool,
+    },
+    /// Something else (a file, a link to a file): never touched.
+    Other,
+}
+
+/// One Codex data directory and its size.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CodexDataDir {
+    /// `sessions` or `archived_sessions`.
+    pub name: String,
+    /// The path Codex uses (`<CODEX_HOME>/<name>`).
+    pub path: PathBuf,
+    /// Where the data actually lives.
+    pub placement: CodexDirPlacement,
+    /// Logical bytes of the files (through the link when it is reachable).
+    pub bytes: u64,
+    /// Regular files counted.
+    pub files: u64,
+}
+
+/// Where Codex's session data is, as Superba sees it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CodexDataLocation {
+    /// The local Codex home (`CODEX_HOME` or `~/.codex`); never changed.
+    pub codex_home: PathBuf,
+    /// The folder Superba moved the data to (`None`: in the Codex home).
+    pub directory: Option<PathBuf>,
+    /// Each of [`CODEX_DATA_DIRS`].
+    pub dirs: Vec<CodexDataDir>,
+    /// An interrupted move waits for recovery (finished at the next start).
+    pub pending: bool,
+    /// Old copies a finished move could not remove (safe to inspect).
+    pub leftovers: Vec<PathBuf>,
+}
+
+impl CodexDataLocation {
+    /// True when a link Superba created points to a folder that cannot be
+    /// reached now (e.g. the drive is unplugged).
+    pub fn unreachable(&self) -> bool {
+        self.dirs.iter().any(|d| {
+            matches!(
+                d.placement,
+                CodexDirPlacement::Linked {
+                    reachable: false,
+                    ..
+                }
+            )
+        })
+    }
+}
+
+/// One directory a Codex data move copies.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CodexDataMoveItem {
+    /// `sessions` or `archived_sessions`.
+    pub name: String,
+    /// Where the data is now.
+    pub from: PathBuf,
+    /// Where it will be.
+    pub to: PathBuf,
+    /// Bytes to copy.
+    pub bytes: u64,
+    /// Files to copy.
+    pub files: u64,
+}
+
+/// Preview of a Codex data move (no side effects besides a write probe).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CodexDataPlan {
+    /// The current placement.
+    pub location: CodexDataLocation,
+    /// The new folder; `None` moves the data back into the Codex home.
+    pub destination: Option<PathBuf>,
+    /// What is copied.
+    pub moves: Vec<CodexDataMoveItem>,
+    /// Sum of the items' bytes.
+    pub total_bytes: u64,
+    /// Free bytes on the destination volume, when known.
+    pub available_bytes: Option<u64>,
+    /// Reasons the move cannot run now (empty: it can).
+    pub blockers: Vec<crate::LocalizedText>,
+    /// Things to know before moving.
+    pub notes: Vec<crate::LocalizedText>,
+}
+
+impl CodexDataPlan {
+    /// The move can run now.
+    pub fn ready(&self) -> bool {
+        self.blockers.is_empty() && !self.moves.is_empty()
+    }
+}
+
+/// A finished Codex data move.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CodexDataMoveReport {
+    /// The placement after the move.
+    pub location: CodexDataLocation,
+    /// Bytes copied and verified.
+    pub copied_bytes: u64,
+    /// Files copied and verified.
+    pub files: u64,
+    /// Old copies that could not be removed (the new place is active).
+    pub leftovers: Vec<PathBuf>,
 }

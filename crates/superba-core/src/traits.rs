@@ -1055,6 +1055,35 @@ pub trait SwitchService: Send + Sync {
         Err(Error::not_implemented("data cleanup"))
     }
 
+    /// Where the local Codex home keeps its session data (GitHub issue 15):
+    /// in the home, or on another disk through a link Superba created.
+    async fn codex_data_where(&self) -> Result<crate::data::CodexDataLocation> {
+        Err(Error::not_implemented("codex data location"))
+    }
+
+    /// Preview moving Codex's session data to `directory` (`None`: back into
+    /// the Codex home). Blockers (Codex running, space, an invalid folder) are
+    /// listed, not returned as errors.
+    async fn codex_data_plan(
+        &self,
+        directory: Option<PathBuf>,
+    ) -> Result<crate::data::CodexDataPlan> {
+        let _ = directory;
+        Err(Error::not_implemented("codex data plan"))
+    }
+
+    /// Move Codex's session data to `directory` (`None`: back into the Codex
+    /// home): copy, verify, switch the link, then remove the old copy. Any
+    /// failure before the switch leaves the old data as it was.
+    async fn codex_data_move(
+        &self,
+        directory: Option<PathBuf>,
+        progress: crate::data::DataMoveProgressSink,
+    ) -> Result<crate::data::CodexDataMoveReport> {
+        let _ = (directory, progress);
+        Err(Error::not_implemented("codex data move"))
+    }
+
     /// Overview snapshot (cheap enough to poll every few seconds).
     async fn overview(&self) -> Result<Overview>;
 
