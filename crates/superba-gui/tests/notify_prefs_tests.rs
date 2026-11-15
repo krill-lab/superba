@@ -30,8 +30,9 @@ fn settings() -> Settings {
 #[test]
 fn channels_test_button_and_hooks() {
     let service = Arc::new(FakeService::new(FakeOptions::default()));
-    // Tall enough for the whole section below the scrolled-to title.
-    let mut h = Harness::new([1280.0, 4800.0], Locale::ZhCn, service.clone(), false);
+    // Tall enough for the whole section below the scrolled-to title (the
+    // General section above it is longer on Windows).
+    let mut h = Harness::new([1280.0, 8000.0], Locale::ZhCn, service.clone(), false);
     let mut prefs = settings();
     let mut state = notify::State::default();
     // The palette's "Notifications" scrolls the section into view.

@@ -326,6 +326,26 @@ fn the_apps_identical_copy_comes_before_superbas_own() {
     assert!(!own.exists());
 }
 
+/// A directory opened so that its times can be set: Windows opens a
+/// directory only with `FILE_FLAG_BACKUP_SEMANTICS` (and write access for
+/// `set_modified`); elsewhere a plain open does.
+fn open_dir(path: &Path) -> fs::File {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+        fs::File::options()
+            .write(true)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+            .open(path)
+            .unwrap()
+    }
+    #[cfg(not(windows))]
+    {
+        fs::File::open(path).unwrap()
+    }
+}
+
 #[test]
 fn an_app_update_makes_a_new_copy_and_prunes_the_old_ones() {
     let temp = tempdir().unwrap();
@@ -336,8 +356,7 @@ fn an_app_update_makes_a_new_copy_and_prunes_the_old_ones() {
     // Leftovers: an interrupted copy of long ago and a foreign folder.
     let staging = own.join(".staging-0123456789abcdef-x");
     write(staging.join("codex.exe"), "half");
-    fs::File::open(&staging)
-        .unwrap()
+    open_dir(&staging)
         .set_modified(UNIX_EPOCH + Duration::from_secs(1_700_000_000))
         .unwrap();
     write(own.join("notes").join("keep.txt"), "not a copy");
