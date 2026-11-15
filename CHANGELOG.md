@@ -5,6 +5,17 @@ All notable changes to Superba are documented here. The format follows
 [Semantic Versioning](https://semver.org/): later releases increment the patch
 number; the minor number changes only for breaking changes.
 
+## [0.1.2-alpha.2] - 2026-11-16
+
+### Fixed
+- Windows, ChatGPT 26.1111 from the Microsoft Store: switching no longer fails with "Windows does not let other programs run the Codex inside the ChatGPT app package … no identical copy under %LOCALAPPDATA%\OpenAI\Codex\bin". On recent Windows 11 builds (above 26200, or 26100/26200 with update revision 9278 or later) app 26.1111 runs its Codex straight from the package and no longer copies it out, so opening ChatGPT never produced the copy Superba looked for. Superba now uses the app's own copy when there is one and otherwise copies the packaged Codex (and its three helper programs) into its data folder itself (`app-codex/`), checks every file's size and SHA-256, and runs that; older copies are removed. About 490 MB per app version. When copying fails, the message says what was tried and what to do.
+- A `SUPERBA_APP_PATH` (or app location) pointing at a versioned folder inside `WindowsApps` follows the installed version of that package after a Store update instead of breaking; doctor says the variable is not needed for the Store app and how to remove it.
+
+### Added
+- ChatGPT installed outside the default folders is found: Superba reads the uninstall entries in the Windows registry (current user and machine, 64- and 32-bit) and the path of a running ChatGPT. If it still is not found, set it under Settings → General → "ChatGPT app location" (choose the folder or paste the path; it is checked before it is saved and shows the app and bundled Codex versions) or with `spb app path <folder>` (`--clear` to go back to automatic detection). The Store app is detected automatically and needs no location. "No local Codex was found to build the model catalog" now says where to set it.
+- The local router compresses its uploads to providers: request bodies Codex sends uncompressed (Codex compresses only with a ChatGPT sign-in) go out with zstd on every line not known to refuse it. A line that answers a compressed body with a decode error gets the body again uncompressed and is left uncompressed for 24 h; an ordinary error does not count against it. Upstream WebSockets offer `permessage-deflate` and use it when the provider agrees. `spb router status` shows the bytes before and after compression. Typical Codex request bodies shrink by half or more.
+- Codex settings catalog up to Codex 0.171.0-alpha.5, with 0.168.0, 0.169.0 and the 0.169.0-alpha.11.1 bundled in ChatGPT 26.1111 (Chinese names and explanations for every new setting).
+
 ## [0.1.2-alpha.1] - 2026-11-15
 
 ### Added
