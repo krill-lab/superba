@@ -5,6 +5,14 @@ All notable changes to Superba are documented here. The format follows
 [Semantic Versioning](https://semver.org/): later releases increment the patch
 number; the minor number changes only for breaking changes.
 
+## [0.1.2-alpha.1] - 2026-11-15
+
+### Added
+- Message predictions in the ChatGPT desktop app with an API key, direct or through the router: after a reply, the composer suggests your likely next message as ghost text, and Tab turns it into a draft you can edit. Superba → General → "Force message predictions" (on by default; not in safe mode). The app normally asks chatgpt.com for each prediction, which needs a ChatGPT sign-in; Superba answers the composer's request itself through the app's own Codex (`thread/sample`) with the prompt chatgpt.com uses (version 5) and its reasoning effort (high). A ChatGPT sign-in keeps the app's own predictions. Each prediction is one more model request per turn on your key or relay. Works with app builds 26.1103 and 26.1106; other builds are left unpatched.
+
+### Fixed
+- Model tests send an `x-opencode-session` header (`superba-test-<uuid>`, one per test), so tests against opencode-backed providers no longer fail: the Models page's test through the router, and the provider test (provider page, setup wizard, `spb site probe --responses`). Normal requests are unchanged.
+
 ## [0.1.1] - 2026-11-14
 
 The first stable release since 0.1.0: everything in the 0.1.1 alphas (the entries below give the details), the same code as 0.1.1-alpha.21. Installs on the stable channel update from 0.1.0; installs on the preview channel update from the alphas.
