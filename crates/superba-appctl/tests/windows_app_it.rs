@@ -153,6 +153,7 @@ async fn packaged_app_launches_quits_and_relaunches() {
     let data = tempfile::tempdir().unwrap();
     let home = PathBuf::from(std::env::var_os("USERPROFILE").unwrap());
     let ctx = LocalContext::new(home, DataDir::new(data.path()), Arc::new(ProcessEnv));
+    let it_ctx = ctx.clone();
     let ctl = DesktopAppController::new(ctx).with_tunables(Tunables {
         ready_timeout: Duration::from_secs(120),
         app_server_wait: Duration::from_secs(30),
@@ -219,9 +220,10 @@ async fn packaged_app_launches_quits_and_relaunches() {
         }
     }
     // User bug 143 (GH#32): the packaged codex.exe cannot be started from
-    // outside the package; Superba runs the app's extracted copy instead.
+    // outside the package; Superba runs the app's extracted copy, else its own
+    // copy in its (temporary) data directory.
     if let Some(binary) = &install.bundled_codex {
-        let runnable = superba_appctl::runnable::runnable_codex(binary, &ProcessEnv);
+        let runnable = superba_appctl::runnable::runnable_codex(binary, &it_ctx);
         say(format!(
             "first: runnable Codex for {}: {runnable:?}",
             binary.display()

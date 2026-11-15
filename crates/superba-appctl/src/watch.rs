@@ -28,7 +28,8 @@ use crate::install::{ENV_SUPERBA_APP_DIR, candidate_roots};
 ///   (Linux: fixed roots, `.desktop` directories, `~/Applications`, `/opt`;
 ///   macOS: `/Applications`, `~/Applications`; Windows: `Programs\ChatGPT`,
 ///   `Programs\Codex`): a directory's modification time changes when an entry is
-///   added, removed or renamed;
+///   added, removed or renamed (the app location of the settings is added by
+///   the controller; on Windows the uninstall registry keys are stamped too);
 /// - each install's directory, executable, `app.asar` and bundled Codex;
 /// - the PATH directories and the other directories CLIs are looked for in;
 /// - the official standalone Codex layout in the Codex home
@@ -113,7 +114,10 @@ pub fn metadata_stamp(paths: &[PathBuf]) -> u64 {
         }
     }
     #[cfg(target_os = "windows")]
-    crate::install::registry_appx_stamp().hash(&mut hasher);
+    {
+        crate::install::registry_appx_stamp().hash(&mut hasher);
+        crate::install::registry_uninstall_stamp().hash(&mut hasher);
+    }
     hasher.finish()
 }
 

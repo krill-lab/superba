@@ -278,6 +278,9 @@ app_check = "比较已安装的 app 与本系统可用的最新版本"
 app_download = "下载并校验最新的 app 安装包（只显示安装命令，不会执行）"
 app_download_open = "用系统安装程序打开下载的安装包"
 app_download_source = "Windows：安装包来源，official（OpenAI 官方服务器）或 store（Microsoft Store CDN，由第三方 store.rg-adguard.net 解析链接）；默认取 偏好设置 → 网络 中的设置"
+app_path = "Superba 找不到 ChatGPT 桌面 app 时它的安装位置（「设置」→「通用」→「ChatGPT app 位置」）：查看，或检查后保存一个文件夹"
+app_path_dir = "app 的安装文件夹（包含 ChatGPT.exe 和 resources 的那个），或它的程序文件"
+app_path_clear = "忘掉这个位置：重新在默认位置查找 app"
 feeds_group = "Superba 的签名列表（模型、价格、版本）"
 feeds_status = "查看正在使用的列表及上次检查时间"
 feeds_refresh = "立即检查镜像上是否有更新的列表"
@@ -873,6 +876,12 @@ source = "来源"
 router = "路由"
 rollout = "会话记录"
 imported = "{tool} 导入"
+
+[cli.app_path]
+location = "ChatGPT app 位置"
+not_set = "没有设置 ChatGPT app 位置：Superba 在默认位置查找（Windows 上还会查看已安装的程序和正在运行的 app）。可用 spb app path <文件夹> 设置。"
+saved = "已保存：Superba 从现在起使用这个 ChatGPT app（若设置了 SUPERBA_APP_PATH，它仍然优先）。"
+cleared = "已清除 ChatGPT app 位置：Superba 重新在默认位置查找。"
 
 [cli.versions]
 bad_version = "不是有效的 Codex 版本：{value}"

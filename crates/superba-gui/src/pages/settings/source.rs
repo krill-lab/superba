@@ -79,9 +79,9 @@ pub fn load(input: Input) -> Result<Model> {
             .overview
             .as_ref()
             .and_then(|o| std::fs::read_to_string(o.codex_home.join("config.toml")).ok());
-        // The MSIX app's packaged Codex runs as its extracted copy (user bug 143).
+        // The MSIX app's packaged Codex runs as a copy (user bug 143).
         let listed = match &ctx {
-            Some(ctx) => superba_switch::runnable_app_codex(&binary.0, ctx.env.as_ref()),
+            Some(ctx) => superba_switch::runnable_app_codex(&binary.0, ctx),
             None => Ok(binary.0.clone()),
         }
         .and_then(|runnable| features_list(&runnable, config_text.as_deref(), cache));

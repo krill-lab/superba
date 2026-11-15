@@ -98,6 +98,101 @@ pub fn app_version_text(release: Option<&str>, package: Option<&str>) -> Option<
     }
 }
 
+/// What a desktop app location the user picked holds (Settings → ChatGPT app
+/// location, `spb app path`; [`crate::AppController::check_app_location`]).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum AppLocationCheck {
+    /// A desktop app with its bundled Codex.
+    Install {
+        /// The install found there.
+        install: AppInstall,
+    },
+    /// A desktop app without a bundled Codex Superba can use
+    /// (`resources/codex.exe`, `resources/codex-cli`): it opens, but the model
+    /// catalog cannot be built for it.
+    NoBundledCodex {
+        /// The install found there.
+        install: AppInstall,
+    },
+    /// A folder (or file) inside the package of the Microsoft Store app
+    /// (`C:\Program Files\WindowsApps\OpenAI.Codex_<version>_…`): Superba
+    /// finds the Store app by itself, and the folder is replaced by every app
+    /// update, so it is not saved as a location.
+    StorePackage {
+        /// The package family (`OpenAI.Codex_2p2nqsd0c76g0`).
+        family: String,
+    },
+    /// Nothing at that path.
+    Missing,
+    /// A folder or file that is not the ChatGPT / Codex desktop app (no
+    /// `resources/app.asar` next to `ChatGPT.exe` / `Codex.exe`).
+    NotAnApp,
+}
+
+impl AppLocationCheck {
+    /// The install found, also one without a bundled Codex.
+    pub fn install(&self) -> Option<&AppInstall> {
+        match self {
+            Self::Install { install } | Self::NoBundledCodex { install } => Some(install),
+            Self::StorePackage { .. } | Self::Missing | Self::NotAnApp => None,
+        }
+    }
+
+    /// Whether the location may be saved: a desktop app was found there.
+    pub fn usable(&self) -> bool {
+        self.install().is_some()
+    }
+
+    /// One line for the user: the versions found, or what is wrong.
+    pub fn text(&self, path: &std::path::Path) -> LocalizedText {
+        let path = crate::paths::display_path(path);
+        let versions = |install: &AppInstall, key: &str, fallback: &str| {
+            let unknown = LocalizedText::new("app_location.unknown", "unknown");
+            LocalizedText::new(key, fallback)
+                .arg("path", &path)
+                .arg_text("app", install.version_text().unwrap_or(unknown.clone()))
+                .arg_text(
+                    "codex",
+                    install
+                        .bundled_codex_version
+                        .as_ref()
+                        .map(|v| {
+                            LocalizedText::new("app_location.version", "{version}")
+                                .arg("version", v)
+                        })
+                        .unwrap_or(unknown),
+                )
+        };
+        match self {
+            Self::Install { install } => versions(
+                install,
+                "app_location.found",
+                "ChatGPT {app} with Codex {codex} in {path}",
+            ),
+            Self::NoBundledCodex { install } => versions(
+                install,
+                "app_location.no_codex",
+                "ChatGPT {app} in {path}, but its bundled Codex is missing: reinstall or update the app",
+            ),
+            Self::StorePackage { family } => LocalizedText::new(
+                "app_location.store_package",
+                "{path} is inside the Microsoft Store ChatGPT app ({family}). Superba finds the Store app by itself, and this folder changes with every app update, so no location is needed: clear the location (and remove SUPERBA_APP_PATH if you set it)",
+            )
+            .arg("path", &path)
+            .arg("family", family),
+            Self::Missing => LocalizedText::new("app_location.missing", "{path} does not exist")
+                .arg("path", &path),
+            Self::NotAnApp => LocalizedText::new(
+                "app_location.not_app",
+                "{path} is not the ChatGPT desktop app (no resources/app.asar): choose the app's install folder or its program file",
+            )
+            .arg("path", &path),
+        }
+    }
+}
+
 /// A CDP endpoint of a running app.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CdpEndpoint {

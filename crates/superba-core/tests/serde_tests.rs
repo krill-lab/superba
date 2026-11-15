@@ -478,6 +478,87 @@ fn forced_predictions_are_on_unless_turned_off() {
 }
 
 #[test]
+fn the_app_location_is_unset_unless_chosen_and_round_trips() {
+    let default = serde_json::to_value(Settings::default()).unwrap();
+    assert!(default.get("app_location").is_none());
+    // A file written before the setting existed.
+    let old: Settings = serde_json::from_value(json!({
+        "countdown_secs": 3,
+        "preferred_app_id": "path:/opt/ChatGPT"
+    }))
+    .unwrap();
+    assert_eq!(old.app_location, None);
+    assert_eq!(old.preferred_app_id.as_deref(), Some("path:/opt/ChatGPT"));
+    let set = Settings {
+        app_location: Some(std::path::PathBuf::from("D:\\Apps\\ChatGPT")),
+        ..Settings::default()
+    };
+    let value = serde_json::to_value(&set).unwrap();
+    assert_eq!(value["app_location"], "D:\\Apps\\ChatGPT");
+    assert_eq!(serde_json::from_value::<Settings>(value).unwrap(), set);
+    let null: Settings = serde_json::from_value(json!({ "app_location": null })).unwrap();
+    assert_eq!(null.app_location, None);
+}
+
+#[test]
+fn app_location_checks_serialize_with_a_status_and_tell_usable_ones() {
+    let install = AppInstall {
+        id: "path:D:\\Apps\\ChatGPT".into(),
+        variant: AppVariant::ChatGpt,
+        path: "D:\\Apps\\ChatGPT".into(),
+        executable: "D:\\Apps\\ChatGPT\\ChatGPT.exe".into(),
+        app_version: Some("26.1013.40934".into()),
+        bundled_codex: Some("D:\\Apps\\ChatGPT\\resources\\codex.exe".into()),
+        bundled_codex_version: Some(CodexVersion::parse("0.130.0").unwrap()),
+    };
+    let found = AppLocationCheck::Install {
+        install: install.clone(),
+    };
+    let value = json_round_trip!(AppLocationCheck, found.clone());
+    assert_eq!(value["status"], "install");
+    assert!(found.usable());
+    let text = found.text(&install.path).render_fallback();
+    assert!(
+        text.contains("26.1013.40934") && text.contains("0.130.0"),
+        "{text}"
+    );
+    let bare = AppLocationCheck::NoBundledCodex {
+        install: AppInstall {
+            bundled_codex: None,
+            bundled_codex_version: None,
+            ..install.clone()
+        },
+    };
+    assert!(bare.usable());
+    assert_eq!(bare.text(&install.path).key, "app_location.no_codex");
+    for check in [AppLocationCheck::Missing, AppLocationCheck::NotAnApp] {
+        assert!(!check.usable());
+        assert!(check.install().is_none());
+        json_round_trip!(AppLocationCheck, check);
+    }
+    assert_eq!(
+        serde_json::to_value(AppLocationCheck::NotAnApp).unwrap(),
+        json!({ "status": "not_an_app" })
+    );
+    // A folder of the Store app's package is never a location to save.
+    let store = AppLocationCheck::StorePackage {
+        family: "OpenAI.Codex_2p2nqsd0c76g0".into(),
+    };
+    assert!(!store.usable());
+    assert!(store.install().is_none());
+    let value = json_round_trip!(AppLocationCheck, store.clone());
+    assert_eq!(value["status"], "store_package");
+    let text = store.text(std::path::Path::new(
+        "C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.1103.4239.0_x64__2p2nqsd0c76g0",
+    ));
+    assert_eq!(text.key, "app_location.store_package");
+    assert!(
+        text.render_fallback()
+            .contains("OpenAI.Codex_2p2nqsd0c76g0")
+    );
+}
+
+#[test]
 fn the_app_speed_menu_is_on_unless_turned_off() {
     let default = serde_json::to_value(Settings::default()).unwrap();
     assert!(default.get("app_speed_menu").is_none());

@@ -1616,6 +1616,28 @@ impl AppController for FakeApp {
         Ok(self.installs.lock().unwrap().clone())
     }
 
+    /// An install of the fake whose folder is `path`; a path ending in
+    /// `missing` does not exist; anything else is not an app.
+    async fn check_app_location(&self, path: &Path) -> Result<superba_core::AppLocationCheck> {
+        use superba_core::AppLocationCheck;
+        push(&self.log, format!("app.check_location {}", path.display()));
+        let found = self
+            .installs
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|i| i.path == path)
+            .cloned();
+        Ok(match found {
+            Some(install) if install.bundled_codex.is_some() => {
+                AppLocationCheck::Install { install }
+            }
+            Some(install) => AppLocationCheck::NoBundledCodex { install },
+            None if path.ends_with("missing") => AppLocationCheck::Missing,
+            None => AppLocationCheck::NotAnApp,
+        })
+    }
+
     async fn codex_binaries(&self) -> Result<Vec<CodexBinary>> {
         Ok(self.binaries.lock().unwrap().clone())
     }

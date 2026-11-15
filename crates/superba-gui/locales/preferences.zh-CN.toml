@@ -102,6 +102,20 @@ data.clean = "立即清理"
 data.cleaned = "已释放 {size}。"
 data.retention_here = "请求记录保留期在“Superba → 数据”中管理。"
 
+[prefs.app_location]
+section = "ChatGPT app"
+title = "ChatGPT app 位置"
+desc = "ChatGPT 桌面 app 的安装位置，用于 Superba 自己找不到它的情况（装在其他文件夹或其他磁盘）。Superba 会用这个 app 进行切换、打开 ChatGPT 和生成模型列表。"
+browse = "选择文件夹…"
+reset = "重置"
+use = "使用"
+hint = "D:\\Apps\\ChatGPT"
+checking = "正在检查 {path}…"
+auto = "未设置：Superba 在 {path} 找到了 ChatGPT。"
+none_found = "未设置，且在默认位置没有找到 ChatGPT app：请选择它的安装文件夹。"
+not_set = "未设置：Superba 在默认位置查找。"
+note = "请选择包含 ChatGPT.exe 和 resources 文件夹的那个文件夹（也可以直接选程序文件）。若设置了 SUPERBA_APP_PATH，它仍然优先；「重置」后 Superba 重新自行查找。微软商店版 ChatGPT（C:\\Program Files\\WindowsApps\\…）总是会被自动找到，不需要设置位置。"
+
 [prefs.general]
 title = "通用"
 

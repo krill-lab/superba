@@ -154,18 +154,25 @@ pub enum Error {
         what: String,
     },
     /// The Codex bundled in an MSIX-packaged desktop app (under
-    /// `WindowsApps`) cannot be run by other programs, and no copy of it with
-    /// the same SHA-256 was found where the app extracts it (user bug 143,
-    /// GH#32).
+    /// `WindowsApps`) cannot be run by other programs; no copy of it with the
+    /// same SHA-256 was found (the app's under `%LOCALAPPDATA%\OpenAI\Codex\bin`,
+    /// Superba's own under `<data dir>/app-codex`) and Superba could not make
+    /// its own copy (user bug 143, GH#32).
     #[error(
         "Windows does not let other programs run the Codex inside the ChatGPT app package \
-         ({}), and no identical copy was found in %LOCALAPPDATA%\\OpenAI\\Codex\\bin. Open \
-         the ChatGPT app once so that it extracts its Codex there, then try again.",
+         ({}). Superba found no identical copy of it (neither the one the ChatGPT app \
+         extracts to %LOCALAPPDATA%\\OpenAI\\Codex\\bin nor its own) and could not copy it \
+         out of the package itself: {reason}. Make sure the drive of Superba's data folder \
+         has about 1 GB free, then try again; if it keeps failing, repair or reinstall \
+         ChatGPT (Windows Settings → Apps → Installed apps → ChatGPT → Advanced options).",
         crate::paths::display_path(path)
     )]
     PackagedCodex {
         /// The bundled `codex.exe` inside the package.
         path: PathBuf,
+        /// Why Superba's own copy could not be made (English, technical).
+        #[serde(default)]
+        reason: String,
     },
     /// Anything else.
     #[error("{message}")]
@@ -212,6 +219,11 @@ impl Error {
     pub fn to_text(&self) -> LocalizedText {
         if let Some(text) = self.io_text() {
             return text;
+        }
+        if let Error::PackagedCodex { reason, .. } = self {
+            return LocalizedText::new(format!("error.{}", self.code()), self.to_string())
+                .arg("detail", self.detail())
+                .arg("reason", reason);
         }
         if let Some(text) = crate::data::error_text(&self.detail()) {
             return text;
@@ -286,7 +298,7 @@ impl Error {
             } => format!("HTTP {status} from {url}: {message}"),
             Error::Ssh { host, message } => format!("{host}: {message}"),
             Error::Wsl { distro, message } => format!("{distro}: {message}"),
-            Error::PackagedCodex { path } => crate::paths::display_path(path),
+            Error::PackagedCodex { path, .. } => crate::paths::display_path(path),
             Error::Cancelled => String::new(),
         }
     }

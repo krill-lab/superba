@@ -363,7 +363,56 @@ pub(super) async fn app(command: &AppCommand, rt: &Runtime, out: &mut Output) ->
             out.value(&report)?;
             Ok(exit::OK)
         }
+        AppCommand::Path { path, clear } => app_path(path.as_deref(), *clear, rt, out).await,
     }
+}
+
+/// `spb app path [DIR] [--clear]`: the app location of the settings (Settings
+/// → General → ChatGPT app location), shown, saved after a check, or cleared.
+async fn app_path(
+    path: Option<&std::path::Path>,
+    clear: bool,
+    rt: &Runtime,
+    out: &mut Output,
+) -> Result {
+    if clear {
+        rt.service.set_app_location(None).await?;
+        out.line(text("cli.app_path.cleared"))?;
+        out.value(&serde_json::json!({ "app_location": null }))?;
+        return Ok(exit::OK);
+    }
+    let Some(path) = path else {
+        let set = rt.service.profile_set().await?;
+        let Some(location) = set.settings.app_location else {
+            out.line(text("cli.app_path.not_set"))?;
+            out.value(&serde_json::json!({ "app_location": null }))?;
+            return Ok(exit::OK);
+        };
+        let check = rt.service.check_app_location(location.clone()).await?;
+        out.field(
+            "cli.app_path.location",
+            superba_core::paths::display_path(&location),
+        )?;
+        out.line(check.text(&location))?;
+        out.value(&serde_json::json!({ "app_location": location, "check": check }))?;
+        return Ok(exit::OK);
+    };
+    // A relative path is the one the user means from here, not from the
+    // service's working directory.
+    let path = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    let check = rt.service.check_app_location(path.clone()).await?;
+    if !check.usable() {
+        return Err(usage(out, check.text(&path)));
+    }
+    let check = rt
+        .service
+        .set_app_location(Some(path.clone()))
+        .await?
+        .unwrap_or(check);
+    out.line(check.text(&path))?;
+    out.line(text("cli.app_path.saved"))?;
+    out.value(&serde_json::json!({ "app_location": path, "check": check }))?;
+    Ok(exit::OK)
 }
 
 /// Run the download, showing its progress on stderr (rewritten in place on a

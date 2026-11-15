@@ -20,6 +20,8 @@ pub(super) struct State {
     pub jump: Option<SuperbaSection>,
     /// The inline settings filter.
     pub filter: String,
+    /// General → ChatGPT app location.
+    pub app_location: general::AppLocationState,
 }
 impl Default for State {
     fn default() -> Self {
@@ -27,6 +29,7 @@ impl Default for State {
             active: SuperbaSection::General,
             jump: None,
             filter: String::new(),
+            app_location: general::AppLocationState::default(),
         }
     }
 }
@@ -197,7 +200,9 @@ pub(super) fn show(
                 );
             }
             match section {
-                SuperbaSection::General => general::show(ui, cx, settings, out),
+                SuperbaSection::General => {
+                    general::show(ui, cx, settings, &mut state.app_location, out)
+                }
                 SuperbaSection::Appearance => appearance::show(ui, cx, settings, out),
                 SuperbaSection::Network => network::show(ui, cx, settings, out),
                 SuperbaSection::Notify => {

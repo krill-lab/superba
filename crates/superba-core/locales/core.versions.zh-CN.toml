@@ -25,3 +25,12 @@ store_mirror = "Microsoft Store CDN，链接由第三方 store.rg-adguard.net �
 release = "{version}"
 with_package = "{version}（包 {package}）"
 package = "包 {package}"
+
+[app_location]
+found = "ChatGPT {app}，自带 Codex {codex}，位于 {path}"
+no_codex = "在 {path} 找到 ChatGPT {app}，但缺少它自带的 Codex：请重新安装或更新 ChatGPT"
+missing = "{path} 不存在"
+not_app = "{path} 不是 ChatGPT 桌面 app（没有 resources/app.asar）：请选择 app 的安装文件夹或它的程序文件"
+store_package = "{path} 位于微软商店版 ChatGPT 的应用包里（{family}）。Superba 会自动找到商店版 ChatGPT，而且这个文件夹每次 app 更新都会变，所以不需要设置位置：请清除位置（如果设置过 SUPERBA_APP_PATH 环境变量，也请删除它）"
+unknown = "未知"
+version = "{version}"

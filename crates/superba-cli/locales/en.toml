@@ -278,6 +278,9 @@ app_check = "Compare the installed app with the newest build for this system"
 app_download = "Download and verify the newest app package (the install command is shown, never run)"
 app_download_open = "Open the downloaded package with the system installer"
 app_download_source = "Windows: where the package comes from: official (OpenAI's server) or store (the Microsoft Store CDN, links resolved by store.rg-adguard.net); default: Preferences -> Network"
+app_path = "Where the ChatGPT desktop app is installed when Superba does not find it (Settings → General → ChatGPT app location): show it, or check and save a folder"
+app_path_dir = "The app's install folder (the one with ChatGPT.exe and resources), or its program file"
+app_path_clear = "Forget the location: find the app in its default locations again"
 feeds_group = "Superba's signed lists (models, prices, versions)"
 feeds_status = "Show which list is in use and when it was checked"
 feeds_refresh = "Check the mirrors for a newer list now"
@@ -873,6 +876,12 @@ source = "Source"
 router = "router"
 rollout = "session file"
 imported = "{tool} import"
+
+[cli.app_path]
+location = "ChatGPT app location"
+not_set = "No ChatGPT app location is set: Superba looks in the default locations (and, on Windows, the installed programs and the running app). Set one with spb app path <folder>."
+saved = "Saved: Superba uses this ChatGPT app from now on (SUPERBA_APP_PATH, when set, still comes first)."
+cleared = "The ChatGPT app location is cleared: Superba looks in the default locations again."
 
 [cli.versions]
 bad_version = "Not a Codex version: {value}"

@@ -269,6 +269,9 @@ encrypted_refused = "最近一天有 {count} 个对话因 invalid_encrypted_cont
 no_app = "没有找到 ChatGPT 桌面 app，只配置 CLI。"
 
 [switch.doctor]
+app_location = "Superba 中设置的 ChatGPT app 位置无法使用：{reason}"
+app_path_store_package = "{var} 指向微软商店版 ChatGPT 的应用包文件夹（{path}）。Superba 会自动找到商店版 ChatGPT 并使用当前安装的版本（{family}），而这个文件夹每次 app 更新都会变，所以不需要 {var}：请删除它（PowerShell：[Environment]::SetEnvironmentVariable(\"{var}\", $null, \"User\")），然后重启 Superba"
+no_app_install = "没有找到 ChatGPT 桌面 app。如果它装在其他文件夹，请在「设置」→「通用」→「ChatGPT app 位置」中选择它（或运行 spb app path <文件夹>）"
 journal_pending = "有一次中断的切换等待恢复"
 unparseable = "无法解析 config.toml：{message}"
 profile_override = "config.toml 选择了 profile「{profile}」，可能覆盖线路设置"
@@ -335,7 +338,8 @@ consumer_changed = "模型目录是为 Codex {built} 生成的，app 现在运�
 cli_changed = "模型目录是用终端 Codex {built} 校验的，codex 命令现在是 {now}。请重新切换一次以重建。"
 fingerprint = "模型目录文件会改变 Codex 发送的指令：请求将不再与原版 Codex 一致。"
 frozen = "模型列表自 {time} 起固定在目录文件中，每次切换时刷新。"
-no_consumer = "本机没有可用来生成模型目录的 Codex"
+no_consumer = "{path} 中的 ChatGPT app 没有可用来生成模型目录的自带 Codex：请重新安装或更新 ChatGPT；如果另有一份装在别处，请在 Superba →「设置」→「通用」→「ChatGPT app 位置」中选择那一份（或运行 spb app path <文件夹>）"
+no_app = "没有找到可用来生成模型目录的 ChatGPT 桌面 app。如果 ChatGPT 装在其他文件夹，请在 Superba →「设置」→「通用」→「ChatGPT app 位置」中选择它（或运行 spb app path <文件夹>）；否则请把 ChatGPT 安装到默认位置"
 preflight_failed = "{binary} 拒绝了生成的模型目录：{reason}"
 suffix_model = "速度档通过模型名 {model} 传递。"
 tier_not_offered = "所选模型不提供这个速度档，将以标准档运行。"

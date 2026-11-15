@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use serde_json::Value;
 use superba_core::codex::ENV_SUPERBA_APP_PATH;
-use superba_core::{AppInstall, AppVariant, CodexVersion, EnvSource};
+use superba_core::{AppInstall, AppLocationCheck, AppVariant, CodexVersion, EnvSource};
 use tokio::process::Command;
 use tokio::time::timeout;
 use walkdir::WalkDir;
@@ -732,10 +732,447 @@ pub fn inspect_install(path: &Path) -> Option<AppInstall> {
 
 /// Inspect the first valid explicit install, preferring `SUPERBA_APP_PATH` to `SUPERBA_APP_DIR`.
 pub fn explicit_install(env: &dyn EnvSource) -> Option<AppInstall> {
+    explicit_install_among(env, &[])
+}
+
+/// [`explicit_install`] with a location inside an MSIX package folder mapped
+/// to the installed version of that package's family ([`located_install`]).
+fn explicit_install_among(env: &dyn EnvSource, packages: &[AppInstall]) -> Option<AppInstall> {
     [ENV_SUPERBA_APP_PATH, ENV_SUPERBA_APP_DIR]
         .into_iter()
         .filter_map(|key| env.var_os(key).filter(|value| !value.is_empty()))
-        .find_map(|path| inspect_install(Path::new(&path)))
+        .find_map(|path| located_install(Path::new(&path), packages))
+}
+
+/// The OpenAI MSIX package whose folder `path` is in or below
+/// (`…\WindowsApps\OpenAI.Codex_26.1103.4239.0_x64__2p2nqsd0c76g0\app\ChatGPT.exe`):
+/// its family, version and folder. Parsed from the text only (both separators,
+/// any case), so it works for a folder that no longer exists.
+pub fn windows_apps_package(path: &Path) -> Option<AppxPackage> {
+    let text = path.to_string_lossy();
+    let mut parts = Vec::new();
+    let mut start = 0;
+    for (at, c) in text.char_indices() {
+        if c == '/' || c == '\\' {
+            parts.push((start, at));
+            start = at + 1;
+        }
+    }
+    parts.push((start, text.len()));
+    parts.windows(2).find_map(|pair| {
+        let [(a, b), (c, d)] = pair else {
+            return None;
+        };
+        if !text[*a..*b].eq_ignore_ascii_case("WindowsApps") {
+            return None;
+        }
+        parse_appx_full_name(&text[*c..*d], &text[..*d])
+    })
+}
+
+/// The install at a location the user gave (`SUPERBA_APP_PATH`, the app
+/// location of the settings). A location inside an MSIX package folder names
+/// one version of the package, whose folder an app update replaces: it stands
+/// for its package family, so the registered version among `packages` is used
+/// (a stale version's folder is never inspected); without one registered the
+/// folder itself, while it is still there.
+pub fn located_install(path: &Path, packages: &[AppInstall]) -> Option<AppInstall> {
+    let Some(package) = windows_apps_package(path) else {
+        return inspect_install(path);
+    };
+    if let Some(current) = packages
+        .iter()
+        .find(|i| i.id.eq_ignore_ascii_case(&package.family_name))
+    {
+        if !same_file_name(
+            &crate::appx::plain_path(&current.path),
+            &crate::appx::plain_path(&package.install_location),
+        ) {
+            tracing::info!(
+                given = %path.display(),
+                installed = %current.path.display(),
+                "the app location names another version of the Store app's package; using the installed one"
+            );
+        }
+        return Some(current.clone());
+    }
+    let found = inspect_install(path);
+    if found.is_none() {
+        tracing::warn!(
+            given = %path.display(),
+            family = %package.family_name,
+            "the app location is a Store app package folder that is gone, and the package is not installed; ignored"
+        );
+    }
+    found
+}
+
+/// What a location the user picked holds (Settings → ChatGPT app location):
+/// [`inspect_install`] of it, told apart into a missing path, a path that is
+/// not the desktop app, and an app without its bundled Codex. The bundled
+/// Codex's version is read from its package JSON only; see
+/// [`check_location_versions`].
+pub fn check_location(path: &Path) -> AppLocationCheck {
+    // A folder of the Store app's package: found without a location, and
+    // replaced by every app update (a saved one would go stale).
+    if let Some(package) = windows_apps_package(path) {
+        return AppLocationCheck::StorePackage {
+            family: package.family_name,
+        };
+    }
+    if fs::symlink_metadata(path).is_err() {
+        return AppLocationCheck::Missing;
+    }
+    match inspect_install(path) {
+        Some(install) if install.bundled_codex.is_some() => AppLocationCheck::Install { install },
+        Some(install) => AppLocationCheck::NoBundledCodex { install },
+        None => AppLocationCheck::NotAnApp,
+    }
+}
+
+/// [`check_location`] with the bundled Codex's version asked
+/// ([`bundled_codex_version`]) when its package JSON has none, as detection does.
+pub async fn check_location_versions(path: &Path, env: &dyn EnvSource) -> AppLocationCheck {
+    let path = path.to_owned();
+    let mut check = tokio::task::spawn_blocking(move || check_location(&path))
+        .await
+        .unwrap_or(AppLocationCheck::NotAnApp);
+    if let AppLocationCheck::Install { install } = &mut check
+        && install.bundled_codex_version.is_none()
+        && let Some(binary) = install.bundled_codex.clone()
+    {
+        install.bundled_codex_version = bundled_codex_version(&binary, env).await;
+    }
+    check
+}
+
+/// The values of one `...\CurrentVersion\Uninstall\<key>` registry entry that
+/// locate an install. Read on Windows by `registry_uninstall_entries`; the
+/// parsing below is portable so Linux tests cover it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct UninstallEntry {
+    /// `DisplayName`.
+    pub display_name: Option<String>,
+    /// `Publisher`.
+    pub publisher: Option<String>,
+    /// `InstallLocation`.
+    pub install_location: Option<String>,
+    /// `DisplayIcon` (`"C:\...\ChatGPT.exe",0`).
+    pub display_icon: Option<String>,
+    /// `UninstallString` (`"C:\...\Uninstall ChatGPT.exe" /currentuser`).
+    pub uninstall_string: Option<String>,
+}
+
+/// Whether an uninstall entry may be the ChatGPT / Codex desktop app: its name
+/// names ChatGPT or Codex, or OpenAI published it. Superba's own entry is not.
+/// Every location derived from it is still validated by [`inspect_install`].
+pub fn uninstall_entry_matches(entry: &UninstallEntry) -> bool {
+    let lower = |v: &Option<String>| v.as_deref().unwrap_or_default().to_lowercase();
+    let name = lower(&entry.display_name);
+    let publisher = lower(&entry.publisher);
+    if name.contains("superba") {
+        return false;
+    }
+    name.contains("chatgpt") || name.contains("codex") || publisher.contains("openai")
+}
+
+/// The install directories an uninstall entry points to, in this order and
+/// without duplicates: `InstallLocation`, the folder of `DisplayIcon`, the
+/// folder of the program of `UninstallString` (not `MsiExec.exe`). `%VAR%`
+/// references (`REG_EXPAND_SZ`) are expanded from `env`; relative paths are
+/// dropped.
+pub fn uninstall_entry_dirs(entry: &UninstallEntry, env: &dyn EnvSource) -> Vec<PathBuf> {
+    let mut dirs: Vec<String> = Vec::new();
+    let mut push = |dir: Option<String>| {
+        if let Some(dir) = dir.map(|d| trim_separators(&d))
+            && is_absolute_any(&dir)
+            && !dirs.iter().any(|d| d.eq_ignore_ascii_case(&dir))
+        {
+            dirs.push(dir);
+        }
+    };
+    push(
+        entry
+            .install_location
+            .as_deref()
+            .map(|v| expand_percent_vars(&unquote(v), env))
+            .filter(|v| !v.is_empty()),
+    );
+    push(
+        entry
+            .display_icon
+            .as_deref()
+            .map(icon_file)
+            .map(|v| expand_percent_vars(&v, env))
+            .and_then(|v| parent_dir(&v)),
+    );
+    push(
+        entry
+            .uninstall_string
+            .as_deref()
+            .and_then(command_program)
+            .filter(|program| {
+                !file_name_of(program).eq_ignore_ascii_case("msiexec.exe")
+                    && !file_name_of(program).eq_ignore_ascii_case("msiexec")
+            })
+            .map(|v| expand_percent_vars(&v, env))
+            .and_then(|v| parent_dir(&v)),
+    );
+    dirs.into_iter().map(PathBuf::from).collect()
+}
+
+/// The install directories of the matching entries, in entry order, without
+/// duplicates.
+pub fn uninstall_candidates(entries: &[UninstallEntry], env: &dyn EnvSource) -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = Vec::new();
+    for dir in entries
+        .iter()
+        .filter(|e| uninstall_entry_matches(e))
+        .flat_map(|e| uninstall_entry_dirs(e, env))
+    {
+        if !out.iter().any(|d| same_file_name(d, &dir)) {
+            out.push(dir);
+        }
+    }
+    out
+}
+
+/// A value without surrounding whitespace and, when it starts with one, the
+/// text inside its first pair of double quotes.
+fn unquote(value: &str) -> String {
+    let value = value.trim();
+    match value.strip_prefix('"') {
+        Some(rest) => rest.split('"').next().unwrap_or_default().trim().to_owned(),
+        None => value.to_owned(),
+    }
+}
+
+/// The file of a `DisplayIcon` value: quotes and the icon index (`,0`, `,-101`)
+/// removed.
+fn icon_file(value: &str) -> String {
+    let value = value.trim();
+    if value.starts_with('"') {
+        return unquote(value);
+    }
+    match value.rsplit_once(',') {
+        Some((file, index))
+            if !index.trim().is_empty()
+                && index
+                    .trim()
+                    .trim_start_matches('-')
+                    .bytes()
+                    .all(|b| b.is_ascii_digit()) =>
+        {
+            file.trim().to_owned()
+        }
+        _ => value.to_owned(),
+    }
+}
+
+/// The program of a command line: the quoted first part, else everything up to
+/// and including the first `.exe`, else the first word.
+fn command_program(command: &str) -> Option<String> {
+    let command = command.trim();
+    if command.is_empty() {
+        return None;
+    }
+    if command.starts_with('"') {
+        return Some(unquote(command)).filter(|p| !p.is_empty());
+    }
+    if let Some(at) = command.to_ascii_lowercase().find(".exe") {
+        return Some(command[..at + 4].to_owned());
+    }
+    command.split_whitespace().next().map(str::to_owned)
+}
+
+/// Replace `%NAME%` with the value of `NAME` in `env`; unknown names stay.
+fn expand_percent_vars(value: &str, env: &dyn EnvSource) -> String {
+    let mut out = String::new();
+    let mut rest = value;
+    while let Some(start) = rest.find('%') {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + 1..];
+        let Some(end) = after.find('%') else {
+            out.push_str(&rest[start..]);
+            return out;
+        };
+        let name = &after[..end];
+        match env
+            .var_os(name)
+            .filter(|v| !name.is_empty() && !v.is_empty())
+        {
+            Some(v) => {
+                out.push_str(&v.to_string_lossy());
+                rest = &after[end + 1..];
+            }
+            None => {
+                out.push('%');
+                out.push_str(name);
+                rest = &after[end..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// A Windows or Unix path is absolute: `C:\`, `C:/`, `\\server\share` or `/`.
+fn is_absolute_any(path: &str) -> bool {
+    let b = path.as_bytes();
+    path.starts_with("\\\\")
+        || path.starts_with('/')
+        || (b.len() >= 3
+            && b[0].is_ascii_alphabetic()
+            && b[1] == b':'
+            && matches!(b[2], b'\\' | b'/'))
+}
+
+/// Trailing `\` / `/` removed, except from a root (`C:\`, `/`).
+fn trim_separators(path: &str) -> String {
+    let path = path.trim();
+    let trimmed = path.trim_end_matches(['\\', '/']);
+    if trimmed.is_empty() {
+        return path.chars().take(1).collect();
+    }
+    if trimmed.len() == 2 && trimmed.ends_with(':') {
+        return format!("{trimmed}\\");
+    }
+    trimmed.to_owned()
+}
+
+/// The last component of a path with `\` or `/` separators.
+fn file_name_of(path: &str) -> &str {
+    path.rsplit(['\\', '/']).next().unwrap_or(path)
+}
+
+/// The folder of a file path with `\` or `/` separators (a path is parsed by
+/// its text, so a Windows value reads the same on every platform).
+fn parent_dir(path: &str) -> Option<String> {
+    let path = path.trim().trim_end_matches(['\\', '/']);
+    let at = path.rfind(['\\', '/'])?;
+    Some(trim_separators(&path[..=at]))
+}
+
+/// The uninstall entries of the registry (`HKCU` and `HKLM`, both views:
+/// `Software\Microsoft\Windows\CurrentVersion\Uninstall` and its
+/// `WOW6432Node` twin). Only `DisplayName` and `Publisher` are read for every
+/// entry; the location values only for the ones that match.
+#[cfg(target_os = "windows")]
+fn registry_uninstall_entries() -> Vec<UninstallEntry> {
+    use winreg::RegKey;
+
+    let mut entries = Vec::new();
+    for (hive, path) in uninstall_keys() {
+        let Ok(key) = RegKey::predef(hive).open_subkey(path) else {
+            continue;
+        };
+        for name in key.enum_keys().flatten() {
+            let Ok(sub) = key.open_subkey(&name) else {
+                continue;
+            };
+            let value = |name: &str| {
+                sub.get_value::<String, _>(name)
+                    .ok()
+                    .filter(|v| !v.trim().is_empty())
+            };
+            let mut entry = UninstallEntry {
+                display_name: value("DisplayName"),
+                publisher: value("Publisher"),
+                ..Default::default()
+            };
+            if !uninstall_entry_matches(&entry) {
+                continue;
+            }
+            entry.install_location = value("InstallLocation");
+            entry.display_icon = value("DisplayIcon");
+            entry.uninstall_string = value("UninstallString");
+            entries.push(entry);
+        }
+    }
+    entries
+}
+
+/// The uninstall keys [`registry_uninstall_entries`] reads.
+#[cfg(target_os = "windows")]
+fn uninstall_keys() -> [(winreg::HKEY, &'static str); 4] {
+    use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
+    const NATIVE: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall";
+    const WOW: &str = "Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall";
+    [
+        (HKEY_CURRENT_USER, NATIVE),
+        (HKEY_LOCAL_MACHINE, NATIVE),
+        (HKEY_LOCAL_MACHINE, WOW),
+        (HKEY_CURRENT_USER, WOW),
+    ]
+}
+
+/// Subkey count and last write time of the uninstall keys: they change when an
+/// installer adds, updates or removes its entry. One `RegQueryInfoKey` each.
+#[cfg(target_os = "windows")]
+pub(crate) fn registry_uninstall_stamp() -> Vec<(u32, u32, u32)> {
+    use winreg::RegKey;
+
+    uninstall_keys()
+        .into_iter()
+        .map(|(hive, path)| {
+            RegKey::predef(hive)
+                .open_subkey(path)
+                .and_then(|k| k.query_info())
+                .map(|info| {
+                    let at = &*info.last_write_time;
+                    (info.sub_keys, at.dwHighDateTime, at.dwLowDateTime)
+                })
+                .unwrap_or_default()
+        })
+        .collect()
+}
+
+/// The executables of running desktop app main processes, and the ones seen
+/// running earlier in this process: an app started from a folder no other
+/// source names stays known after it quits (still validated at every
+/// detection, so a removed one drops out).
+#[cfg(target_os = "windows")]
+async fn running_app_executables() -> Vec<PathBuf> {
+    use std::sync::Mutex;
+
+    static SEEN: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+    let running = tokio::task::spawn_blocking(|| {
+        let snap = crate::procs::snapshot(crate::procs::ReadOpts { environ: false });
+        snap.app_mains()
+            .into_iter()
+            .filter_map(|pid| snap.all.get(&pid).and_then(|e| e.exe.clone()))
+            .collect::<Vec<_>>()
+    })
+    .await
+    .unwrap_or_default();
+    let mut seen = SEEN.lock().unwrap_or_else(|p| p.into_inner());
+    for exe in running {
+        if !seen.iter().any(|s| same_file_name(s, &exe)) {
+            seen.push(exe);
+        }
+    }
+    seen.clone()
+}
+
+/// Install locations found outside the default folders: on Windows the
+/// uninstall entries of the registry, then the running app's executable.
+/// Nothing elsewhere (Linux and macOS scan their usual folders and `.desktop`
+/// entries, [`candidate_paths`]).
+async fn discovered_paths(env: &dyn EnvSource) -> Vec<PathBuf> {
+    #[cfg(target_os = "windows")]
+    {
+        let entries = tokio::task::spawn_blocking(registry_uninstall_entries)
+            .await
+            .unwrap_or_default();
+        let mut paths = uninstall_candidates(&entries, env);
+        paths.extend(running_app_executables().await);
+        paths
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = env;
+        Vec::new()
+    }
 }
 
 pub(crate) struct CandidateRoots {
@@ -1135,17 +1572,65 @@ async fn msix_installs(env: &dyn EnvSource, home_dir: &Path) -> Vec<AppInstall> 
     packages.iter().filter_map(appx_install).collect()
 }
 
-/// Detect explicit, platform and MSIX installs, deduplicating by canonical main executable.
-/// Probe missing bundled CLI versions with a five-second timeout after discovery.
-pub async fn detect_installs(env: &dyn EnvSource, home_dir: &Path) -> Vec<AppInstall> {
-    let mut installs: Vec<_> = explicit_install(env).into_iter().collect();
+/// Detect installs, deduplicating by canonical main executable, in this order
+/// (the first is the default install):
+///
+/// 1. `SUPERBA_APP_PATH` / `SUPERBA_APP_DIR` ([`explicit_install`]);
+/// 2. `location`, the app location of Superba's settings;
+/// 3. the platform's default locations ([`candidate_paths`]), then on Windows
+///    the registered MSIX packages;
+/// 4. installs discovered elsewhere: on Windows the uninstall entries of the
+///    registry and the running app's executable.
+///
+/// Every location is validated by [`inspect_install`]. Missing bundled CLI
+/// versions are probed with a five-second timeout after discovery.
+pub async fn detect_installs(
+    env: &dyn EnvSource,
+    home_dir: &Path,
+    location: Option<&Path>,
+) -> Vec<AppInstall> {
+    let discovered = discovered_paths(env).await;
+    detect_installs_from(env, home_dir, location, &discovered).await
+}
+
+/// [`detect_installs`] with the discovered locations (step 4) given, so the
+/// order and the deduplication are testable without a registry or processes.
+pub async fn detect_installs_from(
+    env: &dyn EnvSource,
+    home_dir: &Path,
+    location: Option<&Path>,
+    discovered: &[PathBuf],
+) -> Vec<AppInstall> {
+    #[cfg(target_os = "windows")]
+    let packages = msix_installs(env, home_dir).await;
+    #[cfg(not(target_os = "windows"))]
+    let packages = Vec::new();
+    detect_installs_among(env, home_dir, location, discovered, packages).await
+}
+
+/// [`detect_installs_from`] with the installs of the registered MSIX
+/// packages given (step 3 on Windows), so a location inside a package folder
+/// ([`located_install`]) is testable on every platform.
+pub async fn detect_installs_among(
+    env: &dyn EnvSource,
+    home_dir: &Path,
+    location: Option<&Path>,
+    discovered: &[PathBuf],
+    packages: Vec<AppInstall>,
+) -> Vec<AppInstall> {
+    let mut installs: Vec<_> = explicit_install_among(env, &packages).into_iter().collect();
+    installs.extend(
+        location
+            .filter(|path| !path.as_os_str().is_empty())
+            .and_then(|path| located_install(path, &packages)),
+    );
     installs.extend(
         candidate_paths(env, home_dir)
             .iter()
             .filter_map(|path| inspect_install(path)),
     );
-    #[cfg(target_os = "windows")]
-    installs.extend(msix_installs(env, home_dir).await);
+    installs.extend(packages);
+    installs.extend(discovered.iter().filter_map(|path| inspect_install(path)));
     let mut seen = HashMap::<PathBuf, usize>::new();
     let mut unique: Vec<AppInstall> = Vec::new();
     for install in installs {

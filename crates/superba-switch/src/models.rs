@@ -714,6 +714,23 @@ pub(crate) fn local_codexes(
     (app, cli)
 }
 
+/// Why the model catalog has no consumer, with what the user can do: no
+/// desktop app was found (installed in another folder: set its location), or
+/// the app found ([`local_codexes`]'s choice) has no usable bundled Codex.
+pub(crate) fn no_consumer_text(
+    install_id: Option<&str>,
+    installs: &[superba_core::AppInstall],
+) -> LocalizedText {
+    let install = install_id
+        .and_then(|id| installs.iter().find(|i| i.id == id))
+        .or_else(|| installs.first());
+    match install {
+        None => text("switch.models.no_app"),
+        Some(install) => text("switch.models.no_consumer")
+            .arg("path", superba_core::paths::display_path(&install.path)),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // The service
 // ---------------------------------------------------------------------------
@@ -965,12 +982,12 @@ impl Switcher {
             .all(|r| matches!(r, CatalogReason::AppSpeedMenu | CatalogReason::MixedModels));
         let (app, cli) = local_codexes(input.install_id, input.installs, input.binaries);
         let Some(app) = app.filter(|a| a.binary.is_some() && a.version.is_some()) else {
-            out.failed = Some(text("switch.models.no_consumer"));
+            out.failed = Some(no_consumer_text(input.install_id, input.installs));
             return out;
         };
         let (Some(app_binary), Some(app_version)) = (app.binary.clone(), app.version.clone())
         else {
-            out.failed = Some(text("switch.models.no_consumer"));
+            out.failed = Some(no_consumer_text(input.install_id, input.installs));
             return out;
         };
         // The consumer's own catalog is the schema template.

@@ -29,3 +29,13 @@ store_mirror = "Microsoft Store CDN, link resolved by store.rg-adguard.net (thir
 release = "{version}"
 with_package = "{version} (package {package})"
 package = "package {package}"
+
+# A desktop app location the user picked (AppLocationCheck::text).
+[app_location]
+found = "ChatGPT {app} with Codex {codex} in {path}"
+no_codex = "ChatGPT {app} in {path}, but its bundled Codex is missing: reinstall or update the app"
+missing = "{path} does not exist"
+not_app = "{path} is not the ChatGPT desktop app (no resources/app.asar): choose the app's install folder or its program file"
+store_package = "{path} is inside the Microsoft Store ChatGPT app ({family}). Superba finds the Store app by itself, and this folder changes with every app update, so no location is needed: clear the location (and remove SUPERBA_APP_PATH if you set it)"
+unknown = "unknown"
+version = "{version}"

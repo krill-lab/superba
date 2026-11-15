@@ -121,6 +121,44 @@ pub struct DesktopAppController {
     tunables: Tunables,
     caches: Arc<codexbin::Caches>,
     session_env: SessionEnv,
+    location: Location,
+}
+
+/// Where the user told Superba the desktop app is installed
+/// (`Settings::app_location`, Settings → ChatGPT app location), asked at every
+/// detection so a changed setting applies at once.
+#[async_trait]
+pub trait AppLocationSource: Send + Sync {
+    /// The install folder or executable, `None` when not set.
+    async fn app_location(&self) -> Option<PathBuf>;
+}
+
+/// A fixed app location (tests, tools).
+#[derive(Clone, Debug, Default)]
+pub struct FixedAppLocation(pub Option<PathBuf>);
+
+#[async_trait]
+impl AppLocationSource for FixedAppLocation {
+    async fn app_location(&self) -> Option<PathBuf> {
+        self.0.clone()
+    }
+}
+
+/// The controller's [`AppLocationSource`] and the answer it gave last (for the
+/// synchronous [`AppController::environment_stamp`]).
+#[derive(Clone, Default)]
+struct Location {
+    source: Option<Arc<dyn AppLocationSource>>,
+    last: Arc<std::sync::Mutex<Option<PathBuf>>>,
+}
+
+impl std::fmt::Debug for Location {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Location")
+            .field("source", &self.source.is_some())
+            .field("last", &*codexbin::lock(&self.last))
+            .finish()
+    }
 }
 
 /// An [`EnvSource`] view with overrides (`None` = removed), used to resolve paths
@@ -313,7 +351,38 @@ impl DesktopAppController {
             tunables: Tunables::default(),
             caches: Arc::new(codexbin::Caches::default()),
             session_env: SessionEnv::default(),
+            location: Location::default(),
         }
+    }
+
+    /// The source of the app location of Superba's settings, which detection
+    /// takes after `SUPERBA_APP_PATH` / `SUPERBA_APP_DIR` and before the
+    /// default locations ([`install::detect_installs`]).
+    pub fn with_app_location(mut self, source: Arc<dyn AppLocationSource>) -> Self {
+        self.location.source = Some(source);
+        self
+    }
+
+    /// The app location of the settings now (remembered for the stamp).
+    async fn app_location(&self) -> Option<PathBuf> {
+        let location = match &self.location.source {
+            Some(source) => source.app_location().await,
+            None => None,
+        };
+        *codexbin::lock(&self.location.last) = location.clone();
+        location
+    }
+
+    /// [`install::detect_installs`] with this controller's environment and app
+    /// location.
+    async fn installs(&self) -> Vec<AppInstall> {
+        let location = self.app_location().await;
+        install::detect_installs(
+            self.ctx.env.as_ref(),
+            &self.ctx.home_dir,
+            location.as_deref(),
+        )
+        .await
     }
 
     /// The reader of the login session's environment, which an app started by
@@ -401,7 +470,7 @@ impl DesktopAppController {
     }
 
     async fn find_install(&self, id: Option<&str>) -> Result<AppInstall> {
-        let installs = install::detect_installs(self.ctx.env.as_ref(), &self.ctx.home_dir).await;
+        let installs = self.installs().await;
         // An id recorded earlier may be an older form of the same install (a
         // `path:` id, also with a verbatim `\\?\` prefix, for an MSIX folder).
         let found = match id {
@@ -419,9 +488,9 @@ impl DesktopAppController {
         found.ok_or_else(|| Error::NotFound {
             what: match id {
                 Some(id) => format!("desktop app install {id}"),
-                None => {
-                    "a desktop app install (set SUPERBA_APP_PATH for a custom location)".to_owned()
-                }
+                None => "a desktop app install (for a custom location set it in Superba: \
+                         Settings → General → ChatGPT app location, or `spb app path <DIR>`)"
+                    .to_owned(),
             },
         })
     }
@@ -757,11 +826,15 @@ fn processes_for_home(snap: &Snapshot, home: &CodexHome) -> Vec<ProcessInfo> {
 #[async_trait]
 impl AppController for DesktopAppController {
     async fn detect_installs(&self) -> Result<Vec<AppInstall>> {
-        Ok(install::detect_installs(self.ctx.env.as_ref(), &self.ctx.home_dir).await)
+        Ok(self.installs().await)
+    }
+
+    async fn check_app_location(&self, path: &Path) -> Result<superba_core::AppLocationCheck> {
+        Ok(install::check_location_versions(path, self.ctx.env.as_ref()).await)
     }
 
     async fn codex_binaries(&self) -> Result<Vec<CodexBinary>> {
-        let installs = install::detect_installs(self.ctx.env.as_ref(), &self.ctx.home_dir).await;
+        let installs = self.installs().await;
         Ok(clibin::codex_binaries(self.ctx.env.as_ref(), &self.ctx.home_dir, &installs).await)
     }
 
@@ -798,18 +871,30 @@ impl AppController for DesktopAppController {
     }
 
     fn environment_stamp(&self, installs: &[AppInstall], binaries: &[CodexBinary]) -> Option<u64> {
-        let key = watch::inputs_key(installs, binaries);
+        // The app location of the settings, also one that holds no install
+        // yet: an app installed there later changes the stamp.
+        let location = codexbin::lock(&self.location.last).clone();
+        let key = {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::hash::DefaultHasher::new();
+            (watch::inputs_key(installs, binaries), &location).hash(&mut hasher);
+            hasher.finish()
+        };
         let mut cached = codexbin::lock(&self.caches.watch);
         let paths = match cached.as_ref() {
             Some((k, paths)) if *k == key => paths,
             _ => {
-                let paths = watch::watch_paths(
+                let mut paths = watch::watch_paths(
                     self.ctx.env.as_ref(),
                     &self.ctx.home_dir,
                     self.ctx.codex_home().root(),
                     installs,
                     binaries,
                 );
+                if let Some(location) = location {
+                    paths.push(location.join("resources").join("app.asar"));
+                    paths.push(location);
+                }
                 &cached.insert((key, paths)).1
             }
         };
@@ -1391,13 +1476,14 @@ impl AppController for DesktopAppController {
 
     async fn codex_debug_models(&self, binary: &Path, catalog: Option<&Path>) -> Result<String> {
         let caches = self.caches.clone();
-        let env = self.ctx.env.clone();
+        let copies = runnable::PackagedCopies::of(&self.ctx);
         let (bin, cat) = (binary.to_path_buf(), catalog.map(Path::to_path_buf));
-        // The app's Codex inside an MSIX package is run through its extracted
-        // copy (user bug 143, GH#32).
+        // The app's Codex inside an MSIX package is run through a copy: the
+        // app's, else Superba's own (user bug 143, GH#32).
         let (runnable, key) =
             tokio::task::spawn_blocking(move || -> Result<(PathBuf, (String, String))> {
-                let runnable = runnable::runnable_codex(&bin, env.as_ref())?;
+                let runnable =
+                    runnable::runnable_codex_with(&bin, &copies, &runnable::is_packaged)?;
                 let bin_sha = caches.binary_sha(&runnable)?;
                 let cat_sha = match &cat {
                     Some(c) => codexbin::sha256_file(c)?,
@@ -1417,7 +1503,7 @@ impl AppController for DesktopAppController {
     }
 
     async fn cli_install_kind(&self, binary: &Path) -> Result<CodexInstallKind> {
-        let installs = install::detect_installs(self.ctx.env.as_ref(), &self.ctx.home_dir).await;
+        let installs = self.installs().await;
         let store = self.ctx.data_dir.codex_store_dir();
         let binary = binary.to_path_buf();
         tokio::task::spawn_blocking(move || codexbin::install_kind(&binary, &store, &installs))
@@ -1501,7 +1587,7 @@ pub fn floor_or_fallback(result: Result<CodexVersion>) -> CodexVersion {
 impl DesktopAppController {
     /// The standalone `codex` that manages the daemon: first on PATH, not bundled.
     async fn daemon_binary(&self) -> Result<PathBuf> {
-        let installs = install::detect_installs(self.ctx.env.as_ref(), &self.ctx.home_dir).await;
+        let installs = self.installs().await;
         let bins =
             clibin::codex_binaries(self.ctx.env.as_ref(), &self.ctx.home_dir, &installs).await;
         bins.iter()

@@ -104,6 +104,7 @@ fn user_set() -> ProfileSet {
         wizard_dismissed: true,
         autostart: false,
         preferred_app_id: Some("test-app".into()),
+        app_location: Some("/opt/Custom/ChatGPT".into()),
         router: Default::default(),
         auto_update_check: false,
         update_channel: Some(superba_core::UpdateChannel::Preview),

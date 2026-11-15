@@ -103,6 +103,20 @@ data.clean = "Clean now"
 data.cleaned = "Reclaimed {size}."
 data.retention_here = "Manage request retention in Superba → Data."
 
+[prefs.app_location]
+section = "ChatGPT app"
+title = "ChatGPT app location"
+desc = "Where the ChatGPT desktop app is installed, if Superba does not find it by itself (an install in another folder or drive). Superba uses this app for switching, opening ChatGPT and the model list."
+browse = "Choose folder…"
+reset = "Reset"
+use = "Use"
+hint = "D:\\Apps\\ChatGPT"
+checking = "Checking {path}…"
+auto = "Not set: Superba found ChatGPT in {path}."
+none_found = "Not set, and no ChatGPT app was found in the default locations: choose the folder it is installed in."
+not_set = "Not set: Superba looks in the default locations."
+note = "Choose the folder that holds ChatGPT.exe and the resources folder (or the program file itself). SUPERBA_APP_PATH, when set, still comes first; Reset goes back to finding the app by itself. The Microsoft Store app (C:\\Program Files\\WindowsApps\\…) is always found by itself and needs no location."
+
 [prefs.general]
 title = "General"
 

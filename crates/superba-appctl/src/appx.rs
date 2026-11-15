@@ -158,9 +158,11 @@ pub fn in_windows_apps(path: &Path) -> bool {
 
 /// The copies of its bundled `codex.exe` the Windows app runs: it relocates
 /// the binary out of the read-only package before starting it, to
-/// `%LOCALAPPDATA%\OpenAI\Codex\bin\<16 hex digits>\codex.exe` (seen with
-/// 26.1013; a plain `bin\codex.exe` is accepted too). Existing files only,
-/// the most recently written first.
+/// `%LOCALAPPDATA%\OpenAI\Codex\bin\<16 hex digits>\codex.exe` (26.1013 to
+/// 26.1111; a plain `bin\codex.exe` and any other subfolder are accepted
+/// too). With its app-contained core on (26.1111 by default on recent Windows
+/// 11 builds) the app makes no copy; see [`crate::runnable`]. Existing files
+/// only, the most recently written first.
 pub fn relocated_codex_candidates(local_app_data: &Path) -> Vec<PathBuf> {
     let bin = local_app_data.join("OpenAI").join("Codex").join("bin");
     let mut found: Vec<(std::time::SystemTime, PathBuf)> = std::iter::once(bin.join("codex.exe"))

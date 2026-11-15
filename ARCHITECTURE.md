@@ -349,7 +349,7 @@ and remote writers.
 
 | Concern | Linux | macOS | Windows |
 |---|---|---|---|
-| App discovery | deb `/usr/lib/chatgpt`, `.desktop` Exec | bundle ids `com.openai.codex` / `com.openai.chat` / `com.openai.chatgpt` with a `*Framework.framework` (26.10 ships `Codex Framework.framework`) and `app.asar` | MSIX families `OpenAI.Codex_*`, `OpenAI.CodexBeta_*`, `OpenAI.ChatGPT-Desktop_*` |
+| App discovery | deb `/usr/lib/chatgpt`, `.desktop` Exec | bundle ids `com.openai.codex` / `com.openai.chat` / `com.openai.chatgpt` with a `*Framework.framework` (26.10 ships `Codex Framework.framework`) and `app.asar` | MSIX families `OpenAI.Codex_*`, `OpenAI.CodexBeta_*`, `OpenAI.ChatGPT-Desktop_*`; `%LOCALAPPDATA%\Programs\{ChatGPT,Codex}`; then uninstall entries of the registry (HKCU / HKLM, both views: `InstallLocation`, else the folders of `DisplayIcon` / `UninstallString`) and the running app's executable |
 | Launch with CDP + env | spawn + `setsid`, env in child | LaunchServices: `/usr/bin/open -n -a <bundle> --env K=V --args ...` (the app is its own TCC-responsible process and does not inherit Superba's environment); main pid found afterwards (spike S2) | AUMID activation (spike S3); env via HKCU only |
 | CDP port | `--remote-debugging-port=0` + `DevToolsActivePort` | same as Linux (unverified) | reserved free port, verified after start |
 | Hot switch | verified (26.1013) | pending S2; fallback full restart | pending S3; fallback full restart |
@@ -359,6 +359,29 @@ and remote writers.
 | ssh client | system OpenSSH | system OpenSSH | `System32\OpenSSH\ssh.exe` (ssh-agent often disabled) |
 | Keyring | Secret Service (file fallback when headless) | Keychain | Credential Manager |
 | App update | verified `.deb` / `.rpm`, install command shown | Sparkle (the app's own) | MSIX from `windows-release.json` (persistent.oaistatic.com) or the Store CDN via store.rg-adguard.net (`superba_versions::winapp`); size / SHA-1 / manifest identity checked, `WinVerifyTrust` signer must be OpenAI's Store publisher (`CN=50BDFD77-…`, Microsoft Marketplace CA); opened with App Installer (`ShellExecuteExW` "open"), never `Add-AppxPackage`, never elevated (`superba_appctl::package`) |
+
+Detection order on every platform (`superba_appctl::install::detect_installs`, the
+first install is the default): `SUPERBA_APP_PATH` / `SUPERBA_APP_DIR`, the app
+location of the settings (`Settings::app_location`: Settings → General → ChatGPT
+app location, `spb app path <DIR>|--clear`; checked by
+`SwitchService::check_app_location` before it is saved), the default locations
+above, then the discovered ones. Every location is validated by `inspect_install`
+(`resources/app.asar` next to the app's executable). The controller reads the
+setting at every detection through its `AppLocationSource` (the profile store), so
+switch planning, launch, the model catalog and doctor all see a change at once.
+
+On Windows the Codex inside the MSIX package (`WindowsApps\…\app\resources\codex.exe`)
+cannot be started by Superba (Windows refuses a package file to processes outside the
+package). `superba_appctl::runnable` runs a copy with the same SHA-256: the app's own
+(`%LOCALAPPDATA%\OpenAI\Codex\bin\<16 hex>\`, made by 26.1013–26.1111 only while the
+app's "app-contained core" is off; 26.1111 turns it on by default on Windows builds above
+26200 and on 26100/26200 from update revision 9278, and then runs Codex in place and makes
+no copy), else Superba's own under `<data dir>/app-codex/<16 hex>/`, which it makes itself
+the way the app does (`codex.exe` plus the helpers next to it, staged, verified, renamed,
+older copies pruned). A `SUPERBA_APP_PATH` or app location inside a `WindowsApps` package
+folder stands for its package family (the installed version is used); the app location
+check refuses such a folder (`AppLocationCheck::StorePackage`), and doctor explains the
+variable.
 
 Platform code sits behind `cfg(target_os = ...)`, is kept small and commented, and
 must compile on Linux. Linux is the reference implementation and the only platform

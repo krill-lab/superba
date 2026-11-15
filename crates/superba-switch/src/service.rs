@@ -92,7 +92,7 @@ pub fn valid_id(id: &str) -> bool {
         && id.as_bytes()[0].is_ascii_alphanumeric()
 }
 
-fn finding(id: &str, severity: Severity, title: LocalizedText) -> DoctorFinding {
+pub(crate) fn finding(id: &str, severity: Severity, title: LocalizedText) -> DoctorFinding {
     DoctorFinding {
         id: id.to_owned(),
         severity,
@@ -290,10 +290,20 @@ impl Switcher {
         // The bug 144 migration stays recorded (remove after alpha.17+N).
         settings.features_preset_dropped |= set.settings.features_preset_dropped;
         settings.features_cleanup = std::mem::take(&mut set.settings.features_cleanup);
+        // A new app location: detect again for the views, and the install
+        // found there is the one to use.
+        let relocated = crate::app_location::app_location_changed(&set.settings, &mut settings);
         set.settings = settings;
         let persist = set.settings.app_codex.persist_env;
         if was_persisted == persist {
-            return self.deps.profiles.save(&set).await;
+            self.deps.profiles.save(&set).await?;
+            if relocated {
+                self.monitor.invalidate();
+            }
+            return Ok(());
+        }
+        if relocated {
+            self.monitor.invalidate();
         }
         // "Also outside Superba" changed: the persisted CODEX_CLI_PATH follows it
         // now (removed when turned off, the pin's executable when turned on), so a
@@ -883,6 +893,7 @@ impl Switcher {
                 ));
             }
         }
+        out.extend(self.app_location_findings().await);
         for var in ["OPENAI_BASE_URL", "OPENAI_API_KEY", "CODEX_API_KEY"] {
             if d.ctx.env.var_non_empty(var).is_some() {
                 out.push(finding(

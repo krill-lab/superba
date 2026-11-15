@@ -11,6 +11,7 @@ pub const ROWS: &[(SuperbaSection, &str)] = &[
     (SuperbaSection::General, "settings.predictions.title"),
     (SuperbaSection::General, "settings.open_on_start.title"),
     (SuperbaSection::General, "settings.auto_probe.title"),
+    (SuperbaSection::General, "prefs.app_location.title"),
     (SuperbaSection::General, "tray.prefs.close.title"),
     (SuperbaSection::General, "tray.prefs.start.title"),
     (SuperbaSection::General, "prefs.wizard.run"),

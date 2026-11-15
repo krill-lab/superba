@@ -1147,6 +1147,13 @@ pub enum AppCommand {
         #[arg(long, value_enum, help = english("cli.help.app_download_source"))]
         source: Option<AppSourceArg>,
     },
+    #[command(about = english("cli.help.app_path"))]
+    Path {
+        #[arg(value_name = "DIR", conflicts_with = "clear", help = english("cli.help.app_path_dir"))]
+        path: Option<std::path::PathBuf>,
+        #[arg(long, help = english("cli.help.app_path_clear"))]
+        clear: bool,
+    },
 }
 
 /// `spb app download --source`: where the Windows package comes from.

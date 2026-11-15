@@ -39,6 +39,16 @@ impl SwitchService for LocatedService {
         service.save_settings(settings).await
     }
 
+    async fn check_app_location(&self, path: PathBuf) -> Result<AppLocationCheck> {
+        let (service, _lock) = self.read().await?;
+        service.check_app_location(path).await
+    }
+
+    async fn set_app_location(&self, path: Option<PathBuf>) -> Result<Option<AppLocationCheck>> {
+        let (service, _lock) = self.read().await?;
+        service.set_app_location(path).await
+    }
+
     async fn autostart_status(&self) -> Result<autostart::AutostartStatus> {
         let (service, _lock) = self.read().await?;
         service.autostart_status().await

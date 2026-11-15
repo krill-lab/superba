@@ -25,6 +25,7 @@
 
 mod account;
 mod analytics_reapply;
+mod app_location;
 pub mod ciphers;
 pub mod claude;
 mod claude_router;
@@ -92,8 +93,9 @@ use superba_core::{
 pub use machine::{Effect, Input, MachineState, PlanTicket, SwitchMachine};
 pub use planner::ENV_SUPERBA_TEST_SITES;
 /// The Codex program to execute for an app's Codex path: the path itself, or
-/// for the MSIX app's packaged `codex.exe` its extracted copy with the same
-/// SHA-256 (user bug 143, GH#32). Blocking.
+/// for the MSIX app's packaged `codex.exe` a copy with the same SHA-256: the
+/// app's, else Superba's own (made on first use; user bug 143, GH#32).
+/// Blocking.
 pub use superba_appctl::runnable::runnable_codex as runnable_app_codex;
 /// Claude Code's `settings.json` helpers (pure parts shared by the GUI and
 /// `spb`).
@@ -221,11 +223,13 @@ impl SwitcherDeps {
             Arc::new(superba_config::TomlConfigEngine::new(ctx.clone()));
         let env: Arc<dyn superba_core::EnvPersister> =
             Arc::new(superba_config::ShellEnvPersister::new(ctx.clone()));
+        let profiles: Arc<dyn ProfileStore> =
+            Arc::new(superba_config::JsonProfileStore::new(ctx.clone()));
         Self {
             autostart: Arc::new(superba_config::autostart::Manager::new(&ctx)),
             env: env.clone(),
             secrets: Arc::new(superba_config::KeyringSecretStore::new(ctx.clone())),
-            profiles: Arc::new(superba_config::JsonProfileStore::new(ctx.clone())),
+            profiles: profiles.clone(),
             // Usage reports are rate-limited by the site (Krill: 10 per hour), so
             // they are cached on disk across processes.
             // Provider model lists are kept on disk too (ETag reuse across `spb`
@@ -244,8 +248,11 @@ impl SwitcherDeps {
             ),
             // An app started by LaunchServices or MSIX activation gets the login
             // session's environment, which the persister reads (user bug 129).
+            // The app location of the settings is read at every detection.
             app: Arc::new(
-                superba_appctl::DesktopAppController::new(ctx.clone()).with_session_env(env),
+                superba_appctl::DesktopAppController::new(ctx.clone())
+                    .with_session_env(env)
+                    .with_app_location(Arc::new(app_location::ProfileAppLocation(profiles))),
             ),
             remote: Arc::new(
                 superba_remote::SshRemoteHosts::new(config.clone(), ctx.data_dir.clone())
@@ -627,6 +634,18 @@ impl SwitchService for Switcher {
     async fn save_settings(&self, settings: Settings) -> Result<()> {
         self.refuse_elevated()?;
         self.save_settings_impl(settings).await
+    }
+
+    async fn check_app_location(&self, path: PathBuf) -> Result<superba_core::AppLocationCheck> {
+        self.check_app_location_impl(path).await
+    }
+
+    async fn set_app_location(
+        &self,
+        path: Option<PathBuf>,
+    ) -> Result<Option<superba_core::AppLocationCheck>> {
+        self.refuse_elevated()?;
+        self.set_app_location_impl(path).await
     }
 
     async fn save_site(&self, site: Site) -> Result<Site> {

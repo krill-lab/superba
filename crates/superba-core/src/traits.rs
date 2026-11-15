@@ -37,8 +37,9 @@ use async_trait::async_trait;
 use url::Url;
 
 use crate::app::{
-    AppInstall, AppSession, BridgeStatus, CodexBinary, HotRestartOutcome, HotRestartRequest,
-    LaunchOptions, ProcessInfo, QuitOptions, QuitOutcome, RendererState, ThreadRef, TurnActivity,
+    AppInstall, AppLocationCheck, AppSession, BridgeStatus, CodexBinary, HotRestartOutcome,
+    HotRestartRequest, LaunchOptions, ProcessInfo, QuitOptions, QuitOutcome, RendererState,
+    ThreadRef, TurnActivity,
 };
 use crate::auth::AuthMode;
 use crate::caps::{
@@ -527,8 +528,21 @@ pub trait SessionMigrator: Send + Sync {
 /// loopback, with the listener verified to be the app main process.
 #[async_trait]
 pub trait AppController: Send + Sync {
-    /// Installed desktop apps (with bundled Codex versions).
+    /// Installed desktop apps (with bundled Codex versions), in this order:
+    /// `SUPERBA_APP_PATH` / `SUPERBA_APP_DIR`, the app location of the settings
+    /// ([`crate::Settings::app_location`]), the default locations, then
+    /// installs discovered elsewhere (on Windows the uninstall entries of the
+    /// registry and the running app).
     async fn detect_installs(&self) -> Result<Vec<AppInstall>>;
+
+    /// What `path` (an install folder or executable the user picked) holds:
+    /// the install with its app and bundled Codex versions, or why it is not
+    /// one. Reads only that location (and runs its bundled Codex for
+    /// `--version`). Default: not implemented.
+    async fn check_app_location(&self, path: &Path) -> Result<AppLocationCheck> {
+        let _ = path;
+        Err(Error::not_implemented("app location check"))
+    }
 
     /// Codex CLI binaries (PATH order, versions, install source).
     async fn codex_binaries(&self) -> Result<Vec<CodexBinary>>;
@@ -1075,6 +1089,22 @@ pub trait SwitchService: Send + Sync {
     /// change through [`SwitchService::notify_save_channel`] /
     /// [`SwitchService::notify_delete_channel`] only).
     async fn save_settings(&self, settings: Settings) -> Result<()>;
+
+    /// What a desktop app location holds ([`AppController::check_app_location`]),
+    /// for Settings → ChatGPT app location and `spb app path`. Saves nothing.
+    async fn check_app_location(&self, path: PathBuf) -> Result<AppLocationCheck> {
+        let _ = path;
+        Err(Error::not_implemented("app location check"))
+    }
+
+    /// Save ([`Settings::app_location`]) or, with `None`, clear the desktop app
+    /// location. A path is checked first and refused (`Error::Invalid`) when no
+    /// desktop app is there; the views detect the installs again. Returns the
+    /// check of the saved path.
+    async fn set_app_location(&self, path: Option<PathBuf>) -> Result<Option<AppLocationCheck>> {
+        let _ = path;
+        Err(Error::not_implemented("set app location"))
+    }
 
     /// Current user's GUI login registration (independent of router startup).
     async fn autostart_status(&self) -> Result<crate::autostart::AutostartStatus> {

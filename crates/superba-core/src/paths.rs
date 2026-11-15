@@ -260,7 +260,8 @@ impl CodexHome {
 /// `first-write`, `switch`, `login-stash`, `rc` backups and `secrets/`;
 /// `superba-switch` owns `state.lock` (held for a whole execution) and
 /// `journal/switch/`; `superba-sessions` owns `backups/migrate-*`;
-/// `superba-appctl` owns `app-sessions.json`, `app-state/` and `backups/app-state/`;
+/// `superba-appctl` owns `app-sessions.json`, `app-state/`, `app-codex/` and
+/// `backups/app-state/`;
 /// `superba-remote` owns `remote/`;
 /// `superba-router` owns `router/`; `superba-catalog` owns `feeds/`;
 /// `superba-versions` owns `codex/` and `downloads/`; binaries own `logs/`.
@@ -404,6 +405,14 @@ impl DataDir {
     /// (no secrets, no message text).
     pub fn notify_dir(&self) -> PathBuf {
         self.root.join("notify")
+    }
+
+    /// `app-codex/`: Superba's own copies of the Codex inside an MSIX-packaged
+    /// desktop app (Windows, which refuses to start a package file from outside
+    /// the package), one `<16 hex digits>/` folder per set of copied files
+    /// (owned by `superba-appctl`, `superba_appctl::runnable`).
+    pub fn app_codex_dir(&self) -> PathBuf {
+        self.root.join("app-codex")
     }
 
     /// `remote/` (per-host cache and journals).

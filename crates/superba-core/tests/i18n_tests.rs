@@ -480,6 +480,7 @@ fn every_error_code_has_complete_translations_and_detail_argument() {
         (
             Error::PackagedCodex {
                 path: "/fixtures/WindowsApps/OpenAI.Codex/app/resources/codex.exe".into(),
+                reason: "no space left on device".into(),
             },
             "packaged_codex",
         ),
@@ -497,7 +498,12 @@ fn every_error_code_has_complete_translations_and_detail_argument() {
             let text = error.to_text();
             assert_eq!(text.key, format!("error.{code}"));
             assert_eq!(text.fallback, error.to_string());
-            assert_eq!(text.args, vec![("detail".into(), error.detail())]);
+            let mut args = vec![("detail".into(), error.detail())];
+            // What Superba tried and why its own copy failed.
+            if let Error::PackagedCodex { reason, .. } = error {
+                args.push(("reason".into(), reason.clone()));
+            }
+            assert_eq!(text.args, args);
             text
         })
         .collect();

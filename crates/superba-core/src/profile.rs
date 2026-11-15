@@ -321,6 +321,13 @@ pub struct Settings {
     pub autostart: bool,
     /// Desktop app install to use when several are present (`AppInstall::id`).
     pub preferred_app_id: Option<String>,
+    /// Where the desktop app is installed when Superba does not find it by
+    /// itself (Settings → ChatGPT app location): the install folder or its
+    /// executable. Detection order: `SUPERBA_APP_PATH` / `SUPERBA_APP_DIR`, this
+    /// location, the default locations, then installs discovered elsewhere
+    /// (`superba_appctl::install::detect_installs`). `None` = not set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_location: Option<std::path::PathBuf>,
     /// Router mode (opt-in, off by default).
     pub router: crate::router::RouterSettings,
     /// Per remote host choices (follow switches, last settings sync).
@@ -479,6 +486,7 @@ impl Default for Settings {
             wizard_dismissed: false,
             autostart: false,
             preferred_app_id: None,
+            app_location: None,
             router: crate::router::RouterSettings::default(),
             hosts: BTreeMap::new(),
             network: NetworkSettings::default(),
