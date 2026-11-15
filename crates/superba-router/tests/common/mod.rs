@@ -88,6 +88,13 @@ pub enum Mode {
     /// A WebSocket upgrade answered like [`Mode::WsScript`], any other request
     /// like [`Mode::PathReply`] (a member with a catalog and WebSocket).
     WsOrPath(PathReply, WsScript),
+    /// A WebSocket upgrade with per-message deflate, hand-made (independent
+    /// of the router's): when the handshake offers the extension the 101
+    /// answers with this `Sec-WebSocket-Extensions` value, compressed text
+    /// frames are inflated, and each is answered `echo:<text>` compressed
+    /// (unless the answer has `server_no_context_takeover`, the window is
+    /// kept). Without an offer, frames are plain both ways.
+    WsDeflate(&'static str),
 }
 
 /// Answer of [`Mode::Reply`].
@@ -106,6 +113,8 @@ pub struct Upstream {
     pub frames: Arc<Mutex<Vec<String>>>,
     /// Close codes received over WebSocket (`None`: a close frame without one).
     pub closes: Arc<Mutex<Vec<Option<u16>>>>,
+    /// Per text frame of [`Mode::WsDeflate`]: it arrived compressed (RSV1).
+    pub deflated: Arc<Mutex<Vec<bool>>>,
 }
 
 impl Upstream {
@@ -127,6 +136,9 @@ impl Upstream {
     pub fn closes(&self) -> Vec<Option<u16>> {
         self.closes.lock().unwrap().clone()
     }
+    pub fn deflated(&self) -> Vec<bool> {
+        self.deflated.lock().unwrap().clone()
+    }
 }
 
 pub async fn upstream(mode: Mode) -> Upstream {
@@ -137,6 +149,7 @@ pub async fn upstream(mode: Mode) -> Upstream {
         mode: Arc::new(Mutex::new(mode)),
         frames: Arc::default(),
         closes: Arc::default(),
+        deflated: Arc::default(),
     };
     let state = up.clone();
     tokio::spawn(async move {
@@ -303,7 +316,6 @@ async fn handle(state: Upstream, mut req: Request<Incoming>) -> Response<FakeBod
                 .get("sec-websocket-key")
                 .map(|k| derive_accept_key(k.as_bytes()))
                 .unwrap_or_default();
-            let offered = parts.headers.contains_key("sec-websocket-extensions");
             let (frames, closes) = (state.frames.clone(), state.closes.clone());
             tokio::spawn(async move {
                 let Ok(io) = on_upgrade.await else { return };
@@ -333,13 +345,38 @@ async fn handle(state: Upstream, mut req: Request<Incoming>) -> Response<FakeBod
             h.insert("upgrade", "websocket".parse().unwrap());
             h.insert("connection", "Upgrade".parse().unwrap());
             h.insert("sec-websocket-accept", key.parse().unwrap());
-            if offered {
-                // A real server would agree to deflate; the router must never
-                // offer it while it relays frames.
-                h.insert(
-                    "sec-websocket-extensions",
-                    "permessage-deflate".parse().unwrap(),
-                );
+            // No per-message deflate here (tungstenite has none): the
+            // router's offer is declined; see `Mode::WsDeflate`.
+            r
+        }
+        Mode::WsDeflate(answer) => {
+            let Some(on_upgrade) = on_upgrade else {
+                return full(400, r#"{"error":{"message":"expected websocket"}}"#);
+            };
+            let key = parts
+                .headers
+                .get("sec-websocket-key")
+                .map(|k| derive_accept_key(k.as_bytes()))
+                .unwrap_or_default();
+            let offered = parts
+                .headers
+                .get("sec-websocket-extensions")
+                .and_then(|v| v.to_str().ok())
+                .is_some_and(|v| v.contains("permessage-deflate"));
+            let agreed = offered.then_some(answer);
+            let (frames, deflated) = (state.frames.clone(), state.deflated.clone());
+            tokio::spawn(async move {
+                let Ok(io) = on_upgrade.await else { return };
+                deflate_echo(TokioIo::new(io), agreed, frames, deflated).await;
+            });
+            let mut r = Response::new(Full::new(Bytes::new()).map_err(|n| match n {}).boxed());
+            *r.status_mut() = StatusCode::SWITCHING_PROTOCOLS;
+            let h = r.headers_mut();
+            h.insert("upgrade", "websocket".parse().unwrap());
+            h.insert("connection", "Upgrade".parse().unwrap());
+            h.insert("sec-websocket-accept", key.parse().unwrap());
+            if let Some(a) = agreed {
+                h.insert("sec-websocket-extensions", a.parse().unwrap());
             }
             r
         }
@@ -420,6 +457,103 @@ async fn handle(state: Upstream, mut req: Request<Incoming>) -> Response<FakeBod
             h.insert("connection", "Upgrade".parse().unwrap());
             h.insert("sec-websocket-accept", key.parse().unwrap());
             r
+        }
+    }
+}
+
+/// The server side of [`Mode::WsDeflate`], speaking raw frames.
+async fn deflate_echo<S>(
+    mut io: S,
+    agreed: Option<&'static str>,
+    frames: Arc<Mutex<Vec<String>>>,
+    deflated: Arc<Mutex<Vec<bool>>>,
+) where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
+    use flate2::{Compress, Compression, Decompress, FlushCompress, FlushDecompress};
+    use tokio::io::AsyncWriteExt;
+    let reset = agreed.is_some_and(|a| a.contains("server_no_context_takeover"));
+    let mut inflater = Decompress::new(false);
+    let mut deflater = Compress::new(Compression::default(), false);
+    loop {
+        let mut head = [0u8; 2];
+        if io.read_exact(&mut head).await.is_err() {
+            return;
+        }
+        let (rsv1, opcode) = (head[0] & 0x40 != 0, head[0] & 0x0f);
+        let len = match head[1] & 0x7f {
+            126 => u64::from(io.read_u16().await.unwrap()),
+            127 => io.read_u64().await.unwrap(),
+            n => u64::from(n),
+        };
+        let mut mask = [0u8; 4];
+        io.read_exact(&mut mask).await.unwrap();
+        let mut payload = vec![0u8; len as usize];
+        io.read_exact(&mut payload).await.unwrap();
+        for (i, b) in payload.iter_mut().enumerate() {
+            *b ^= mask[i % 4];
+        }
+        match opcode {
+            1 => {}
+            8 => {
+                let _ = io.write_all(&[0x88, 0x00]).await;
+                let _ = io.shutdown().await;
+                return;
+            }
+            _ => continue,
+        }
+        let text = if rsv1 {
+            assert!(agreed.is_some(), "compressed frame without the extension");
+            payload.extend_from_slice(&[0, 0, 0xff, 0xff]);
+            let mut out = Vec::new();
+            let mut rest = &payload[..];
+            loop {
+                out.reserve(64 * 1024);
+                let before = inflater.total_in();
+                inflater
+                    .decompress_vec(rest, &mut out, FlushDecompress::Sync)
+                    .unwrap();
+                rest = &rest[(inflater.total_in() - before) as usize..];
+                if rest.is_empty() && out.len() < out.capacity() {
+                    break;
+                }
+            }
+            out
+        } else {
+            payload
+        };
+        let text = String::from_utf8(text).unwrap();
+        frames.lock().unwrap().push(text.clone());
+        deflated.lock().unwrap().push(rsv1);
+        let reply = format!("echo:{text}");
+        let (first, body) = if agreed.is_some() {
+            let mut out = Vec::with_capacity(reply.len() + 1024);
+            deflater
+                .compress_vec(reply.as_bytes(), &mut out, FlushCompress::Sync)
+                .unwrap();
+            out.truncate(out.len() - 4);
+            if reset {
+                deflater.reset();
+            }
+            (0xc1u8, out)
+        } else {
+            (0x81u8, reply.into_bytes())
+        };
+        let mut frame = vec![first];
+        match body.len() {
+            n @ 0..=125 => frame.push(n as u8),
+            n @ 126..=0xffff => {
+                frame.push(126);
+                frame.extend_from_slice(&(n as u16).to_be_bytes());
+            }
+            n => {
+                frame.push(127);
+                frame.extend_from_slice(&(n as u64).to_be_bytes());
+            }
+        }
+        frame.extend_from_slice(&body);
+        if io.write_all(&frame).await.is_err() {
+            return;
         }
     }
 }

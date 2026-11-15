@@ -430,6 +430,24 @@ pub(crate) struct Totals {
     pub rejected: AtomicU64,
     pub ws_refused: AtomicU64,
     pub local_answers: AtomicU64,
+    /// Upstream WebSocket connections with per-message deflate.
+    pub deflate_websockets: AtomicU64,
+    /// Request bytes for members before the router's compression (request
+    /// bodies of every attempt, WebSocket request frames).
+    pub upload_bytes: AtomicU64,
+    /// The same bytes as sent (zstd / deflate where used); shared with the
+    /// deflate layer of each socket, which counts its frames itself
+    /// ([`crate::ws_deflate`]).
+    pub upload_wire_bytes: Arc<AtomicU64>,
+}
+
+impl Totals {
+    /// `raw` request bytes went to a member as `wire` bytes.
+    pub fn note_upload(&self, raw: usize, wire: usize) {
+        self.upload_bytes.fetch_add(raw as u64, Ordering::Relaxed);
+        self.upload_wire_bytes
+            .fetch_add(wire as u64, Ordering::Relaxed);
+    }
 }
 
 /// State shared by every connection.

@@ -640,8 +640,13 @@ async fn proxy_request(
             };
             let zstd_body = if !converted
                 && compressible
-                && transport::compresses(&shared.transports, &member.cfg, &line.cfg, Instant::now())
-            {
+                && transport::compresses(
+                    &shared.transports,
+                    generation.config.tuning.upstream_compression,
+                    &member.cfg,
+                    &line.cfg,
+                    Instant::now(),
+                ) {
                 match compressed.get(&c.member) {
                     Some(z) => z.clone(),
                     None => {
@@ -669,16 +674,20 @@ async fn proxy_request(
                     .await
                 }
                 None => (
-                    send(
-                        &generation,
-                        &parts,
-                        (attempt_rest, ingress),
-                        c,
-                        send_body,
-                        drop_turn_state,
-                        false,
-                    )
-                    .await,
+                    {
+                        shared.totals.note_upload(send_body.len(), send_body.len());
+                        send(
+                            &generation,
+                            &parts,
+                            (attempt_rest, ingress),
+                            c,
+                            send_body,
+                            drop_turn_state,
+                            false,
+                        )
+                        .await
+                        .map(up_response)
+                    },
                     if client_zstd && !converted {
                         RequestCompression::ClientZstd
                     } else {
@@ -686,7 +695,6 @@ async fn proxy_request(
                     },
                 ),
             };
-            let result = result.map(up_response);
             if converted {
                 break (result, compression, started);
             }
@@ -1063,12 +1071,23 @@ pub(crate) fn note_compaction_route(
     shared.event(RouteEventKind::Compaction, member, None, Some(detail));
 }
 
-/// Send `zstd` (the compressed form of `plain`) to a line that accepts zstd.
-/// A 400 / 415 / 422 answer may be a refusal to read the body: the plain body
-/// goes again to the same line (nothing was processed), and a 415, or a plain
-/// retry that is not refused the same way, marks the line as refusing zstd
-/// ([`transport::TransportMemory`]). A genuine 400 comes back from the plain
-/// retry too and is passed on as such.
+/// Send `zstd` (the compressed form of `plain`) to a line that may accept
+/// zstd. An answer that may be a refusal to read the body
+/// ([`transport::may_refuse_zstd`]; wider for a line not confirmed yet) is
+/// read when small:
+///
+/// - a ciphertext refusal ([`crate::cipher`]) proves the member read the body:
+///   passed on for the cipher logic, and the line is confirmed;
+/// - otherwise the plain body goes again to the same line (nothing was
+///   processed), and the line is marked as refusing zstd
+///   ([`transport::TransportMemory`]) only when the answer was a decode
+///   failure ([`transport::is_decode_failure`], e.g. the Krill relay's 400
+///   "failed to decode request body") or the plain body succeeds;
+/// - when the plain body fails with the same status, it was the request's own
+///   error (an unknown model, a bad parameter): the first answer is passed on
+///   and the line keeps getting zstd.
+///
+/// A 2xx confirms the line.
 #[allow(clippy::too_many_arguments)]
 async fn send_zstd(
     shared: &Shared,
@@ -1079,24 +1098,41 @@ async fn send_zstd(
     (zstd, plain): (Bytes, Bytes),
     drop_turn_state: bool,
     tracker: Option<&mut Tracker>,
-) -> (
-    Result<reqwest::Response, reqwest::Error>,
-    RequestCompression,
-) {
-    let started = Instant::now();
-    let first = send(generation, parts, rest, c, zstd, drop_turn_state, true).await;
-    let first_elapsed = started.elapsed();
-    let refused = match &first {
-        Ok(r) if transport::may_refuse_zstd(r.status()) => r.status(),
-        _ => return (first, RequestCompression::RouterZstd),
-    };
-    // The refusal's body is not needed (and not passed on).
-    drop(first);
-    let retry = send(generation, parts, rest, c, plain, drop_turn_state, false).await;
-    let blamed = refused == StatusCode::UNSUPPORTED_MEDIA_TYPE
-        || matches!(&retry, Ok(r) if r.status() != refused);
+) -> (Result<UpResponse, reqwest::Error>, RequestCompression) {
     let member = &generation.members[c.member];
     let line = &member.lines[c.line];
+    let confirmed = shared.transports.zstd_confirmed(&member.cfg, &line.cfg);
+    let started = Instant::now();
+    shared.totals.note_upload(plain.len(), zstd.len());
+    let first = send(generation, parts, rest, c, zstd, drop_turn_state, true).await;
+    let first_elapsed = started.elapsed();
+    let (original, refused, decode_failure) = match first.map(up_response) {
+        Ok(r) if transport::may_refuse_zstd(r.status(), confirmed) => {
+            let status = r.status();
+            let (r, whole) = read_small(r).await;
+            let whole = whole.as_deref();
+            if cipher::rejection::may_be(status.as_u16(), content_type_of(r.headers()))
+                && whole.and_then(cipher::rejection::from_body).is_some()
+            {
+                shared.transports.note_zstd_ok(&member.cfg, &line.cfg);
+                return (Ok(r), RequestCompression::RouterZstd);
+            }
+            (r, status, whole.is_some_and(transport::is_decode_failure))
+        }
+        Ok(r) => {
+            if r.status().is_success() {
+                shared.transports.note_zstd_ok(&member.cfg, &line.cfg);
+            }
+            return (Ok(r), RequestCompression::RouterZstd);
+        }
+        Err(e) => return (Err(e), RequestCompression::RouterZstd),
+    };
+    shared.totals.note_upload(plain.len(), plain.len());
+    let retry = send(generation, parts, rest, c, plain, drop_turn_state, false)
+        .await
+        .map(up_response);
+    let retry_ok = matches!(&retry, Ok(r) if r.status().is_success());
+    let blamed = decode_failure || retry_ok;
     let label = generation.label(c.member, c.line);
     if blamed {
         shared
@@ -1107,6 +1143,10 @@ async fn send_zstd(
             status = refused.as_u16(),
             "line refused a zstd request body; sending its bodies uncompressed"
         );
+    } else if matches!(&retry, Ok(r) if r.status() == refused) {
+        // The request's own error, whatever its encoding: Codex gets the
+        // first answer, and the line keeps getting zstd.
+        return (Ok(original), RequestCompression::RouterZstd);
     }
     if let Some(t) = tracker {
         t.zstd_refused(c, refused.as_u16(), first_elapsed);

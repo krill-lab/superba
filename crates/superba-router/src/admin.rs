@@ -283,6 +283,7 @@ pub(crate) fn status(shared: &Shared) -> RouterStatus {
                         active_websockets: l.counters.active_websockets.load(Ordering::Relaxed),
                         compress_requests: crate::transport::compresses(
                             &shared.transports,
+                            generation.config.tuning.upstream_compression,
                             &m.cfg,
                             &l.cfg,
                             now,
@@ -326,6 +327,9 @@ pub(crate) fn status(shared: &Shared) -> RouterStatus {
             rejected: t.rejected.load(Ordering::Relaxed),
             ws_refused: t.ws_refused.load(Ordering::Relaxed),
             local_answers: t.local_answers.load(Ordering::Relaxed),
+            deflate_websockets: t.deflate_websockets.load(Ordering::Relaxed),
+            upload_bytes: t.upload_bytes.load(Ordering::Relaxed),
+            upload_wire_bytes: t.upload_wire_bytes.load(Ordering::Relaxed),
         },
         sticky_sessions,
         recent: lock(&shared.events).iter().cloned().collect(),

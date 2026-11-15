@@ -204,8 +204,9 @@ pub struct LineConfig {
     pub probe_url: Option<Url>,
     /// The line accepts zstd request bodies (Superba's transport probe):
     /// `Some(true)` = Responses request bodies Codex sent uncompressed are
-    /// compressed for it; `None` (not checked) and `Some(false)` = sent as they
-    /// are. See [`crate::transport`].
+    /// compressed for it; `Some(false)` = sent as they are; `None` (not
+    /// checked) = compressed under [`UpstreamCompression::Auto`] with the
+    /// wider fallback of an unconfirmed line. See [`crate::transport`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub zstd: Option<bool>,
     /// The line serves the Responses WebSocket for this member's key (probe):
@@ -345,6 +346,34 @@ pub struct Tuning {
     /// While the inbound connection budget is nearly full, a connection idle
     /// this long is closed (see [`crate::limits`]).
     pub pressure_idle_timeout_ms: u64,
+    /// What the router compresses on the way to members
+    /// ([`crate::transport`]).
+    #[serde(skip_serializing_if = "UpstreamCompression::is_auto")]
+    pub upstream_compression: UpstreamCompression,
+}
+
+/// What the router compresses on the way to members ([`Tuning::upstream_compression`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UpstreamCompression {
+    /// zstd Responses bodies for every line not known to refuse zstd (its
+    /// probe found no support, or it refused a body at run time; an
+    /// unchecked line that answers a zstd body with an error gets the plain
+    /// body at once), and per-message deflate offered on WebSocket
+    /// handshakes.
+    #[default]
+    Auto,
+    /// zstd only for lines whose probe found support; per-message deflate
+    /// offered (it is negotiated, so always safe).
+    Probed,
+    /// Bodies and frames go as Codex sent them; nothing is offered.
+    Off,
+}
+
+impl UpstreamCompression {
+    fn is_auto(&self) -> bool {
+        *self == Self::Auto
+    }
 }
 
 impl Default for Tuning {
@@ -368,6 +397,7 @@ impl Default for Tuning {
             pool_idle_timeout_secs: 90,
             inbound_idle_timeout_secs: 150,
             pressure_idle_timeout_ms: 5_000,
+            upstream_compression: UpstreamCompression::Auto,
         }
     }
 }

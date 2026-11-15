@@ -1,5 +1,5 @@
 //! The frame-terminating WebSocket relay used while request stats are
-//! configured: no per-message deflate, the stats line injected into event
+//! configured: no per-message deflate toward Codex, the stats line injected into event
 //! frames, continuation frames untouched, earlier lines stripped from a
 //! reconnect's full input, one row per `response.create`, both legs bounded
 //! (a message or frame over the limits closes both with 1009).
@@ -168,11 +168,10 @@ async fn frames_are_relayed_with_the_line_and_without_deflate() {
         !resp.headers().contains_key("sec-websocket-extensions"),
         "no per-message deflate toward Codex"
     );
-    assert!(
-        !up.seen()[0]
-            .headers
-            .contains_key("sec-websocket-extensions"),
-        "none offered to the member"
+    assert_eq!(
+        up.seen()[0].headers["sec-websocket-extensions"],
+        "permessage-deflate",
+        "Codex's offer is not passed on; the router's own is (declined here)"
     );
 
     // Prewarm: answered, never a line.

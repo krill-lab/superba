@@ -183,8 +183,9 @@ pub struct LineStatus {
     pub websockets: u64,
     /// WebSocket connections currently open through this line.
     pub active_websockets: u64,
-    /// Responses request bodies are zstd-compressed for this line now (its
-    /// probe found zstd support and it has not refused a zstd body since).
+    /// Responses request bodies are zstd-compressed for this line now
+    /// (`tuning.upstream_compression` allows it for the line's probe result
+    /// and it has not refused a zstd body since).
     #[serde(default)]
     pub compress_requests: bool,
     /// The line is offered for WebSocket handshakes now (no 426 from its probe
@@ -217,6 +218,18 @@ pub struct Totals {
     /// and not counted in `requests`.
     #[serde(default)]
     pub local_answers: u64,
+    /// Upstream WebSocket connections whose member agreed to per-message
+    /// deflate.
+    #[serde(default)]
+    pub deflate_websockets: u64,
+    /// Request bytes sent to members (Responses bodies and WebSocket request
+    /// frames, every attempt) before compression.
+    #[serde(default)]
+    pub upload_bytes: u64,
+    /// The same bytes as they went on the wire (zstd bodies, deflated
+    /// frames); `upload_bytes - upload_wire_bytes` is what compression saved.
+    #[serde(default)]
+    pub upload_wire_bytes: u64,
 }
 
 /// Kind of a routing event.

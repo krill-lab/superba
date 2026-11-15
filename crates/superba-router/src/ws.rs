@@ -2,10 +2,12 @@
 //!
 //! The upstream handshake is completed before upgrading the client. Both
 //! WebSocket legs terminate here so top-level private request fields are
-//! removed even when statistics are disabled. Per-message deflate is not
-//! negotiated; other frames retain their contents. A socket stays pinned
-//! to its line for its lifetime. Refused or unavailable WebSocket routes
-//! return 426 so Codex can retry over HTTP.
+//! removed even when statistics are disabled. Codex's leg never uses
+//! per-message deflate (loopback); the member's leg offers the router's own
+//! (unless `tuning.upstream_compression` is off) and uses it when the member
+//! agrees ([`crate::ws_deflate`], below the relay, which reads plain frames
+//! either way). A socket stays pinned to its line for its lifetime. Refused
+//! or unavailable WebSocket routes return 426 so Codex can retry over HTTP.
 //!
 //! With a `stats` section, [`crate::ws_relay`] also tracks requests, strips
 //! earlier stats lines and adds the configured line to responses. Under the
@@ -184,7 +186,8 @@ pub(crate) async fn proxy_ws(
             c,
             headers,
             failovers,
-        } => (io, c, headers, failovers),
+            deflate,
+        } => ((io, deflate), c, headers, failovers),
         Dialed::Answered { resp, c } => {
             return answered(&shared, &generation, &parts, resp, c, admission);
         }
@@ -215,6 +218,7 @@ pub(crate) async fn proxy_ws(
                         handshake,
                         answered: c,
                         failovers: std::sync::atomic::AtomicU32::new(failovers),
+                        deflate: false,
                     };
                     tunnel(down, io, ctx, None).await;
                 }
@@ -238,6 +242,8 @@ pub(crate) enum Dialed {
         headers: HeaderMap,
         /// Lines failed over before this one.
         failovers: u32,
+        /// The member agreed to per-message deflate.
+        deflate: Option<crate::ws_deflate::Params>,
     },
     /// A line answered without upgrading (426: no WebSocket for this
     /// account, 401/403, ...).
@@ -292,8 +298,16 @@ pub(crate) async fn dial(
         {
             headers.insert(crate::official::ACCOUNT_HEADER, v);
         }
-        // Privacy shaping requires readable frames on every connection.
+        // Codex's own offer is not passed on (its leg stays plain); the
+        // router offers the extension it implements below the relay, which
+        // keeps reading plain frames for privacy shaping.
         headers.remove(SEC_WEBSOCKET_EXTENSIONS);
+        if generation.config.tuning.upstream_compression != crate::UpstreamCompression::Off {
+            headers.insert(
+                SEC_WEBSOCKET_EXTENSIONS,
+                http::HeaderValue::from_static(crate::ws_deflate::OFFER),
+            );
+        }
         let started = Instant::now();
         let result = generation.ws.get(url).headers(headers).send().await;
         let resp = match result {
@@ -349,6 +363,9 @@ pub(crate) async fn dial(
         if status != StatusCode::SWITCHING_PROTOCOLS {
             return Dialed::Answered { resp, c };
         }
+        // A member that agreed gets deflated frames (honoured even when the
+        // router offered nothing: inflating is always possible).
+        let deflate = crate::ws_deflate::negotiated(resp.headers());
         let mut headers = response_headers(resp.headers(), true);
         headers.remove(SEC_WEBSOCKET_EXTENSIONS);
         set_route(&mut headers, &label);
@@ -364,11 +381,18 @@ pub(crate) async fn dial(
         };
         shared.totals.websockets.fetch_add(1, Ordering::Relaxed);
         line.counters.websockets.fetch_add(1, Ordering::Relaxed);
+        if deflate.is_some() {
+            shared
+                .totals
+                .deflate_websockets
+                .fetch_add(1, Ordering::Relaxed);
+        }
         return Dialed::Open {
             io,
             c,
             headers,
             failovers: u32::try_from(failures.len()).unwrap_or(u32::MAX),
+            deflate,
         };
     }
     Dialed::Unreachable(failures)
@@ -427,12 +451,12 @@ pub(crate) fn answered_status(
     }
 }
 
-/// Relay Codex's socket and the member's for the session, counted on the
-/// member's line.
+/// Relay Codex's socket and the member's (`up`, with the per-message deflate
+/// the member agreed to) for the session, counted on the member's line.
 pub(crate) async fn tunnel<D>(
     down: tokio_tungstenite::WebSocketStream<D>,
-    up: reqwest::Upgraded,
-    ctx: crate::ws_relay::RelayCtx,
+    (up, deflate): (reqwest::Upgraded, Option<crate::ws_deflate::Params>),
+    mut ctx: crate::ws_relay::RelayCtx,
     first: Option<tokio_tungstenite::tungstenite::Utf8Bytes>,
 ) where
     D: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send,
@@ -441,6 +465,20 @@ pub(crate) async fn tunnel<D>(
     let c = ctx.answered;
     let counters = &generation.members[c.member].lines[c.line].counters;
     counters.active_websockets.fetch_add(1, Ordering::Relaxed);
+    let up = match deflate {
+        Some(params) => {
+            let limit = generation.config.tuning.max_body_bytes;
+            crate::ws_deflate::DeflateIo::deflate(
+                up,
+                params,
+                limit,
+                limit.min(crate::ws_relay::MAX_FRAME_BYTES),
+                ctx.shared.totals.upload_wire_bytes.clone(),
+            )
+        }
+        None => crate::ws_deflate::DeflateIo::plain(up),
+    };
+    ctx.deflate = up.is_deflate();
     crate::ws_relay::relay(down, up, ctx, first).await;
     counters.active_websockets.fetch_sub(1, Ordering::Relaxed);
 }

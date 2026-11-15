@@ -51,8 +51,19 @@ const OK: &str = r#"{"id":"resp_ok","object":"response","status":"completed","ou
 
 /// The backend: `status` with the refusal, else 200; `always` refuses every
 /// request that carries any ciphertext at all.
+/// A body as the member read it (the router zstd-compresses Responses bodies
+/// for lines not known to refuse zstd).
+fn plain(headers: &HeaderMap, body: &[u8]) -> Vec<u8> {
+    if headers.get("content-encoding").is_some_and(|v| v == "zstd") {
+        zstd::stream::decode_all(body).unwrap()
+    } else {
+        body.to_vec()
+    }
+}
+
 fn backend(status: u16, always: bool) -> Mode {
-    Mode::Reply(Arc::new(move |_: &HeaderMap, body: &[u8]| {
+    Mode::Reply(Arc::new(move |h: &HeaderMap, body: &[u8]| {
+        let body = &plain(h, body)[..];
         let v: Value = serde_json::from_slice(body).unwrap_or_default();
         let refused = refusal(&v).or_else(|| {
             (always && body.windows(9).any(|w| w == b"encrypted"))
@@ -130,7 +141,7 @@ async fn rows(paths: &RouterPaths, n: usize) -> Vec<superba_core::RequestRow> {
 }
 
 fn input_of(seen: &Seen) -> Vec<Value> {
-    let v: Value = serde_json::from_slice(&seen.body).unwrap();
+    let v: Value = serde_json::from_slice(&plain(&seen.headers, &seen.body)).unwrap();
     v["input"].as_array().unwrap().clone()
 }
 
@@ -160,7 +171,10 @@ async fn http_a_refused_conversation_goes_again_without_what_the_member_cannot_r
     assert_eq!(resp.text().await.unwrap(), OK, "Codex gets the answer");
     let seen = up.seen();
     assert_eq!(seen.len(), 3, "one refusal, one retry");
-    assert_eq!(seen[1].body, conversation().to_string().into_bytes());
+    assert_eq!(
+        plain(&seen[1].headers, &seen[1].body),
+        conversation().to_string().into_bytes()
+    );
     let sent = input_of(&seen[2]);
     // Exactly the foreign reasoning left out; its own reasoning stays.
     let ids: Vec<&str> = sent
@@ -176,7 +190,7 @@ async fn http_a_refused_conversation_goes_again_without_what_the_member_cannot_r
         json!([{"type": "input_text", "text": OMITTED}])
     );
     // Every other item keeps its bytes.
-    let text = String::from_utf8(seen[2].body.to_vec()).unwrap();
+    let text = String::from_utf8(plain(&seen[2].headers, &seen[2].body)).unwrap();
     for item in [0usize, 1, 3, 4, 6, 7] {
         let raw = conversation()["input"][item].to_string();
         assert!(text.contains(&raw), "item {item} kept");
@@ -188,7 +202,7 @@ async fn http_a_refused_conversation_goes_again_without_what_the_member_cannot_r
     assert_eq!(post(&r, &next).await.status(), 200);
     let seen = up.seen();
     assert_eq!(seen.len(), 4, "no refused round trip");
-    let again = String::from_utf8(seen[3].body.to_vec()).unwrap();
+    let again = String::from_utf8(plain(&seen[3].headers, &seen[3].body)).unwrap();
     let last = conversation()["input"][7].to_string();
     let cut = text.find(&last).unwrap() + last.len();
     assert!(
@@ -475,5 +489,16 @@ async fn http_a_genuine_400_to_a_conversation_with_ciphertexts_is_passed_on() {
     let resp = post(&r, &conversation()).await;
     assert_eq!(resp.status(), 400);
     assert_eq!(resp.text().await.unwrap(), BAD);
-    assert_eq!(up.hits(), 1);
+    // No ciphertext retry: the only second request is the plain body the
+    // zstd fallback sends to a line not confirmed to read zstd.
+    let seen = up.seen();
+    assert_eq!(seen.len(), 2);
+    assert!(
+        seen[0]
+            .headers
+            .get("content-encoding")
+            .is_some_and(|v| v == "zstd")
+    );
+    assert!(!seen[1].headers.contains_key("content-encoding"));
+    assert_eq!(seen[1].body, conversation().to_string().into_bytes());
 }

@@ -204,7 +204,11 @@ async fn session<D>(
                 .await
                 {
                     Dialed::Open {
-                        io, c, failovers, ..
+                        io,
+                        c,
+                        failovers,
+                        deflate,
+                        ..
                     } => {
                         let ctx = RelayCtx {
                             shared,
@@ -212,12 +216,15 @@ async fn session<D>(
                             handshake: parts.headers.clone(),
                             answered: c,
                             failovers: AtomicU32::new(failovers),
+                            deflate: false,
                         };
                         let span = tracing::info_span!(
                             "ws",
                             route = %ctx.generation.label(c.member, c.line)
                         );
-                        tunnel(down, io, ctx, Some(t)).instrument(span).await;
+                        tunnel(down, (io, deflate), ctx, Some(t))
+                            .instrument(span)
+                            .await;
                         return;
                     }
                     Dialed::Answered { resp, c }

@@ -1,8 +1,10 @@
 //! Frame-terminating WebSocket relay. Private fields are always removed;
 //! request tracking and stats-line shaping require a `stats` section.
 //!
-//! Both legs are terminated with tokio-tungstenite (no per-message deflate: the
-//! extension header is dropped both ways, verified to be accepted by Codex).
+//! Both legs are terminated with tokio-tungstenite. Codex's leg never uses
+//! per-message deflate (its offer is dropped, verified to be accepted by
+//! Codex); the member's leg may, below this relay ([`crate::ws_deflate`]), so
+//! frames here are always plain.
 //!
 //! - client → member: private top-level fields are removed first. With stats,
 //!   each `response.create` text frame is peeked (originator
@@ -75,6 +77,9 @@ pub(crate) struct RelayCtx {
     /// Handshake attempts that failed over before this line (counted on the
     /// socket's first request).
     pub failovers: AtomicU32,
+    /// The member's leg uses per-message deflate (its frames' wire size is
+    /// counted there; set by [`crate::ws::tunnel`]).
+    pub deflate: bool,
 }
 
 /// One `response.create` waiting for its response's end.
@@ -187,6 +192,11 @@ pub(crate) async fn relay<D, U>(
                 match msg {
                     Ok(Message::Text(t)) => match routed_text(&ctx, &queue, t, routed).await {
                         Client::Forward(out) => {
+                            if let Message::Text(t) = &out {
+                                // A deflated socket counts its wire bytes itself.
+                                let wire = if ctx.deflate { 0 } else { t.len() };
+                                ctx.shared.totals.note_upload(t.len(), wire);
+                            }
                             if up_tx.send(out).await.is_err() {
                                 break;
                             }

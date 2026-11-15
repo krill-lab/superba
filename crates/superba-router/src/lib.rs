@@ -37,16 +37,18 @@
 //!   upstream JSON including `service_tiers` stays intact.
 //! - **Streaming**: SSE and every other body pass through unbuffered; request
 //!   bodies retain their bytes (`zstd` included) unless private uploads are
-//!   removed, a member maps the model name ([`model_map`]), or the line accepts
-//!   zstd and Codex sent the body uncompressed.
+//!   removed, a member maps the model name ([`model_map`]), or the router
+//!   zstd-compresses a body Codex sent uncompressed ([`transport`]).
 //! - **Transports per line** ([`transport`]): Responses request bodies are
-//!   zstd-compressed for lines Superba's probe found to accept zstd, sent again
+//!   zstd-compressed for lines not known to refuse zstd (`tuning.
+//!   upstream_compression`; `probed`: only lines the probe confirmed), sent again
 //!   uncompressed (and remembered) when a line refuses one; WebSocket
 //!   handshakes skip lines that answered 426. HTTP turns are never upgraded to
 //!   an upstream WebSocket (see [`transport`] for why).
 //! - **WebSocket**: pinned per connection; failover only at the handshake.
-//!   Native Responses frames always pass through the bounded relay (without
-//!   per-message deflate) so private uploads are removed even without stats.
+//!   Native Responses frames always pass through the bounded relay (plain
+//!   frames; the member's leg may use per-message deflate below it,
+//!   `ws_deflate`) so private uploads are removed even without stats.
 //! - **Remote compaction** ([`compaction`]): a compacted conversation goes
 //!   only to the member that made its `compaction` item (no failover to
 //!   members that cannot read it); compaction requests and compacted
@@ -147,12 +149,14 @@ mod server;
 mod state;
 mod ws;
 mod ws_catalog;
+mod ws_deflate;
 mod ws_relay;
 
 pub use admin::{ADMIN_PREFIX, VERSION};
 pub use claude::ClaudeConfig;
 pub use config::{
     LineConfig, MemberConfig, MemberKind, ROUTER_BASE_PATH, RouterConfig, RouterSecrets, Tuning,
+    UpstreamCompression,
 };
 pub use forward::ROUTE_HEADER;
 pub use health::LineState;

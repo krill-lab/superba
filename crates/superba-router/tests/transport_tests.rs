@@ -1,6 +1,7 @@
 //! Upstream transports per line: zstd request bodies for lines that accept
 //! them (and the fallback when one refuses), passthrough of Codex's own zstd
-//! bodies, and WebSocket handshakes that skip lines which refused one.
+//! bodies, WebSocket handshakes that skip lines which refused one, and
+//! per-message deflate on the member's WebSocket leg.
 
 mod common;
 
@@ -9,7 +10,7 @@ use std::sync::Arc;
 use common::*;
 use http::HeaderMap;
 use pretty_assertions::assert_eq;
-use superba_router::{LineConfig, MemberConfig, MemberKind};
+use superba_router::{LineConfig, MemberConfig, MemberKind, UpstreamCompression};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
 const OK: &str = r#"{"id":"resp_1","status":"completed","output":[]}"#;
@@ -111,11 +112,20 @@ async fn bodies_are_zstd_compressed_for_lines_that_accept_it() {
     assert!(st.members[0].lines[0].compress_requests);
 }
 
+fn with_mode(
+    mut cfg: superba_router::RouterConfig,
+    mode: UpstreamCompression,
+) -> superba_router::RouterConfig {
+    cfg.tuning.upstream_compression = mode;
+    cfg
+}
+
 #[tokio::test]
 async fn unknown_lines_small_bodies_and_other_paths_pass_uncompressed() {
     let up = upstream(decoding()).await;
     let other = upstream(decoding()).await;
-    let r = start(test_config(vec![
+    let probed = |cfg| with_mode(cfg, UpstreamCompression::Probed);
+    let r = start(probed(test_config(vec![
         member(
             "krill",
             MemberKind::Krill,
@@ -128,7 +138,7 @@ async fn unknown_lines_small_bodies_and_other_paths_pass_uncompressed() {
             false,
             vec![zstd_line("b", &other, None)],
         ),
-    ]))
+    ])))
     .await;
     // Small body, compaction and other paths: as they are.
     post(
@@ -152,16 +162,17 @@ async fn unknown_lines_small_bodies_and_other_paths_pass_uncompressed() {
         assert!(!is_zstd(&s.headers), "{}", s.path);
         assert!(serde_json::from_slice::<serde_json::Value>(&s.body).is_ok());
     }
-    // A line whose zstd support is unknown never gets a compressed body.
+    // Under `probed` a line whose zstd support is unknown never gets a
+    // compressed body.
     let st = r.status().await;
     assert!(st.members[0].lines[0].compress_requests);
     assert!(!st.members[1].lines[0].compress_requests);
-    let r2 = start(test_config(vec![member(
+    let r2 = start(probed(test_config(vec![member(
         "site",
         MemberKind::Compatible,
         false,
         vec![zstd_line("b", &other, None)],
-    )]))
+    )])))
     .await;
     post(&r2, RESPONSES, big_body(), None).await;
     let seen = other.seen();
@@ -238,7 +249,9 @@ async fn a_genuine_400_is_passed_on_and_not_held_against_the_line() {
     let resp = post(&r, RESPONSES, big_body(), None).await;
     assert_eq!(resp.status(), 400);
     assert_eq!(resp.text().await.unwrap(), BAD_PARAM);
-    assert_eq!(up.hits(), 2);
+    let seen = up.seen();
+    assert_eq!(seen.len(), 2);
+    assert!(is_zstd(&seen[0].headers) && !is_zstd(&seen[1].headers));
     up.set(decoding());
     post(&r, RESPONSES, big_body(), None).await;
     let seen = up.seen();
@@ -579,4 +592,322 @@ async fn a_refused_websocket_handshake_does_not_pin_the_session_to_that_line() {
         (1, 0),
         "the HTTP turn uses the first healthy line"
     );
+}
+
+#[tokio::test]
+async fn auto_compresses_for_unchecked_lines_and_a_2xx_confirms_them() {
+    let up = upstream(decoding()).await;
+    let r = start(test_config(vec![member(
+        "site",
+        MemberKind::Compatible,
+        false,
+        vec![zstd_line("b", &up, None)],
+    )]))
+    .await;
+    assert!(r.status().await.members[0].lines[0].compress_requests);
+    let body = big_body();
+    let resp = post(&r, RESPONSES, body.clone(), None).await;
+    assert_eq!(resp.status(), 200);
+    let seen = up.seen();
+    assert_eq!(seen.len(), 1);
+    assert!(is_zstd(&seen[0].headers));
+    assert_eq!(zstd::stream::decode_all(&seen[0].body[..]).unwrap(), body);
+    // Confirmed now: a 500 to a zstd body is the server's, passed on once.
+    up.set(Mode::Json(500, r#"{"error":{"message":"oops"}}"#));
+    let resp = post(&r, RESPONSES, big_body(), None).await;
+    assert_eq!(resp.status(), 500);
+    assert_eq!(up.hits(), 2);
+    // Upload totals: every byte counted, the wire ones compressed.
+    let t = r.status().await.totals;
+    assert_eq!(t.upload_bytes, 2 * body.len() as u64);
+    assert!(t.upload_wire_bytes < t.upload_bytes / 5, "{t:?}");
+}
+
+#[tokio::test]
+async fn an_unchecked_line_failing_on_zstd_gets_the_plain_body_and_is_remembered() {
+    // A relay that takes the zstd bytes for JSON and fails with a 500.
+    for status in [500, 501, 400, 415] {
+        let up = upstream(refusing(status, r#"{"error":{"message":"bad body"}}"#)).await;
+        let r = start(test_config(vec![member(
+            "site",
+            MemberKind::Compatible,
+            false,
+            vec![zstd_line("b", &up, None)],
+        )]))
+        .await;
+        let resp = post(&r, RESPONSES, big_body(), None).await;
+        assert_eq!(resp.status(), 200, "{status}");
+        assert_eq!(resp.text().await.unwrap(), OK);
+        let seen = up.seen();
+        assert_eq!(seen.len(), 2, "{status}");
+        assert!(is_zstd(&seen[0].headers));
+        assert!(!is_zstd(&seen[1].headers));
+        assert_eq!(&seen[1].body[..], &big_body()[..]);
+        post(&r, RESPONSES, big_body(), None).await;
+        assert!(!is_zstd(&up.seen()[2].headers), "remembered ({status})");
+        let st = r.status().await;
+        assert!(!st.members[0].lines[0].compress_requests);
+        assert_eq!(st.totals.failovers, 0, "not a failover");
+    }
+}
+
+#[tokio::test]
+async fn a_server_error_of_both_bodies_is_not_held_against_zstd() {
+    let up = upstream(Mode::Json(500, r#"{"error":{"message":"down"}}"#)).await;
+    let r = start(test_config(vec![member(
+        "site",
+        MemberKind::Compatible,
+        false,
+        vec![zstd_line("b", &up, None)],
+    )]))
+    .await;
+    let resp = post(&r, RESPONSES, big_body(), None).await;
+    assert_eq!(resp.status(), 500);
+    assert_eq!(up.hits(), 2, "the plain body was tried once");
+    assert!(r.status().await.members[0].lines[0].compress_requests);
+    // A line whose probe found no zstd support is never compressed for.
+    let no = upstream(decoding()).await;
+    let r = start(test_config(vec![member(
+        "site",
+        MemberKind::Compatible,
+        false,
+        vec![zstd_line("b", &no, Some(false))],
+    )]))
+    .await;
+    post(&r, RESPONSES, big_body(), None).await;
+    assert!(!is_zstd(&no.seen()[0].headers));
+}
+
+#[tokio::test]
+async fn off_compresses_nothing_and_offers_no_deflate() {
+    let off = |cfg| with_mode(cfg, UpstreamCompression::Off);
+    // HTTP: even a confirmed line gets the body as Codex sent it.
+    let up = upstream(decoding()).await;
+    let r = start(off(test_config(vec![member(
+        "site",
+        MemberKind::Compatible,
+        false,
+        vec![zstd_line("b", &up, Some(true))],
+    )])))
+    .await;
+    assert_eq!(post(&r, RESPONSES, big_body(), None).await.status(), 200);
+    assert!(!is_zstd(&up.seen()[0].headers));
+    assert!(!r.status().await.members[0].lines[0].compress_requests);
+    // WebSocket: no offer, plain frames.
+    let ws = upstream(Mode::WsDeflate("permessage-deflate")).await;
+    let r = start(off(test_config(vec![member(
+        "krill",
+        MemberKind::Krill,
+        true,
+        vec![line("a", ws.base("/backend-api/codex"))],
+    )])))
+    .await;
+    let (mut sock, _) = tokio_tungstenite::connect_async(ws_request(&r))
+        .await
+        .unwrap();
+    assert!(
+        !ws.seen()[0]
+            .headers
+            .contains_key("sec-websocket-extensions")
+    );
+    use futures_util::SinkExt;
+    let text = big_text();
+    sock.send(tokio_tungstenite::tungstenite::Message::text(text.clone()))
+        .await
+        .unwrap();
+    assert_eq!(next_text(&mut sock).await, format!("echo:{text}"));
+    assert_eq!(ws.deflated(), [false]);
+    sock.close(None).await.unwrap();
+    assert_eq!(r.status().await.totals.deflate_websockets, 0);
+}
+
+/// A `response.create`-sized text frame.
+fn big_text() -> String {
+    String::from_utf8(big_body()).unwrap()
+}
+
+async fn next_text<S>(ws: &mut tokio_tungstenite::WebSocketStream<S>) -> String
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
+    use futures_util::StreamExt;
+    loop {
+        let msg = tokio::time::timeout(std::time::Duration::from_secs(5), ws.next())
+            .await
+            .expect("a frame in time")
+            .unwrap()
+            .unwrap();
+        if let tokio_tungstenite::tungstenite::Message::Text(t) = msg {
+            return t.as_str().to_owned();
+        }
+    }
+}
+
+#[tokio::test]
+async fn websocket_frames_to_a_member_that_agrees_are_deflated_both_ways() {
+    for answer in [
+        "permessage-deflate",
+        "permessage-deflate; server_no_context_takeover; client_no_context_takeover",
+    ] {
+        let up = upstream(Mode::WsDeflate(answer)).await;
+        let r = start(test_config(vec![member(
+            "krill",
+            MemberKind::Krill,
+            true,
+            vec![line("a", up.base("/backend-api/codex"))],
+        )]))
+        .await;
+        // Codex's own offer (with its parameters) is not passed on; the
+        // router's is, and Codex's leg stays plain.
+        let mut req = ws_request(&r);
+        req.headers_mut().insert(
+            "sec-websocket-extensions",
+            "permessage-deflate; client_max_window_bits"
+                .parse()
+                .unwrap(),
+        );
+        let (mut ws, resp) = tokio_tungstenite::connect_async(req).await.unwrap();
+        assert_eq!(resp.status(), 101);
+        assert!(!resp.headers().contains_key("sec-websocket-extensions"));
+        assert_eq!(
+            up.seen()[0].headers["sec-websocket-extensions"],
+            "permessage-deflate"
+        );
+        use futures_util::SinkExt;
+        let mut sent = 0;
+        // Big frames (twice: the second may use the first's window), then a
+        // small one, which goes as it is.
+        let texts = [
+            big_text(),
+            big_text().replace("once more", "again"),
+            "{\"type\":\"x\"}".to_owned(),
+        ];
+        for text in &texts {
+            ws.send(tokio_tungstenite::tungstenite::Message::text(text.clone()))
+                .await
+                .unwrap();
+            sent += text.len() as u64;
+            assert_eq!(next_text(&mut ws).await, format!("echo:{text}"), "{answer}");
+        }
+        assert_eq!(up.frames(), texts.to_vec(), "{answer}");
+        assert_eq!(up.deflated(), [true, true, false], "{answer}");
+        ws.close(None).await.unwrap();
+        let t = r.status().await.totals;
+        assert_eq!(t.deflate_websockets, 1);
+        assert_eq!(t.upload_bytes, sent);
+        assert!(t.upload_wire_bytes < sent / 5, "{answer}: {t:?}");
+    }
+}
+
+#[tokio::test]
+async fn a_member_that_declines_deflate_gets_plain_frames() {
+    let up = upstream(Mode::WsEcho).await;
+    let r = start(test_config(vec![member(
+        "krill",
+        MemberKind::Krill,
+        true,
+        vec![line("a", up.base("/backend-api/codex"))],
+    )]))
+    .await;
+    let (mut ws, _) = tokio_tungstenite::connect_async(ws_request(&r))
+        .await
+        .unwrap();
+    assert_eq!(
+        up.seen()[0].headers["sec-websocket-extensions"],
+        "permessage-deflate",
+        "offered"
+    );
+    use futures_util::SinkExt;
+    let text = big_text();
+    ws.send(tokio_tungstenite::tungstenite::Message::text(text.clone()))
+        .await
+        .unwrap();
+    // WsEcho is a plain tungstenite server: a compressed frame would fail it.
+    assert_eq!(next_text(&mut ws).await, format!("echo:{text}"));
+    ws.close(None).await.unwrap();
+    let t = r.status().await.totals;
+    assert_eq!(t.deflate_websockets, 0);
+    assert_eq!(t.upload_bytes, text.len() as u64);
+    assert_eq!(t.upload_wire_bytes, text.len() as u64);
+}
+
+/// The Krill relay's answer to a body it cannot decode.
+const DECODE_FAILED: &str = r#"{"type":"error","error":{"type":"invalid_request_error","message":"failed to decode request body"}}"#;
+
+#[tokio::test]
+async fn a_relay_decode_failure_sends_the_plain_body_and_is_remembered() {
+    for hint in [Some(true), None] {
+        let up = upstream(refusing(400, DECODE_FAILED)).await;
+        let r = start(test_config(vec![member(
+            "krill",
+            MemberKind::Krill,
+            false,
+            vec![zstd_line("a", &up, hint)],
+        )]))
+        .await;
+        let resp = post(&r, RESPONSES, big_body(), None).await;
+        assert_eq!(resp.status(), 200, "{hint:?}");
+        assert_eq!(resp.text().await.unwrap(), OK);
+        let seen = up.seen();
+        assert_eq!(seen.len(), 2);
+        assert!(is_zstd(&seen[0].headers) && !is_zstd(&seen[1].headers));
+        assert_eq!(&seen[1].body[..], &big_body()[..]);
+        post(&r, RESPONSES, big_body(), None).await;
+        assert!(!is_zstd(&up.seen()[2].headers), "remembered ({hint:?})");
+        assert!(!r.status().await.members[0].lines[0].compress_requests);
+    }
+    // A decode failure is blamed even when the plain body fails too (for
+    // another reason): the line could not read zstd.
+    let up = upstream(Mode::Reply(Arc::new(|h: &HeaderMap, _: &[u8]| {
+        if is_zstd(h) {
+            (400, DECODE_FAILED)
+        } else {
+            (429, r#"{"error":{"message":"slow down"}}"#)
+        }
+    })))
+    .await;
+    let r = start(test_config(vec![member(
+        "krill",
+        MemberKind::Krill,
+        false,
+        vec![zstd_line("a", &up, Some(true))],
+    )]))
+    .await;
+    assert_eq!(post(&r, RESPONSES, big_body(), None).await.status(), 429);
+    assert!(!r.status().await.members[0].lines[0].compress_requests);
+}
+
+#[tokio::test]
+async fn an_ordinary_400_on_both_bodies_returns_the_first_answer_and_is_not_remembered() {
+    const UNKNOWN_MODEL: &str =
+        r#"{"error":{"message":"The model 'gpt-x' does not exist.","code":"model_not_found"}}"#;
+    for hint in [Some(true), None] {
+        // The plain body's error differs in its text only, so the answer
+        // Codex gets shows which one was passed on.
+        let up = upstream(Mode::Reply(Arc::new(|h: &HeaderMap, _: &[u8]| {
+            if is_zstd(h) {
+                (400, UNKNOWN_MODEL)
+            } else {
+                (400, r#"{"error":{"message":"plain"}}"#)
+            }
+        })))
+        .await;
+        let r = start(test_config(vec![member(
+            "krill",
+            MemberKind::Krill,
+            false,
+            vec![zstd_line("a", &up, hint)],
+        )]))
+        .await;
+        let resp = post(&r, RESPONSES, big_body(), None).await;
+        assert_eq!(resp.status(), 400);
+        assert_eq!(resp.text().await.unwrap(), UNKNOWN_MODEL, "{hint:?}");
+        assert_eq!(up.hits(), 2);
+        // Not held against the line: the next body is compressed again.
+        post(&r, RESPONSES, big_body(), None).await;
+        assert!(is_zstd(&up.seen()[2].headers), "{hint:?}");
+        let st = r.status().await;
+        assert!(st.members[0].lines[0].compress_requests);
+        assert_eq!(st.totals.failovers, 0);
+    }
 }

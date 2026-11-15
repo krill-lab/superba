@@ -6,15 +6,23 @@
 //! meets at run time and keeps it across reloads ([`TransportMemory`]):
 //!
 //! - **zstd**: a Responses `POST …/responses` whose body Codex sent
-//!   uncompressed (API-key mode never compresses) is compressed with zstd for a
-//!   line that accepts it ([`LineConfig::zstd`] = `Some(true)`), when the body
-//!   is at least [`MIN_COMPRESS_BYTES`] and shrinks. Bodies Codex compressed
-//!   itself pass through untouched. When such a line answers 400 / 415 / 422,
-//!   the same request goes again uncompressed to the same line (nothing was
-//!   processed: the answer is a refusal to read the body); a 415, or a plain
-//!   retry that is not refused the same way, marks the line as refusing zstd for
-//!   [`ZSTD_REFUSAL_TTL`]. A genuine 400 (the plain body gets it too) is passed
-//!   through and not held against the line.
+//!   uncompressed (API-key mode never compresses: Codex zstd-compresses only
+//!   with a ChatGPT-backend login and the OpenAI provider) is compressed with
+//!   zstd when the body is at least [`MIN_COMPRESS_BYTES`] and shrinks, for a
+//!   line [`crate::UpstreamCompression`] allows: under `auto` (the default)
+//!   every line not known to refuse zstd ([`LineConfig::zstd`] `!= Some(false)`),
+//!   under `probed` only lines the probe confirmed. Bodies Codex compressed
+//!   itself pass through untouched. When a line answers a zstd body with what
+//!   may be a refusal to read it ([`may_refuse_zstd`]: 400 / 415 / 422, and
+//!   for a line not confirmed yet also 500 / 501), the same request goes again
+//!   uncompressed to the same line (nothing was processed). The line is marked
+//!   as refusing zstd for [`ZSTD_REFUSAL_TTL`] only when the answer was a
+//!   decode failure ([`is_decode_failure`]) or the plain body succeeds; when
+//!   the plain body fails with the same status the first answer is passed on.
+//!   Ordinary 400s (an unknown model, a bad parameter) are never held against
+//!   a line.
+//!   A line is confirmed by its probe or by a 2xx to a zstd body (remembered
+//!   across reloads).
 //! - **WebSocket**: a line whose probe got 426 ([`LineConfig::websocket`] =
 //!   `Some(false)`), or that answered a handshake with 426, is not offered for
 //!   [`WS_REFUSAL_TTL`]; a 101 clears the memory. The member-level
@@ -40,7 +48,7 @@ use std::time::{Duration, Instant};
 use bytes::Bytes;
 use http::StatusCode;
 
-use crate::config::{LineConfig, MemberConfig};
+use crate::config::{LineConfig, MemberConfig, UpstreamCompression};
 use crate::state::lock;
 
 /// zstd level of compressed request bodies (fast; Codex input JSON shrinks
@@ -71,6 +79,8 @@ pub(crate) struct TransportMemory {
 #[derive(Clone, Copy, Debug, Default)]
 struct Learned {
     zstd_refused: Option<Instant>,
+    /// A zstd body got a 2xx (cleared by a refusal).
+    zstd_ok: bool,
     ws_refused: Option<Instant>,
 }
 
@@ -95,7 +105,25 @@ impl TransportMemory {
 
     /// Remember that the line refused a zstd body.
     pub fn note_zstd_refused(&self, m: &MemberConfig, l: &LineConfig, now: Instant) {
-        lock(&self.inner).entry(key(m, l)).or_default().zstd_refused = Some(now);
+        let mut map = lock(&self.inner);
+        let e = map.entry(key(m, l)).or_default();
+        e.zstd_refused = Some(now);
+        e.zstd_ok = false;
+    }
+
+    /// Remember that the line answered a zstd body with a 2xx.
+    pub fn note_zstd_ok(&self, m: &MemberConfig, l: &LineConfig) {
+        let mut map = lock(&self.inner);
+        let e = map.entry(key(m, l)).or_default();
+        if !e.zstd_ok {
+            e.zstd_ok = true;
+            e.zstd_refused = None;
+        }
+    }
+
+    /// The line read zstd bodies: its probe said so, or one got a 2xx here.
+    pub fn zstd_confirmed(&self, m: &MemberConfig, l: &LineConfig) -> bool {
+        l.zstd == Some(true) || lock(&self.inner).get(&key(m, l)).is_some_and(|e| e.zstd_ok)
     }
 
     /// The line answered a WebSocket handshake with 426 less than
@@ -125,11 +153,17 @@ impl TransportMemory {
 /// The router compresses request bodies to this line now.
 pub(crate) fn compresses(
     memory: &TransportMemory,
+    mode: UpstreamCompression,
     m: &MemberConfig,
     l: &LineConfig,
     now: Instant,
 ) -> bool {
-    l.zstd == Some(true) && !memory.zstd_refused(m, l, now)
+    let allowed = match mode {
+        UpstreamCompression::Auto => l.zstd != Some(false),
+        UpstreamCompression::Probed => l.zstd == Some(true),
+        UpstreamCompression::Off => false,
+    };
+    allowed && !memory.zstd_refused(m, l, now)
 }
 
 /// The line may be offered for a WebSocket now.
@@ -168,9 +202,30 @@ pub(crate) async fn compress_body(body: Bytes) -> Option<Bytes> {
     }
 }
 
-/// An answer to a zstd body that may mean "could not read the body".
-pub(crate) fn may_refuse_zstd(status: StatusCode) -> bool {
-    matches!(status.as_u16(), 400 | 415 | 422)
+/// An answer to a zstd body that may mean "could not read the body". A line
+/// not `confirmed` to read zstd may also fail on the bytes it took for JSON
+/// (500) or say it does not implement the encoding (501).
+pub(crate) fn may_refuse_zstd(status: StatusCode, confirmed: bool) -> bool {
+    match status.as_u16() {
+        400 | 415 | 422 => true,
+        500 | 501 => !confirmed,
+        _ => false,
+    }
+}
+
+/// A refusal's body says the upstream could not decode the request body
+/// (the Krill relay: 400 `failed to decode request body`).
+pub(crate) fn is_decode_failure(body: &[u8]) -> bool {
+    let text = String::from_utf8_lossy(&body[..body.len().min(4096)]).to_ascii_lowercase();
+    [
+        "decode",
+        "decompress",
+        "content-encoding",
+        "unsupported encoding",
+        "zstd",
+    ]
+    .iter()
+    .any(|m| text.contains(m))
 }
 
 #[cfg(test)]
@@ -201,13 +256,14 @@ mod tests {
 
     #[test]
     fn refusals_are_remembered_for_their_ttl() {
+        use UpstreamCompression::{Auto, Off, Probed};
         let (m, l) = member();
         let mem = TransportMemory::default();
         let t = Instant::now();
-        assert!(compresses(&mem, &m, &l, t));
+        assert!(compresses(&mem, Auto, &m, &l, t));
         mem.note_zstd_refused(&m, &l, t);
-        assert!(!compresses(&mem, &m, &l, t));
-        assert!(compresses(&mem, &m, &l, t + ZSTD_REFUSAL_TTL));
+        assert!(!compresses(&mem, Auto, &m, &l, t));
+        assert!(compresses(&mem, Auto, &m, &l, t + ZSTD_REFUSAL_TTL));
         assert!(offers_websocket(&mem, &m, &l, t));
         mem.note_ws_refused(&m, &l, t);
         assert!(!offers_websocket(&mem, &m, &l, t + Duration::from_secs(1)));
@@ -217,13 +273,29 @@ mod tests {
         // Another base URL is another line.
         let mut moved = l.clone();
         moved.base_url = url::Url::parse("https://other.example/backend-api/codex").unwrap();
-        assert!(compresses(&mem, &m, &moved, t));
-        // Hints: unknown and "no" never compress; "no" never offers WebSocket.
-        for hint in [None, Some(false)] {
+        assert!(compresses(&mem, Auto, &m, &moved, t));
+        // Hints: "no" never compresses, unknown only under auto; off never.
+        for (hint, auto, probed) in [
+            (Some(true), true, true),
+            (None, true, false),
+            (Some(false), false, false),
+        ] {
             let mut x = moved.clone();
             x.zstd = hint;
-            assert!(!compresses(&mem, &m, &x, t));
+            assert_eq!(compresses(&mem, Auto, &m, &x, t), auto, "{hint:?}");
+            assert_eq!(compresses(&mem, Probed, &m, &x, t), probed, "{hint:?}");
+            assert!(!compresses(&mem, Off, &m, &x, t));
         }
+        // A 2xx to a zstd body confirms an unchecked line (and forgives an
+        // earlier refusal); a refusal takes the confirmation back.
+        let mut unchecked = moved.clone();
+        unchecked.zstd = None;
+        assert!(!mem.zstd_confirmed(&m, &unchecked));
+        mem.note_zstd_ok(&m, &unchecked);
+        assert!(mem.zstd_confirmed(&m, &unchecked));
+        mem.note_zstd_refused(&m, &unchecked, t);
+        assert!(!mem.zstd_confirmed(&m, &unchecked));
+        assert!(!compresses(&mem, Auto, &m, &unchecked, t));
         let mut no_ws = moved.clone();
         no_ws.websocket = Some(false);
         assert!(!offers_websocket(&mem, &m, &no_ws, t));
@@ -258,11 +330,25 @@ mod tests {
             "/responses/compact"
         ));
         assert!(!compressible_path(&http::Method::GET, "/responses"));
+        assert!(is_decode_failure(
+            br#"{"type":"error","error":{"type":"invalid_request_error","message":"failed to decode request body"}}"#
+        ));
+        assert!(is_decode_failure(b"Unsupported Content-Encoding: zstd"));
+        assert!(!is_decode_failure(
+            br#"{"error":{"message":"The model 'gpt-x' does not exist."}}"#
+        ));
+        let st = |s| StatusCode::from_u16(s).unwrap();
         for s in [400, 415, 422] {
-            assert!(may_refuse_zstd(StatusCode::from_u16(s).unwrap()));
+            assert!(may_refuse_zstd(st(s), true));
+            assert!(may_refuse_zstd(st(s), false));
         }
-        for s in [401, 403, 404, 429, 500, 502] {
-            assert!(!may_refuse_zstd(StatusCode::from_u16(s).unwrap()));
+        for s in [500, 501] {
+            assert!(!may_refuse_zstd(st(s), true));
+            assert!(may_refuse_zstd(st(s), false), "unconfirmed line: {s}");
+        }
+        for s in [401, 403, 404, 429, 502, 503] {
+            assert!(!may_refuse_zstd(st(s), true));
+            assert!(!may_refuse_zstd(st(s), false));
         }
     }
 }

@@ -137,12 +137,11 @@ async fn ws_private(recording: Option<bool>) {
         );
         let (mut ws, response) = tokio_tungstenite::connect_async(req).await.unwrap();
         assert!(!response.headers().contains_key("sec-websocket-extensions"));
-        assert!(
-            !up.seen()
-                .last()
-                .unwrap()
-                .headers
-                .contains_key("sec-websocket-extensions")
+        // Only the router's own offer reaches the member (WsEcho declines
+        // it, so the frames below are plain and readable).
+        assert_eq!(
+            up.seen().last().unwrap().headers["sec-websocket-extensions"],
+            "permessage-deflate"
         );
         for continuation in [false, true] {
             let mut body = request();

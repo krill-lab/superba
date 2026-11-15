@@ -506,10 +506,22 @@ or all on Test), caches the results and, for a router member, rewrites the
 router's `LineConfig::zstd` / `LineConfig::websocket` hints and the member's
 WebSocket flag (Krill: unless every line refused; a compatible site: when some
 line upgraded). The router then zstd-compresses Responses `POST` bodies of at
-least 1 KiB that Codex sent uncompressed (API-key mode never compresses) for
-lines that accept zstd, passes Codex's own zstd bodies through, sends a body
-refused with 400/415/422 again uncompressed to the same line and remembers a
-real refusal for 24 h; WebSocket handshakes skip lines that refused one (probe,
+least 1 KiB that Codex sent uncompressed (Codex compresses only with a
+ChatGPT-backend login and the OpenAI provider, so API-key mode never does) for
+the lines `Tuning::upstream_compression` allows: `auto` (default) every line
+not known to refuse zstd (probe `false`, or a refusal at run time), `probed`
+only lines the probe confirmed, `off` none. It passes Codex's own zstd bodies
+through, sends a body refused with 400/415/422 (on a line not confirmed yet,
+by probe or by a 2xx to a zstd body, also 500/501) again uncompressed to the
+same line and remembers a real refusal for 24 h; a ciphertext refusal of a zstd
+body proves it was read and goes to the cipher logic without a plain resend.
+Upstream WebSocket handshakes offer `permessage-deflate` (unless `off`;
+Codex's own offer is never passed on and Codex's leg stays plain): when the
+member agrees, `superba_router::ws_deflate` inflates its frames and deflates
+the router's request frames (>= 512 bytes) below the relay, which reads plain
+frames either way. `RouterStatus::totals` counts `deflate_websockets` and the
+request bytes before and after compression (`upload_bytes`,
+`upload_wire_bytes`). WebSocket handshakes skip lines that refused one (probe,
 or a 426 met at run time, remembered for 1 h) and stay on the session's member,
 otherwise the router answers 426 itself. HTTP/SSE turns are not upgraded to an
 upstream WebSocket: Codex already opens a WebSocket per session whenever the
