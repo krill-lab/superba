@@ -28,6 +28,7 @@ unknown = "Unexpected answer ({status}): {message}"
 
 [restart.reason]
 certificate_trust_changed = "ChatGPT must restart to use the updated local router certificate settings."
+account_changed = "Switching to another ChatGPT account: ChatGPT restarts to sign in with it."
 no_cdp = "ChatGPT was not opened from Superba, so it cannot be hot-switched."
 no_bridge = "This ChatGPT version does not expose the restart bridge."
 cross_auth_family = "Switching between the official login and an API key."

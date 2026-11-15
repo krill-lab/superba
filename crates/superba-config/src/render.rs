@@ -216,7 +216,7 @@ fn targets(
                 );
             }
         }
-        ResolvedMode::Official => {
+        ResolvedMode::Official | ResolvedMode::ChatGptAccount { .. } => {
             for p in ROUTING_KEYS {
                 put(p, Target::Remove);
             }
@@ -366,6 +366,29 @@ fn official_auth(
     }
 }
 
+/// The saved login the user chose (PR #20): kept when the live file already
+/// is that login (Codex rotates its tokens there), else the saved copy the
+/// engine decrypted for this identity.
+fn account_auth(inp: &Inputs<'_>, identity: &str) -> Result<AuthTarget> {
+    let live = inp
+        .files
+        .auth_json
+        .as_ref()
+        .and_then(|b| authjson::login_info(b.expose()));
+    if live.is_some_and(|l| l.identity == identity) {
+        return Ok(AuthTarget::Keep);
+    }
+    match inp
+        .login_stash
+        .filter(|s| authjson::login_info(s.expose()).is_some_and(|i| i.identity == identity))
+    {
+        Some(saved) => Ok(AuthTarget::Write(saved.clone())),
+        None => Err(Error::NotFound {
+            what: "saved ChatGPT account".into(),
+        }),
+    }
+}
+
 fn auth_target(
     inp: &Inputs<'_>,
     live_shape: &AuthShape,
@@ -376,7 +399,12 @@ fn auth_target(
         is_restore(&inp.desired.mode) && inp.released_changed.iter().any(|p| p == AUTH_JSON_PATH);
     if inp.auth_drift || released_auth {
         let resolution = inp.desired.key_resolutions.get(AUTH_JSON_PATH);
-        let token = matches!(inp.desired.mode, ResolvedMode::Token { .. });
+        // An explicitly chosen account replaces whatever login is there,
+        // like a token switch (the login is stashed first).
+        let token = matches!(
+            inp.desired.mode,
+            ResolvedMode::Token { .. } | ResolvedMode::ChatGptAccount { .. }
+        );
         match (token, resolution) {
             (_, Some(KeyResolution::Overwrite)) => {}
             // A ChatGPT login (Codex's own sign-in) is stashed before a switch
@@ -405,6 +433,7 @@ fn auth_target(
             AuthTarget::Write(authjson::render_token(*auth, key)?)
         }
         ResolvedMode::Official => official_auth(live_shape, inp.login_stash, notes),
+        ResolvedMode::ChatGptAccount { identity } => account_auth(inp, identity)?,
         // A hand-off restores the credential only while it is Superba's.
         ResolvedMode::Release { .. } if inp.last_written.is_empty() => AuthTarget::Keep,
         ResolvedMode::Original { .. } | ResolvedMode::Release { .. } => {
@@ -561,7 +590,9 @@ pub(crate) fn render(inp: &Inputs<'_>) -> Result<Rendered> {
         let will_own = !matches!(target, Target::Restore)
             && !matches!(
                 inp.desired.mode,
-                ResolvedMode::Official | ResolvedMode::Release { .. }
+                ResolvedMode::Official
+                    | ResolvedMode::ChatGptAccount { .. }
+                    | ResolvedMode::Release { .. }
             );
         if opt_eq(current.as_deref(), want.as_deref()) {
             if will_own {

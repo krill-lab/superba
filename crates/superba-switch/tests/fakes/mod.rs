@@ -161,6 +161,8 @@ impl FakeConfig {
                 id_token_exp: None,
                 email: None,
                 account_id: None,
+                plan_type: None,
+                added_at: None,
             })),
             generations: Mutex::new(Vec::new()),
             tamper_after_apply: Mutex::new(false),

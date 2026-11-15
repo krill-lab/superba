@@ -401,6 +401,8 @@ impl ConfigEngine for FakeEngine {
             id_token_exp: None,
             email: None,
             account_id: None,
+            plan_type: None,
+            added_at: None,
         })
     }
     async fn load_login_stash(&self, scope: &StashScope) -> Result<Option<SecretBytes>> {

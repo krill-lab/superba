@@ -49,6 +49,7 @@ pub mod auth;
 pub mod autostart;
 pub mod caps;
 pub mod catalog;
+pub mod chatgpt;
 pub mod claude;
 pub mod codex;
 pub mod codex_files;
@@ -98,6 +99,9 @@ pub mod wsl;
 pub use app::*;
 pub use auth::*;
 pub use caps::*;
+pub use chatgpt::{
+    ChatGptAccount, ChatGptLoginEvents, ChatGptLoginPrompt, ChatGptQuota, ChatGptWindow,
+};
 pub use claude::{
     AnthropicAuth, AnthropicEndpoint, ClaudeApplied, ClaudeApplyReport, ClaudeCapability,
     ClaudeChange, ClaudeConfig, ClaudeDiagnostics, ClaudeEnvConflict, ClaudeFileStatus, ClaudeHome,

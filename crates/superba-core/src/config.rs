@@ -129,6 +129,15 @@ pub enum ResolvedMode {
     },
     /// Official ChatGPT: remove owned keys, restore the stashed login (if any).
     Official,
+    /// Official ChatGPT with one saved login chosen by the user (PR #20): like
+    /// [`ResolvedMode::Official`], but `auth.json` gets the saved login with
+    /// this identity (the live one when it already is that login). Only the
+    /// identity travels in plans; the engine decrypts the login while it
+    /// renders, so a plan never carries tokens.
+    ChatGptAccount {
+        /// [`crate::ChatGptAccount::id`].
+        identity: String,
+    },
     /// Restore the baseline captured at first takeover.
     Original {
         /// Provider handling (plan 10.4).
@@ -192,7 +201,9 @@ impl ResolvedProfile {
     pub fn auth_mode(&self) -> Option<AuthMode> {
         match &self.mode {
             ResolvedMode::Token { auth, .. } => Some(*auth),
-            ResolvedMode::Official => Some(AuthMode::OfficialChatGpt),
+            ResolvedMode::Official | ResolvedMode::ChatGptAccount { .. } => {
+                Some(AuthMode::OfficialChatGpt)
+            }
             ResolvedMode::Original { .. }
             | ResolvedMode::Generation { .. }
             | ResolvedMode::Release { .. } => None,
@@ -645,6 +656,13 @@ pub struct LoginStashInfo {
     /// ChatGPT account id (mixed login names it to the router).
     #[serde(default)]
     pub account_id: Option<String>,
+    /// Subscription claim of the login (display only; PR #20).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan_type: Option<String>,
+    /// When this identity was first saved (`None` for entries saved before
+    /// 0.1.2: their `stashed_at` stands in).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub added_at: Option<Timestamp>,
 }
 
 /// Where a stashed ChatGPT login belongs: a local Codex home or a remote host (the

@@ -14,10 +14,11 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use superba_core::{
     ActiveCredentials, ActiveState, ApplyPlan, ApplyReport, AuthShape, Baseline, BaselineExtras,
-    BlockReason, Clock, CodexFileKind, CodexFiles, CodexHome, ConfigEngine, ConfigState, Error,
-    FileChange, FileWrite, GenerationRecord, JournalAction, LocalContext, LoginStashInfo,
-    PlannedFile, RecoveredJournal, RecoveryReport, RenderInput, RenderedFiles, ResolvedMode,
-    ResolvedProfile, Result, SecretBytes, SiteKind, StashScope, SystemClock, Timestamp,
+    BlockReason, ChatGptAccount, Clock, CodexFileKind, CodexFiles, CodexHome, ConfigEngine,
+    ConfigState, Error, FileChange, FileWrite, GenerationRecord, JournalAction, LocalContext,
+    LoginStashInfo, PlannedFile, RecoveredJournal, RecoveryReport, RenderInput, RenderedFiles,
+    ResolvedMode, ResolvedProfile, Result, SecretBytes, SiteKind, StashScope, SystemClock,
+    Timestamp,
 };
 use url::Url;
 
@@ -175,7 +176,7 @@ fn after_bytes(current: Option<&[u8]>, change: &FileChange) -> Option<Vec<u8>> {
 fn site_kind_of(mode: &ResolvedMode) -> Option<SiteKind> {
     match mode {
         ResolvedMode::Token { site_kind, .. } => Some(*site_kind),
-        ResolvedMode::Official => Some(SiteKind::Official),
+        ResolvedMode::Official | ResolvedMode::ChatGptAccount { .. } => Some(SiteKind::Official),
         _ => None,
     }
 }
@@ -509,8 +510,13 @@ impl TomlConfigEngine {
         let live = authjson::shape(bytes_of(files, CodexFileKind::AuthJson));
         // Plan 9.4: a login Superba left in place that is gone now was signed out of
         // in the app; it must not be resurrected from the stash.
+        // Choosing that login again as an account (PR #20) brings it back.
+        let chosen = match &desired.mode {
+            ResolvedMode::ChatGptAccount { identity } => Some(identity.as_str()),
+            _ => None,
+        };
         let logged_out = match (hs.observed_login(), &live) {
-            (Some(id), AuthShape::Missing) => Some(id.to_owned()),
+            (Some(id), AuthShape::Missing) if chosen != Some(id) => Some(id.to_owned()),
             _ => None,
         };
         let signed_out: BTreeSet<&str> = hs
@@ -534,11 +540,20 @@ impl TomlConfigEngine {
                     ..
                 }
         );
-        let stash = if restores_login {
-            self.stash.load(&scope)?.filter(|b| !is_signed_out(b))
-        } else {
-            None
-        };
+        let stash =
+            if let Some(identity) = chosen {
+                // The user's explicit choice: exactly this saved login, never
+                // another one.
+                Some(self.stash.load_identity(&scope, identity)?.ok_or_else(|| {
+                    Error::NotFound {
+                        what: "saved ChatGPT account".into(),
+                    }
+                })?)
+            } else if restores_login {
+                self.stash.load(&scope)?.filter(|b| !is_signed_out(b))
+            } else {
+                None
+            };
         let original = match desired.mode {
             ResolvedMode::Original { .. } | ResolvedMode::Release { .. } => {
                 let mut o = self.original_files(hs, files)?;
@@ -687,6 +702,7 @@ impl TomlConfigEngine {
     // ---------------------------------------------------------------- apply
 
     fn apply_sync(&self, plan: &ApplyPlan) -> Result<ApplyReport> {
+        let _credentials = self.stash.lock()?;
         let desired = plan.desired.as_ref().ok_or_else(|| {
             Error::invalid("this plan carries no desired state (it was not produced by plan())")
         })?;
@@ -750,10 +766,15 @@ impl TomlConfigEngine {
             .as_ref()
             .and_then(|b| authjson::login_info(b.expose()))
             .map(|i| i.identity);
+        let chosen = match &desired.mode {
+            ResolvedMode::ChatGptAccount { identity } => Some(identity.clone()),
+            _ => None,
+        };
         if prep.logged_out.is_some()
             || live_identity
-                .as_ref()
-                .is_some_and(|id| hs.signed_out.contains(id))
+                .iter()
+                .chain(&chosen)
+                .any(|id| hs.signed_out.contains(id))
         {
             state::with_home(self.data(), root, |h| {
                 if let Some(id) = &prep.logged_out
@@ -761,8 +782,9 @@ impl TomlConfigEngine {
                 {
                     h.signed_out.push(id.clone());
                 }
-                // Signed in again with a previously signed-out account.
-                if let Some(id) = &live_identity {
+                // Signed in again with a previously signed-out account, or
+                // chose it again as an account.
+                for id in live_identity.iter().chain(&chosen) {
                     h.signed_out.retain(|x| x != id);
                 }
                 Ok(())
@@ -1261,6 +1283,7 @@ impl TomlConfigEngine {
     }
 
     fn rollback_sync(&self, report: &ApplyReport) -> Result<()> {
+        let _credentials = self.stash.lock()?;
         let root = report.codex_home.as_path();
         if self.pending(root)? {
             return Err(blocked_pending());
@@ -1415,6 +1438,7 @@ impl TomlConfigEngine {
     // ------------------------------------------------------------- recovery
 
     fn recover_sync(&self, root: &Path) -> Result<RecoveryReport> {
+        let _credentials = self.stash.lock()?;
         let mut report = RecoveryReport::default();
         for entry in journal::list(self.data(), Some(root))? {
             let action = self.recover_entry(&entry)?;
@@ -1549,6 +1573,95 @@ impl TomlConfigEngine {
             openai_base_url: url(st.openai_base_url),
             chatgpt_base_url: url(st.chatgpt_base_url),
         }))
+    }
+
+    // ------------------------------------------------------------- accounts
+
+    /// Save a login as an account (PR #20): the latest pointer moves only
+    /// when none is set, and an explicit save lifts the home's "signed out
+    /// of this login" mark.
+    fn save_login_account_sync(
+        &self,
+        scope: &StashScope,
+        auth: &SecretBytes,
+    ) -> Result<ChatGptAccount> {
+        let _credentials = self.stash.lock()?;
+        let info = authjson::login_info(auth.expose())
+            .filter(|i| i.identity != "unknown")
+            .ok_or_else(|| Error::invalid("a complete ChatGPT login is required"))?;
+        self.stash
+            .save(scope, auth, self.clock.now(), crate::stash::Latest::IfNone)?;
+        if let StashScope::Local(root) = scope {
+            let marked = state::read_home(self.data(), root)?
+                .signed_out
+                .contains(&info.identity);
+            if marked {
+                state::with_home(self.data(), root, |h| {
+                    h.signed_out.retain(|x| x != &info.identity);
+                    Ok(())
+                })?;
+            }
+        }
+        let live = crate::stash::live_auth(scope)?;
+        self.stash.account(scope, &info.identity, live.as_deref())
+    }
+
+    /// Forget a saved account; refused for the login the live file holds.
+    fn remove_login_account_sync(&self, scope: &StashScope, identity: &str) -> Result<bool> {
+        let _credentials = self.stash.lock()?;
+        let live = crate::stash::live_auth(scope)?;
+        if live
+            .as_deref()
+            .and_then(authjson::login_info)
+            .is_some_and(|i| i.identity == identity)
+        {
+            return Err(Error::Conflict {
+                message: "this ChatGPT account is in use; switch to another one first".into(),
+            });
+        }
+        self.stash.forget(scope, identity)
+    }
+
+    /// Compare-and-swap of rotated tokens into the saved copy and the live
+    /// `auth.json` (see [`ConfigEngine::store_rotated_login`]).
+    fn store_rotated_login_sync(
+        &self,
+        scope: &StashScope,
+        before: &SecretBytes,
+        after: &SecretBytes,
+    ) -> Result<()> {
+        if before == after {
+            return Ok(());
+        }
+        let identity = |b: &SecretBytes| authjson::login_info(b.expose()).map(|i| i.identity);
+        let id = identity(before)
+            .ok_or_else(|| Error::invalid("a complete ChatGPT login is required"))?;
+        if identity(after).as_deref() != Some(id.as_str()) {
+            return Err(Error::invalid(
+                "the ChatGPT login changed its identity while its limits were read",
+            ));
+        }
+        let _credentials = self.stash.lock()?;
+        let now = self.clock.now();
+        self.stash.replace_if_unchanged(scope, before, after, now)?;
+        if let StashScope::Local(root) = scope {
+            // Codex's own file: staged, re-checked against `before` right
+            // before the rename, like every other write of auth.json.
+            let path = fsx::resolve_write_target(&crate::stash::live_path(root));
+            if fsx::read_optional(&path)?.as_deref() == Some(before.expose()) {
+                let temp = fsx::stage(&path, after.expose(), Mode::Private)?;
+                let still = fsx::read_optional(&path)?;
+                if still.as_deref() == Some(before.expose()) {
+                    if let Err(e) = fsx::publish(&temp, &path) {
+                        let _ = std::fs::remove_file(&temp);
+                        return Err(e);
+                    }
+                } else {
+                    let _ = std::fs::remove_file(&temp);
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -1751,6 +1864,56 @@ impl ConfigEngine for TomlConfigEngine {
     async fn load_login_stash(&self, scope: &StashScope) -> Result<Option<SecretBytes>> {
         let scope = scope.clone();
         self.run(move |e| e.stash.load(&scope)).await
+    }
+
+    async fn login_accounts(&self, scope: &StashScope) -> Result<Vec<ChatGptAccount>> {
+        let scope = scope.clone();
+        self.run(move |e| {
+            let live = crate::stash::live_auth(&scope)?;
+            e.stash.accounts(&scope, live.as_deref())
+        })
+        .await
+    }
+
+    async fn save_login_account(
+        &self,
+        scope: &StashScope,
+        auth_json: &SecretBytes,
+    ) -> Result<ChatGptAccount> {
+        let scope = scope.clone();
+        let auth = auth_json.clone();
+        self.run(move |e| e.save_login_account_sync(&scope, &auth))
+            .await
+    }
+
+    async fn load_login_account(
+        &self,
+        scope: &StashScope,
+        identity: &str,
+    ) -> Result<Option<SecretBytes>> {
+        let scope = scope.clone();
+        let identity = identity.to_owned();
+        self.run(move |e| e.stash.load_identity(&scope, &identity))
+            .await
+    }
+
+    async fn remove_login_account(&self, scope: &StashScope, identity: &str) -> Result<bool> {
+        let scope = scope.clone();
+        let identity = identity.to_owned();
+        self.run(move |e| e.remove_login_account_sync(&scope, &identity))
+            .await
+    }
+
+    async fn store_rotated_login(
+        &self,
+        scope: &StashScope,
+        before: &SecretBytes,
+        after: &SecretBytes,
+    ) -> Result<()> {
+        let scope = scope.clone();
+        let (before, after) = (before.clone(), after.clone());
+        self.run(move |e| e.store_rotated_login_sync(&scope, &before, &after))
+            .await
     }
 
     async fn owned_keys(&self, home: &CodexHome) -> Result<Vec<superba_core::KeySnapshot>> {

@@ -122,6 +122,9 @@ pub enum FullRestartReason {
     Requested,
     /// The main app must inherit the changed router certificate trust bundle.
     CertificateTrustChanged,
+    /// Another saved ChatGPT account replaces the signed-in one (the app
+    /// reloads its account, as for a change of authentication).
+    AccountChanged,
 }
 
 impl FullRestartReason {
@@ -151,6 +154,10 @@ impl FullRestartReason {
             Self::CertificateTrustChanged => (
                 "restart.reason.certificate_trust_changed",
                 "ChatGPT must restart to use the updated local router certificate settings.",
+            ),
+            Self::AccountChanged => (
+                "restart.reason.account_changed",
+                "Switching to another ChatGPT account: ChatGPT restarts to sign in with it.",
             ),
             Self::Requested => (
                 "restart.reason.requested",
@@ -423,6 +430,12 @@ pub enum RestoreTarget {
     },
     /// The official ChatGPT login.
     Official,
+    /// The official ChatGPT login with one saved account (PR #20): this
+    /// computer only, never followed by remote hosts.
+    Account {
+        /// [`crate::ChatGptAccount::id`].
+        identity: String,
+    },
     /// Point-in-time restore: the state right after generation `generation`.
     Generation {
         /// Generation number.
@@ -1371,6 +1384,10 @@ pub struct Overview {
     /// the official login puts it back).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub login_stash: Option<crate::config::LoginStashInfo>,
+    /// The saved official ChatGPT logins of the local home (PR #20), the
+    /// live one marked; no credentials.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub chatgpt_accounts: Vec<crate::ChatGptAccount>,
     /// Written configuration versus what each running Codex consumer uses
     /// (running turns not checked on this cheap path, see
     /// [`crate::SwitchService::runtime`]).

@@ -25,6 +25,7 @@
 
 mod account;
 mod analytics_reapply;
+mod chatgpt;
 pub mod ciphers;
 pub mod claude;
 mod claude_router;
@@ -460,6 +461,8 @@ pub struct Switcher {
     ownership: ownership::SharedOwnershipCache,
     /// Claude Code: model lists and the `claude` program ([`claude`]).
     claude: Arc<claude::ClaudeCache>,
+    /// Saved ChatGPT accounts: helpers apart from switches ([`chatgpt`]).
+    chatgpt: Arc<chatgpt::Gate>,
 }
 
 /// Execution context of computed plans, keyed by plan id (things the serializable
@@ -526,6 +529,7 @@ impl Switcher {
             monitor,
             ownership: Arc::default(),
             claude: Arc::default(),
+            chatgpt: Arc::default(),
         }
     }
 
@@ -581,6 +585,33 @@ pub fn default_service(ctx: LocalContext) -> Arc<dyn SwitchService> {
 
 #[async_trait]
 impl SwitchService for Switcher {
+    async fn chatgpt_accounts(&self) -> Result<Vec<superba_core::ChatGptAccount>> {
+        self.chatgpt_accounts_impl().await
+    }
+
+    async fn chatgpt_save_current(&self) -> Result<superba_core::ChatGptAccount> {
+        self.refuse_elevated()?;
+        self.chatgpt_save_current_impl().await
+    }
+
+    async fn chatgpt_add_account(
+        &self,
+        events: superba_core::ChatGptLoginEvents,
+    ) -> Result<superba_core::ChatGptAccount> {
+        self.refuse_elevated()?;
+        self.chatgpt_add_impl(events).await
+    }
+
+    async fn chatgpt_remove_account(&self, id: &str) -> Result<()> {
+        self.refuse_elevated()?;
+        self.chatgpt_remove_impl(id).await
+    }
+
+    async fn chatgpt_quota(&self, id: &str) -> Result<superba_core::ChatGptQuota> {
+        self.refuse_elevated()?;
+        self.chatgpt_quota_impl(id).await
+    }
+
     async fn overview(&self) -> Result<Overview> {
         self.overview_impl().await
     }
@@ -1238,6 +1269,7 @@ impl SwitchService for Switcher {
 
     async fn recover(&self) -> Result<RecoveryReport> {
         self.refuse_elevated()?;
+        let _no_account_helper = self.chatgpt.switch().await;
         self.recover_impl().await
     }
 
@@ -1285,11 +1317,14 @@ impl SwitchService for Switcher {
     ) -> Result<SwitchOutcome> {
         let label = plan.to.label.clone();
         let plan_id = plan.id.clone();
+        // No limits read rotates a login while this switch writes and verifies.
+        let no_account_helper = self.chatgpt.switch().await;
         let result = superba_remote::operation::with_events(
             events.clone(),
             self.execute_impl(plan, options, decider, events),
         )
         .await;
+        drop(no_account_helper);
         // A switch can pin, launch or install: the views read the machine again.
         self.monitor.invalidate();
         // GH#12: tell the phone (when the user asked for switch events).
