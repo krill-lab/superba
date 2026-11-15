@@ -21,6 +21,11 @@ use crate::status::RouteEventKind;
 /// Response header naming the member and line that served a request.
 pub const ROUTE_HEADER: &str = "x-superba-route";
 
+/// OpenCode's session header. Gateways built for OpenCode reject a request
+/// without one; real traffic carries whatever the client sent (the router never
+/// sets it), so only the router's own model test adds it.
+pub const OPENCODE_SESSION_HEADER: &str = "x-opencode-session";
+
 /// Hop-by-hop headers (RFC 9110 7.6.1) plus the legacy proxy ones.
 pub(crate) const HOP_BY_HOP: &[&str] = &[
     "connection",

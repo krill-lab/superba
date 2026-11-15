@@ -8,6 +8,9 @@
 //!   sends such consented plain-http requests directly, never through a proxy,
 //! - attaches a key only to HTTPS, loopback HTTP or such a consented origin,
 //! - reads at most a bounded number of body bytes,
+//! - gives every POST (a model call: Responses, compaction, Messages and
+//!   transport checks) its own [`OPENCODE_SESSION_HEADER`], which gateways
+//!   built for OpenCode require and other sites ignore,
 //! - and returns a [`Transport`] failure whose message never contains the key.
 
 use std::error::Error as StdError;
@@ -27,6 +30,9 @@ use crate::ProbeConfig;
 pub(crate) const ACCEPT_JSON: &str = "application/json";
 /// Accept header for streamed Responses answers.
 pub(crate) const ACCEPT_SSE: &str = "text/event-stream";
+/// OpenCode's session header, sent with a fresh `superba-test-<uuid>` on each
+/// probe that calls a model.
+pub(crate) const OPENCODE_SESSION_HEADER: &str = "x-opencode-session";
 
 /// Placeholder that replaces a key if it ever shows up in a message.
 const REDACTED: &str = "[redacted]";
@@ -453,6 +459,12 @@ impl Http {
         let builder = match req.json_body {
             Some(body) => {
                 headers.insert(CONTENT_TYPE, HeaderValue::from_static(ACCEPT_JSON));
+                if let Ok(v) = HeaderValue::from_str(&format!(
+                    "superba-test-{}",
+                    uuid::Uuid::new_v4().simple()
+                )) {
+                    headers.insert(OPENCODE_SESSION_HEADER, v);
+                }
                 if let Some(encoding) = req.content_encoding {
                     headers.insert(CONTENT_ENCODING, HeaderValue::from_static(encoding));
                 }

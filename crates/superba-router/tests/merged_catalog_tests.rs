@@ -241,6 +241,55 @@ async fn successful_tool_roundtrip_publishes_model_and_routes_only_to_standard_e
 }
 
 #[tokio::test]
+async fn model_tests_carry_an_opencode_session_and_real_requests_gain_none() {
+    let up = upstream(responder(200, 200, true)).await;
+    let r = start(config(&[("krill", &up)])).await;
+    let session = |s: &Seen| {
+        s.headers
+            .get("x-opencode-session")
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned)
+    };
+    let posts = |from: usize| -> Vec<Option<String>> {
+        up.seen()[from..]
+            .iter()
+            .filter(|s| s.method == "POST")
+            .map(session)
+            .collect()
+    };
+    // Standard target: both turns of the tool probe share one session id.
+    let test = probe(&r, "krill/deepseek-test").await;
+    assert!(test.passed, "{}", test.detail);
+    let turns = posts(0);
+    assert_eq!(turns.len(), 2);
+    let id = turns[0].clone().expect("session header on the first turn");
+    assert!(id.starts_with("superba-test-") && id.len() > 20, "{id}");
+    assert_eq!(turns[1].as_deref(), Some(id.as_str()));
+    // Native target: one request with a session id of its own.
+    let before = up.seen().len();
+    let test = probe(&r, "krill/gpt-test").await;
+    assert!(test.passed, "{}", test.detail);
+    let native = posts(before);
+    assert_eq!(native.len(), 1);
+    assert!(
+        native[0]
+            .as_deref()
+            .is_some_and(|s| s.starts_with("superba-test-") && s != id),
+        "{native:?}"
+    );
+    // Real traffic is forwarded as the client sent it: nothing is added.
+    let before = up.seen().len();
+    assert_eq!(
+        r.post(None, r#"{"model":"deepseek-test","input":"hello"}"#)
+            .await
+            .status(),
+        200
+    );
+    assert_eq!(posts(before), vec![None]);
+    r.handle.shutdown();
+}
+
+#[tokio::test]
 async fn failed_probes_remain_visible_in_admin_and_are_not_forwarded() {
     let up = upstream(responder(200, 200, false)).await;
     let r = start(config(&[("krill", &up)])).await;

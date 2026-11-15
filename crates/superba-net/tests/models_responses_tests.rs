@@ -39,6 +39,8 @@ async fn list_models_reads_backend_catalog_with_client_version_and_bearer_key() 
     assert_eq!(requests[0].method, "GET");
     assert_eq!(requests[0].path, BACKEND_MODELS);
     assert!(requests[0].body.is_empty());
+    // Only model calls carry an OpenCode session id.
+    assert_eq!(requests[0].header("x-opencode-session"), None);
     assert_client_version(&requests[0], &prober.config().client_version);
     assert_authenticated(&server);
 }
@@ -212,7 +214,19 @@ async fn responses_completed_stream_and_compact_succeed_with_codex_post_bodies()
                 .unwrap(),
             request.body.len()
         );
+        // OpenCode gateways refuse a model call without a session id.
+        assert!(
+            request
+                .header("x-opencode-session")
+                .is_some_and(|s| s.starts_with("superba-test-") && s.len() > 20),
+            "{:?}",
+            request.header("x-opencode-session")
+        );
     }
+    assert_ne!(
+        requests[0].header("x-opencode-session"),
+        requests[1].header("x-opencode-session")
+    );
     assert_authenticated(&server);
     assert_eq!(requests[0].header("accept"), Some("text/event-stream"));
     let body: Value = serde_json::from_slice(&requests[0].body).unwrap();

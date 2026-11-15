@@ -99,8 +99,10 @@ async fn test_target(
     {
         return previous.clone();
     }
+    // One session id per test, shared by both turns of the tool probe.
+    let session = format!("superba-test-{}", uuid::Uuid::new_v4().simple());
     let attempted = if target.standard {
-        two_turns(shared, g, member, model).await
+        two_turns(shared, g, target, &session).await
     } else {
         // A native target answers one request on its own lines, through the
         // same proxy path (conversion and response handling included).
@@ -108,7 +110,7 @@ async fn test_target(
             "instructions":"Reply briefly.", "stream":true, "store":false});
         let mut outcome = Err("no provider line available".to_string());
         for line in 0..g.members[member].lines.len() {
-            outcome = routed(shared, g, member, line, model, false, &request)
+            outcome = routed(shared, g, target, line, &session, &request)
                 .await
                 .map(|_| ());
             if outcome.is_ok() {
@@ -137,10 +139,11 @@ async fn test_target(
 async fn two_turns(
     shared: &Arc<Shared>,
     g: &Arc<Generation>,
-    member: usize,
-    model: &str,
+    target: &super::Target,
+    session: &str,
 ) -> Result<(), String> {
-    let m = &g.members[member];
+    let model = target.upstream.as_str();
+    let m = &g.members[target.member];
     let mut error = "no provider line available".to_string();
     for line in 0..m.lines.len() {
         let tool = json!({"type":"function","name":"get_probe_value","description":"Read the probe value.",
@@ -148,7 +151,7 @@ async fn two_turns(
         let input = json!([{"role":"user","content":"Call get_probe_value, then return only its exact result."}]);
         let request = json!({"model":model,"input":input,"tools":[tool],"tool_choice":{"type":"function","name":"get_probe_value"},
             "max_output_tokens":512,"stream":true,"store":false});
-        let first = routed(shared, g, member, line, model, true, &request).await;
+        let first = routed(shared, g, target, line, session, &request).await;
         let first = match first {
             Ok(v) => v,
             Err(e) => {
@@ -184,7 +187,7 @@ async fn two_turns(
         conversation.extend(output.iter().cloned());
         conversation.push(json!({"type":"function_call_output","call_id":call_id,"output":token}));
         let second = json!({"model":model,"input":conversation,"tools":[tool],"tool_choice":"auto","max_output_tokens":512,"stream":true,"store":false});
-        match routed(shared, g, member, line, model, true, &second).await {
+        match routed(shared, g, target, line, session, &second).await {
             Ok(answer) if output_text(&answer).contains(&token) => return Ok(()),
             Ok(_) => error = "probe response did not contain the tool's result".into(),
             Err(e) => error = e,
@@ -207,20 +210,18 @@ fn output_text(value: &Value) -> String {
 async fn routed(
     shared: &Arc<Shared>,
     g: &Arc<Generation>,
-    member: usize,
+    target: &super::Target,
     line: usize,
-    model: &str,
-    standard: bool,
+    session: &str,
     request: &Value,
 ) -> Result<Value, String> {
     tokio::time::timeout(Duration::from_secs(45), async {
         let response = crate::proxy::probe_http(
             shared.clone(),
             g.clone(),
-            member,
+            target.clone(),
             line,
-            model,
-            standard,
+            session,
             Bytes::from(request.to_string()),
         )
         .await;

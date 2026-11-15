@@ -132,22 +132,25 @@ struct ProbeRoute {
 pub(crate) fn probe_http(
     shared: Arc<Shared>,
     generation: Arc<Generation>,
-    member: usize,
+    target: crate::merged_catalog::Target,
     line: usize,
-    model: &str,
-    standard: bool,
+    session: &str,
     body: Bytes,
 ) -> futures_util::future::BoxFuture<'static, Response<RespBody>> {
-    let model = model.to_owned();
+    let session = http::HeaderValue::from_str(session)
+        .unwrap_or_else(|_| http::HeaderValue::from_static("superba-test"));
     Box::pin(async move {
         let admission = match shared.limits.admit(std::time::Duration::ZERO).await {
             Ok(admission) => admission,
             Err(_) => return local_busy("the router is busy; retry the model test"),
         };
+        // The test's own session id: forwarded upstream like a client header
+        // (OpenCode gateways refuse a request without it; others ignore it).
         let req = Request::builder()
             .method(Method::POST)
             .uri("/backend-api/codex/responses")
             .header(CONTENT_TYPE, "application/json")
+            .header(crate::forward::OPENCODE_SESSION_HEADER, session)
             .body(ProxyBody::Buffered(body))
             .expect("probe request");
         proxy_request(
@@ -158,11 +161,7 @@ pub(crate) fn probe_http(
             Ingress::Codex,
             Some(ProbeRoute {
                 generation,
-                target: crate::merged_catalog::Target {
-                    member,
-                    upstream: model,
-                    standard,
-                },
+                target,
                 line,
             }),
         )
