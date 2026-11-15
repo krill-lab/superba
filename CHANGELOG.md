@@ -5,6 +5,11 @@ All notable changes to Superba are documented here. The format follows
 [Semantic Versioning](https://semver.org/): later releases increment the patch
 number; the minor number changes only for breaking changes.
 
+## [Unreleased]
+
+### Added
+- Codex session data on another disk (GitHub issue 15): Superba → Data → "Codex session data" and `spb data codex where|move <DIR>|restore` move Codex's conversations (`sessions` and `archived_sessions`, which can grow to many gigabytes on the system drive) to a folder on another local disk. Superba copies and verifies every file, then leaves links with the same names in the Codex home (a directory junction on Windows, no administrator rights needed), so the ChatGPT app, the Codex CLI and editors keep working unchanged. Quit Codex first; the old copy is removed only after the new one is verified, an interrupted move is undone at the next start, and "Move back" returns the data to the Codex home. Doctor warns when the drive holding the data is not connected.
+
 ## [0.1.2-alpha.1] - 2026-11-15
 
 ### Added
