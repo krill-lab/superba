@@ -311,6 +311,13 @@ async fn open_app_launches_with_cdp_and_the_auth_address() {
     let launch = w.app.launches.lock().unwrap().last().cloned().unwrap();
     assert_eq!(launch.cdp, superba_core::CdpMode::Auto);
     assert_eq!(launch.env.get("CODEX_AUTHAPI_BASE_URL"), None);
+    // Forced predictions are on by default and follow the setting.
+    assert!(launch.predictions);
+    w.set_session(None);
+    w.profiles.set.lock().unwrap().settings.app_predictions = false;
+    sw.open_app().await.unwrap();
+    let launch = w.app.launches.lock().unwrap().last().cloned().unwrap();
+    assert!(!launch.predictions);
     // Safe mode disables CDP.
     w.set_session(None);
     w.config.state.lock().unwrap().active = Some(ActiveState {

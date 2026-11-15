@@ -495,6 +495,7 @@ impl Switcher {
                 env,
                 env_remove,
                 speed_menu: set.settings.app_speed_menu,
+                predictions: set.settings.app_predictions,
                 ..LaunchOptions::default()
             })
             .await;

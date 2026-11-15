@@ -189,6 +189,12 @@ pub struct LaunchOptions {
     /// `superba_appctl::speedmenu`).
     #[serde(default)]
     pub speed_menu: bool,
+    /// Force the app's composer predictions on in the window: the same
+    /// document-start script reads the renderer's prediction gate as on (needs
+    /// CDP; see `superba_appctl::speedmenu::plan`). The app's main process
+    /// still decides whether a prediction runs.
+    #[serde(default)]
+    pub predictions: bool,
 }
 
 /// Result of probing the restart bridge.

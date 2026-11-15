@@ -19,6 +19,10 @@
 //! registered with other source), nothing is replaced and the app behaves as
 //! it would without Superba. The tiers offered come from the model catalog
 //! (`service_tiers` of each model), as for a ChatGPT sign-in.
+//!
+//! The same machinery forces the renderer's gate of composer predictions
+//! ([`PatchSet::Predictions`], see [`plan`]). Each launch picks the sets it
+//! wants ([`PatchSets`]); the cached plan holds both.
 
 pub mod asar;
 pub mod attach;
@@ -32,7 +36,7 @@ use sha2::{Digest, Sha256};
 use superba_core::Result;
 
 use crate::codexbin::FileStamp;
-pub use plan::{GateKind, NoPlan, PatchedModule, Plan};
+pub use plan::{GateKind, NoPlan, PatchSet, PatchSets, PatchedModule, Plan};
 
 /// Directory under `DataDir::cache_dir` holding one plan file per app build.
 pub const CACHE_DIR: &str = "speed-menu";
@@ -41,6 +45,19 @@ pub const CACHE_DIR: &str = "speed-menu";
 const CACHE_KEEP: usize = 4;
 
 const HOOK_TEMPLATE: &str = include_str!("hook.js");
+
+/// The prompt of Superba's own composer predictions: the one chatgpt.com
+/// serves the app (`/wham/predictions/config`, `prompt_version` 5, fetched in
+/// November 2026), used verbatim. `hook.js` appends the app's JSON-schema
+/// instruction to it as the app does.
+pub const PREDICTION_PROMPT: &str = "This is an app-generated request for a suggested next user message. The user did not write this message.\n\nYour suggestion will appear in the user's empty message composer. They can accept it, edit it, or ignore it; it will not be sent automatically.\n\nPredict the single message this user is most likely to type next from the visible conversation. Use the whole conversation to understand their current intent and the latest exchange. Choose the action and specific object that best continue that intent, rather than a generally useful follow-up. Express its core naturally in the user's voice, keeping the requirements needed to retain its meaning. Choose the strongest grounded move even if several continuations are possible; uncertainty about exact wording or incidental details is not a reason to return null. Use null only when the conversation offers no grounded next move at all.\n\nSet suggestion to exactly one natural user message, one line, at most 240 characters, or null. No alternatives or explanation.";
+
+/// `prompt_version` of [`PREDICTION_PROMPT`] (reported with each prediction).
+pub const PREDICTION_PROMPT_VERSION: &str = "5";
+
+/// `prediction_reasoning_effort` served with [`PREDICTION_PROMPT`] (Codex
+/// applies it only where the model supports a cache-preserving effort change).
+pub const PREDICTION_EFFORT: &str = "high";
 
 #[derive(Serialize, Deserialize)]
 struct CacheFile {
@@ -119,11 +136,13 @@ fn store(dir: &Path, file: &Path, content: &CacheFile) {
     }
 }
 
-/// Start planning for `install` now (blocking work on the pool); the result
-/// goes to the returned receiver as the attach task expects it.
+/// Start planning for `install` now (blocking work on the pool); the result,
+/// restricted to `sets`, goes to the returned receiver as the attach task
+/// expects it.
 pub fn start_planning(
     install: &superba_core::AppInstall,
     cache_dir: PathBuf,
+    sets: PatchSets,
 ) -> tokio::sync::oneshot::Receiver<attach::PlanResult> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     let asar = crate::codexbin::asar_path(install);
@@ -135,10 +154,13 @@ pub fn start_planning(
         let result = match asar {
             None => Err(no("the app has no app.asar".into())),
             Some(asar) => match cached_plan(&asar, &cache_dir) {
-                Ok(Ok(p)) => {
+                Ok(Ok(p)) => p.select(sets).map(|p| {
+                    for (set, why) in &p.skipped {
+                        tracing::info!(?set, why = %why, "page patches: set not available");
+                    }
                     let script = document_script(&p);
-                    Ok((p, script))
-                }
+                    (p, script)
+                }),
                 Ok(Err(n)) => Err(n),
                 Err(e) => Err(no(e.to_string())),
             },
@@ -202,14 +224,14 @@ pub async fn attach_after_launch(
             reason = outcome.reason.as_deref().unwrap_or("-"),
             late = outcome.late,
             mismatched = ?outcome.mismatched,
-            "speed menu: not available in this window"
+            "page patches: none in this window"
         );
     } else {
         tracing::info!(
             patched = ?outcome.patched,
             late = outcome.late,
             mismatched = ?outcome.mismatched,
-            "speed menu: available"
+            "page patches: applied"
         );
     }
     Some(outcome)
@@ -232,7 +254,15 @@ pub fn document_script(plan: &Plan) -> String {
             .collect::<Vec<_>>()
             .join(",\n")
     );
+    let prediction = serde_json::json!({
+        "prompt": PREDICTION_PROMPT,
+        "promptVersion": PREDICTION_PROMPT_VERSION,
+        "effort": PREDICTION_EFFORT,
+    });
+    // The placeholders come in this order in the template; each is replaced
+    // before the app's own code (the factories) is inserted.
     HOOK_TEMPLATE
+        .replacen("__SUPERBA_PREDICTION__", &prediction.to_string(), 1)
         .replacen("__SUPERBA_MODULES__", &modules.to_string(), 1)
         .replacen("__SUPERBA_FACTORIES__", &factories, 1)
 }
@@ -252,6 +282,7 @@ mod tests {
                 source: "aB12(e,t){t.x=1}".into(),
                 gates: vec![GateKind::UiAccess],
             }],
+            skipped: Default::default(),
         }
     }
 
@@ -279,7 +310,9 @@ mod tests {
         let first = cached_plan(&asar, &cache).unwrap();
         assert_eq!(
             first.as_ref().unwrap_err().reason,
-            "ui_access: 0 matches, requirements: 0 matches, queue_default: 0 matches, queue_explicit: 0 matches"
+            "ui_access: 0 matches, requirements: 0 matches, queue_default: 0 matches, queue_explicit: 0 matches, \
+             prediction_settings: 0 matches, prediction_live: 0 matches, prediction_composer: 0 matches, \
+             prediction_services: 0 matches, prediction_client: 0 matches"
         );
         let files: Vec<_> = std::fs::read_dir(cache.join(CACHE_DIR))
             .unwrap()

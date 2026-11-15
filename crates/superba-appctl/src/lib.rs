@@ -865,9 +865,14 @@ impl AppController for DesktopAppController {
             .unwrap_or_default();
         let program = launch::program_for(&install);
         let spec = launch::build_spec(&program, options, &app_args, plan.clone());
-        // Plan the speed menu while the app starts (cached per app build).
-        let speed_plan = (options.speed_menu && plan != CdpPlan::Disabled)
-            .then(|| speedmenu::start_planning(&install, self.ctx.data_dir.cache_dir()));
+        // Plan the page patches (the speed menu, forced predictions) while the
+        // app starts (cached per app build).
+        let sets = speedmenu::PatchSets {
+            speed_menu: options.speed_menu,
+            predictions: options.predictions,
+        };
+        let page_plan = (sets.any() && plan != CdpPlan::Disabled)
+            .then(|| speedmenu::start_planning(&install, self.ctx.data_dir.cache_dir(), sets));
         let launched_at = Timestamp::now();
         tracing::info!(
             program = %program.display(),
@@ -892,7 +897,7 @@ impl AppController for DesktopAppController {
         let app_state = self.ctx.data_dir.app_state_dir();
         // With the speed menu, a token sign-in also gets Max in the app's
         // reasoning efforts (see `reasoning_efforts`).
-        let offer_max = speed_plan.is_some();
+        let offer_max = options.speed_menu && plan != CdpPlan::Disabled;
         // LaunchServices may take several seconds to expose the new main pid.
         let spawned = tokio::task::spawn_blocking(move || {
             // After the running-instance check, before any platform starts the
@@ -914,7 +919,7 @@ impl AppController for DesktopAppController {
         })
         .await
         .map_err(blocking_err)??;
-        if let (Some(rx), Some(pid)) = (speed_plan, spawned.pid) {
+        if let (Some(rx), Some(pid)) = (page_plan, spawned.pid) {
             // Detached: it outlives this call while the window settles.
             tokio::spawn(speedmenu::attach_after_launch(
                 pid,

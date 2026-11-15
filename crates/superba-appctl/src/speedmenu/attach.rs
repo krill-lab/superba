@@ -222,7 +222,10 @@ pub async fn run(browser_ws: &str, plan: tokio::sync::oneshot::Receiver<PlanResu
                     }
                 }
                 let all_patched = match &plan {
-                    Some(Ok((p, _))) => !p.modules.is_empty() && p.modules.iter().all(|m| outcome.patched.contains_key(&m.id)),
+                    Some(Ok((p, _))) => {
+                        let ids = p.settle_ids();
+                        !ids.is_empty() && ids.iter().all(|id| outcome.patched.contains_key(id))
+                    }
                     _ => false,
                 };
                 if all_patched || outcome.late || started.elapsed() >= SETTLE_LIMIT {

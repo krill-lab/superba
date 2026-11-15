@@ -775,6 +775,7 @@ async fn full_restart_quits_writes_and_relaunches_through_superba() {
     );
     let launch = w.app.launches.lock().unwrap()[0].clone();
     assert_eq!(launch.cdp, superba_core::CdpMode::Auto);
+    assert!(launch.predictions, "the setting is on by default");
     assert_eq!(
         ev.phases(),
         vec![

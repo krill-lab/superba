@@ -169,6 +169,22 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, settings: &mut Settings, out: &mut Vec<Act
         row(
             ui,
             cx,
+            &cx.tr.t("settings.predictions.title"),
+            &cx.tr.t("settings.predictions.desc"),
+            false,
+            |ui| {
+                ui.add(
+                    Toggle::new(
+                        &mut settings.app_predictions,
+                        cx.tr.t("settings.predictions.title"),
+                    )
+                    .enabled(!settings.safe_mode),
+                );
+            },
+        );
+        row(
+            ui,
+            cx,
             &cx.tr.t("settings.open_on_start.title"),
             &cx.tr.t("settings.open_on_start.desc"),
             false,

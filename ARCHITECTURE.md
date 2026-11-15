@@ -1160,6 +1160,32 @@ profile with a key always gets a catalog file from Krill's native list
 lacks), and tier-suffix model names are not used (`suffix_applies(.., app_menu)`): the tier
 goes as `service_tier`.
 
+**Forced composer predictions** (`Settings::app_predictions`, default on) use the
+same plan, script and attach as a second patch set (`speedmenu::PatchSet::Predictions`;
+the cached plan holds both sets, a launch selects with `PatchSets`). The app's
+"predict the next message" (codename cumberbatch) is gated in the renderer by the
+hashed Statsig gate `4290031608`. Three checks are rewritten to `(check||gate(id))`,
+each on its own when it matches in exactly one module (app 26.1103 and 26.1106): the
+"Show predictions" Settings row, the request after each finished local turn (two
+checks in one function) and the composer's prediction atom. The cloud-task check is
+left alone. The app's main process, which Superba cannot reach, would then still
+refuse: it needs a ChatGPT sign-in (`getAuthStatus` with `chatgpt`/`chatgptAuthTokens`),
+asks `https://chatgpt.com/backend-api/wham/predictions/config` (the app's own API
+base, not `chatgpt_base_url`) and runs `thread/sample`. So the script also swaps
+`appServices.cumberbatch` (module `GaA7`'s `setAppServices`) for a proxy whose
+`requestUserMessagePrediction` asks the main process first and, when it gives
+nothing, answers the composer's own request (`generationTrigger: "catch_up"`, which
+only runs while the composer shows predictions and the app's setting is on) itself:
+`thread/sample` through the window's app-server request client (its constructor
+registers it with the script), with the prompt chatgpt.com serves
+(`speedmenu::PREDICTION_PROMPT`, `prompt_version` 5, effort `high`) plus the app's
+JSON-schema instruction, one request per turn (a newer turn cancels the older one
+with `thread/sample/cancel`), and returns the object the main process would (`text`,
+`responseId`, `sourceTurnId`, ...). The model request goes through Codex's
+`openai_base_url` like any turn, so it works with API keys and the router. The
+server's `unsupported_models` and sample rates are not applied (forced: every turn).
+The service swap and the client registration are patched only together.
+
 ## 9. Security
 
 - CDP binds to loopback only, uses `--remote-allow-origins=http://127.0.0.1:<port>`

@@ -27,7 +27,7 @@ import infra
 import legacy
 
 ORDER = ["s1", "s2", "s3", "s4", "s5", "s8", "s6", "s11", "s12", "s13", "s14",
-         "s17", "s18", "s19", "s20", "s21", "s22", "s23", "s10", "s16", "s7", "s9", "s15"]
+         "s17", "s18", "s19", "s20", "s21", "s22", "s23", "s24", "s10", "s16", "s7", "s9", "s15"]
 NAMES = {
     "s1": "First takeover of a legacy Codex home (profile: Automatic auth, lines A>B, recommended settings; sessions migrated)",
     "s2": "spb launch: app with CDP, PAT login, turn 1 on line A, migrated threads in recents",
@@ -51,6 +51,7 @@ NAMES = {
     "s20": "Request log and stats line (router on, real app): line under the reply, stripped from the next request, final answer only in a tool loop, codex exec untouched, log rows, GUI, no request content recorded, no key bytes",
     "s21": "CODEX_CLI_PATH pin: verified install from the local package source (corrupted copy rejected), pin = full restart with the store binary, rollout cli_version, unpin, inherited CODEX_CLI_PATH ignored",
     "s22": "Remote host (Docker sshd): app-known hosts only, probe, Codex install over SSH stdin, settings sync filtered by the host's Codex version, follow off/on, sessions per host, rollback",
+    "s24": "Forced composer predictions with an API key (direct and through the router): Superba's thread/sample, the prediction request on a line, ghost text in the composer, Tab accepts it",
     "s23": "Desktop app update check from the feed and a local APT index: installed vs latest with bundled Codex, verified download, command shown, never a privileged command",
 }
 SCENARIOS = {}
@@ -860,6 +861,7 @@ def s9(run):
 
 import scenarios_v2  # noqa: E402,F401  (registers s10-s15)
 import scenarios_v3  # noqa: E402,F401  (registers s16-s23)
+import scenarios_v4  # noqa: E402,F401  (registers s24)
 
 
 # ---------------------------------------------------------------------------

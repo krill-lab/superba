@@ -1,5 +1,7 @@
-//! Find the four speed-tier gates in the app's renderer bundle and build
-//! patched copies of the module factories that hold them.
+//! Find the gates Superba patches in the app's renderer bundle and build
+//! patched copies of the module factories that hold them: the four speed-tier
+//! gates ([`PatchSet::SpeedMenu`]) and the Statsig gate of composer
+//! predictions ([`PatchSet::Predictions`]).
 //!
 //! The renderer (app 26.1103+) is an Rspack build: every chunk under
 //! `webview/assets/` is an ES module exporting `__webpack_modules__ = {id(e,t,n)
@@ -20,8 +22,27 @@
 //! Each patch keeps the original condition and adds `|| allow(host, method)`,
 //! a call into the page policy Superba installs (local host and API-key
 //! sign-in only, see `hook.js`). The Copilot checks in front of the queue
-//! gates stay as they are. A rule must match exactly once across the bundle,
-//! otherwise there is no plan and the app runs unchanged.
+//! gates stay as they are. Each gate must match in exactly one module, and
+//! the four go together: when one is missing none is patched.
+//!
+//! Composer predictions ("cumberbatch", verified on app 26.1103 and 26.1106:
+//! after an assistant reply the composer suggests the next message, Tab
+//! accepts it) are behind the Statsig gate [`PREDICTION_GATE`] (a hashed
+//! name) in the renderer, then behind the app's main process, which asks
+//! chatgpt.com (`/wham/predictions/config`) whether they are on for the
+//! signed-in ChatGPT account and runs them through Codex (`thread/sample`).
+//! Superba can only reach the renderer: it forces the gate there and puts its
+//! own prediction service in front of the main process's (`hook.js`): where
+//! the main process gives no prediction (no ChatGPT sign-in, or the account is
+//! not enabled), the service sends `thread/sample` through the window's
+//! app-server client itself. Each of the three gate checks ([`GateKind::
+//! PredictionSettings`], [`GateKind::PredictionLive`], [`GateKind::
+//! PredictionComposer`]) is patched on its own when it matches in exactly one
+//! module, as `(check||gate(id))`; the service swap in `appServices`
+//! ([`GateKind::PredictionServices`]) and the client's registration
+//! ([`GateKind::PredictionClient`]) only together. The cloud-task variant of
+//! the gate (predictions computed by chatgpt.com for cloud threads) is left
+//! alone.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -35,7 +56,7 @@ use super::jslex;
 
 /// Version of the plan format and rules; a cached plan of another version is
 /// computed again.
-pub const PLAN_VERSION: u32 = 1;
+pub const PLAN_VERSION: u32 = 2;
 
 /// Chunks larger than this are not considered (the largest app chunk is ~9 MB).
 const CHUNK_LIMIT: u64 = 48 * 1024 * 1024;
@@ -47,7 +68,24 @@ const CHUNK_ANCHORS: &[&str] = &[
     "personalAccessToken",
     "writeServiceTier",
     "submissionOptions",
+    PREDICTION_GATE_ARG,
+    SERVICES_ANCHOR,
+    CLIENT_ANCHOR,
 ];
+
+/// Where the renderer stores the app's services (`appServices`, a proxy of the
+/// main process's services).
+const SERVICES_ANCHOR: &str = "setAppServices:function(";
+
+/// The end of the renderer's app-server request client constructor.
+const CLIENT_ANCHOR: &str = ",this.getRequestRejection=";
+
+/// The Statsig gate (hashed name) that turns composer predictions on in the
+/// renderer.
+pub const PREDICTION_GATE: &str = "4290031608";
+
+/// [`PREDICTION_GATE`] as the last argument of a gate check.
+const PREDICTION_GATE_ARG: &str = "\"4290031608\")";
 
 /// The page policy call: `true` only for the local host signed in with an API
 /// key (see `hook.js`).
@@ -55,7 +93,13 @@ fn allow(host: &str, method: &str) -> String {
     format!("globalThis.__superbaSpeedMenu?.allow?.({host},{method})===!0")
 }
 
-/// One of the four gates.
+/// The page policy call of the prediction gate (`true` when the predictions
+/// are forced, see `hook.js`).
+fn force_gate() -> String {
+    format!("globalThis.__superbaSpeedMenu?.gate?.(\"{PREDICTION_GATE}\")===!0")
+}
+
+/// One of the patched gates.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GateKind {
@@ -67,16 +111,101 @@ pub enum GateKind {
     QueueDefault,
     /// The tier chosen in the composer for a turn.
     QueueExplicit,
+    /// The "Show predictions" row in Settings > General.
+    PredictionSettings,
+    /// The prediction requested after each finished local turn (two checks in
+    /// one function, before and after reading the thread).
+    PredictionLive,
+    /// The composer's prediction state (shows and requests predictions).
+    PredictionComposer,
+    /// The renderer's `appServices` (Superba's own prediction service in front
+    /// of the app's `cumberbatch`, see `hook.js`).
+    PredictionServices,
+    /// The renderer's app-server request client registers itself, so the
+    /// prediction service can send `thread/sample` (see `hook.js`).
+    PredictionClient,
+}
+
+/// A group of gates turned on together by one setting.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PatchSet {
+    /// The app's speed menu with an API key (all four gates or none).
+    SpeedMenu,
+    /// Forced composer predictions (each check on its own).
+    Predictions,
+}
+
+/// Which patch sets a launch wants.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PatchSets {
+    /// [`PatchSet::SpeedMenu`].
+    pub speed_menu: bool,
+    /// [`PatchSet::Predictions`].
+    pub predictions: bool,
+}
+
+impl PatchSets {
+    /// Whether `set` is wanted.
+    pub fn has(self, set: PatchSet) -> bool {
+        match set {
+            PatchSet::SpeedMenu => self.speed_menu,
+            PatchSet::Predictions => self.predictions,
+        }
+    }
+
+    /// Any set is wanted.
+    pub fn any(self) -> bool {
+        self.speed_menu || self.predictions
+    }
 }
 
 impl GateKind {
-    /// All gates.
-    pub const ALL: [GateKind; 4] = [
+    /// The speed-menu gates.
+    pub const SPEED_MENU: [GateKind; 4] = [
         GateKind::UiAccess,
         GateKind::Requirements,
         GateKind::QueueDefault,
         GateKind::QueueExplicit,
     ];
+    /// The prediction checks.
+    pub const PREDICTIONS: [GateKind; 5] = [
+        GateKind::PredictionSettings,
+        GateKind::PredictionLive,
+        GateKind::PredictionComposer,
+        GateKind::PredictionServices,
+        GateKind::PredictionClient,
+    ];
+
+    /// Gates that are only patched together (the service needs the client and
+    /// the other way round).
+    const PAIRED: [(GateKind, GateKind); 1] =
+        [(GateKind::PredictionServices, GateKind::PredictionClient)];
+
+    /// The set the gate belongs to.
+    pub fn set(self) -> PatchSet {
+        if Self::SPEED_MENU.contains(&self) {
+            PatchSet::SpeedMenu
+        } else {
+            PatchSet::Predictions
+        }
+    }
+
+    /// Matches the module holding the gate must have.
+    fn hits_per_module(self) -> usize {
+        match self {
+            GateKind::PredictionLive => 2,
+            _ => 1,
+        }
+    }
+
+    /// The snake_case name (`ui_access`).
+    pub fn name(self) -> String {
+        serde_json::to_value(self)
+            .ok()
+            .and_then(|v| v.as_str().map(str::to_owned))
+            .unwrap_or_default()
+    }
 }
 
 /// A patched module factory, as method source (`id(e,t,n){...}`).
@@ -103,8 +232,75 @@ pub struct PatchedModule {
 pub struct Plan {
     /// [`PLAN_VERSION`].
     pub version: u32,
-    /// The patched modules.
+    /// The patched modules; each holds gates of one [`PatchSet`].
     pub modules: Vec<PatchedModule>,
+    /// Why gates are not patched (`ui_access: 0 matches`), per set; empty
+    /// when every gate is.
+    #[serde(default)]
+    pub skipped: BTreeMap<PatchSet, String>,
+}
+
+impl Plan {
+    /// The set of a module (all its gates are in one).
+    fn module_set(m: &PatchedModule) -> Option<PatchSet> {
+        m.gates.first().map(|g| g.set())
+    }
+
+    /// The plan restricted to `sets`, or why it has nothing for them.
+    pub fn select(&self, sets: PatchSets) -> std::result::Result<Plan, NoPlan> {
+        let modules: Vec<PatchedModule> = self
+            .modules
+            .iter()
+            .filter(|m| Self::module_set(m).is_some_and(|s| sets.has(s)))
+            .cloned()
+            .collect();
+        let skipped: BTreeMap<PatchSet, String> = self
+            .skipped
+            .iter()
+            .filter(|(s, _)| sets.has(**s))
+            .map(|(s, r)| (*s, r.clone()))
+            .collect();
+        if modules.is_empty() {
+            let reason = if skipped.is_empty() {
+                "nothing to patch".to_owned()
+            } else {
+                skipped.values().cloned().collect::<Vec<_>>().join(", ")
+            };
+            return Err(NoPlan {
+                version: self.version,
+                reason,
+            });
+        }
+        Ok(Plan {
+            version: self.version,
+            modules,
+            skipped,
+        })
+    }
+
+    /// The modules whose patching means the window is ready: the speed menu's
+    /// (loaded at start), else the live prediction check's, else all.
+    pub fn settle_ids(&self) -> Vec<String> {
+        let ids = |pred: &dyn Fn(&PatchedModule) -> bool| -> Vec<String> {
+            let mut v: Vec<String> = self
+                .modules
+                .iter()
+                .filter(|m| pred(m))
+                .map(|m| m.id.clone())
+                .collect();
+            v.dedup();
+            v
+        };
+        let speed = ids(&|m| Self::module_set(m) == Some(PatchSet::SpeedMenu));
+        if !speed.is_empty() {
+            return speed;
+        }
+        let live = ids(&|m| m.gates.contains(&GateKind::PredictionLive));
+        if !live.is_empty() {
+            return live;
+        }
+        ids(&|_| true)
+    }
 }
 
 /// Why there is no plan for an app build.
@@ -259,6 +455,31 @@ static QUEUE_EXPLICIT: LazyLock<Regex> = LazyLock::new(|| {
     ))
 });
 
+static PREDICTION_SETTINGS: LazyLock<Regex> =
+    LazyLock::new(|| re(r#"(?P<gate>\(0,ID\.ID\)\("4290031608"\))"#));
+
+static PREDICTION_LIVE: LazyLock<Regex> =
+    LazyLock::new(|| re(r#"(?P<gate>\(0,ID\.ID\)\(ID,"4290031608"\))"#));
+
+static PREDICTION_COMPOSER: LazyLock<Regex> = LazyLock::new(|| {
+    re(concat!(
+        r#"\(\{get:(?P<g>ID)\}\)=>(?P<gate>(?P<g2>ID)\(ID\.ID,"4290031608"\))"#,
+        r#"&&\(0,ID\.ID\)\((?P<g3>ID),\(0,ID\.ID\)\(\)\.enabled\)&&null!=ID\.appServices\.cumberbatch\)"#,
+    ))
+});
+
+static PREDICTION_SERVICES: LazyLock<Regex> = LazyLock::new(|| {
+    re(r#"setAppServices:function\((?P<a>ID)\)\{(?P<gate>(?P<o>ID)=(?P<a2>ID))\}"#)
+});
+
+static PREDICTION_CLIENT: LazyLock<Regex> = LazyLock::new(|| {
+    re(concat!(
+        r#"constructor\((?P<h>ID),(?P<d>ID)=null,(?P<u>ID)=!1,(?P<r>ID)=\(\)=>void 0,(?P<i>ID)\)\{"#,
+        r#"(?P<gate>this\.hostId=(?P<h2>ID),this\.dispatchMessage=(?P<d2>ID),this\.useHostRequestScheduler=(?P<u2>ID),"#,
+        r#"this\.getThreadAccess=(?P<r2>ID),this\.getRequestRejection=(?P<i2>ID))\}"#,
+    ))
+});
+
 static IMPORT_CALL: LazyLock<Regex> = LazyLock::new(|| re(r"(?:^|[^A-Za-z0-9_$.])import\s*\("));
 
 /// Every identifier `x` in `text` written as `x<suffix>` equals `want`.
@@ -385,6 +606,82 @@ static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
                 ))
             },
         },
+        Rule {
+            kind: GateKind::PredictionSettings,
+            anchor: PREDICTION_GATE_ARG,
+            before: 20,
+            after: 1500,
+            regex: &PREDICTION_SETTINGS,
+            accept: |_, window, at| {
+                let rest = &window[at..];
+                rest.contains("\"cumberbatch-availability\"")
+                    && rest.contains(".isEnabledByRemoteConfig()")
+            },
+            replace: |c, _, _| Some(format!("({}||{})", &c["gate"], force_gate())),
+        },
+        Rule {
+            kind: GateKind::PredictionLive,
+            anchor: PREDICTION_GATE_ARG,
+            before: 900,
+            after: 3000,
+            regex: &PREDICTION_LIVE,
+            accept: |_, window, at| {
+                let (head, rest) = window.split_at(at);
+                head.contains(".appServices?.cumberbatch")
+                    && rest.contains(".requestUserMessagePrediction(")
+                    && rest.contains("generationTrigger:\"live\"")
+            },
+            replace: |c, _, _| Some(format!("({}||{})", &c["gate"], force_gate())),
+        },
+        Rule {
+            kind: GateKind::PredictionComposer,
+            anchor: PREDICTION_GATE_ARG,
+            before: 80,
+            after: 160,
+            regex: &PREDICTION_COMPOSER,
+            accept: |c, _, _| c["g"] == c["g2"] && c["g"] == c["g3"],
+            replace: |c, _, _| Some(format!("({}||{})", &c["gate"], force_gate())),
+        },
+        Rule {
+            kind: GateKind::PredictionServices,
+            anchor: SERVICES_ANCHOR,
+            before: 200,
+            after: 60,
+            regex: &PREDICTION_SERVICES,
+            accept: |c, window, at| {
+                c["a"] == c["a2"]
+                    && c["a"] != c["o"]
+                    && window[..at].contains("appServices:()=>")
+                    && window[..at].contains(&format!("appServices:()=>{}", &c["o"]))
+            },
+            replace: |c, _, _| {
+                Some(format!(
+                    "{o}=globalThis.__superbaSpeedMenu?.services?.({a})??{a}",
+                    o = &c["o"],
+                    a = &c["a"]
+                ))
+            },
+        },
+        Rule {
+            kind: GateKind::PredictionClient,
+            anchor: CLIENT_ANCHOR,
+            before: 900,
+            after: 40,
+            regex: &PREDICTION_CLIENT,
+            accept: |c, window, at| {
+                ["h", "d", "u", "r", "i"]
+                    .iter()
+                    .all(|k| c[*k] == c[format!("{k}2").as_str()])
+                    && distinct(&[&c["h"], &c["d"], &c["u"], &c["r"], &c["i"]])
+                    && window[..at].contains("sendConfigReadRequestMemoized=")
+            },
+            replace: |c, _, _| {
+                Some(format!(
+                    "{},globalThis.__superbaSpeedMenu?.client?.(this)",
+                    &c["gate"]
+                ))
+            },
+        },
     ]
 });
 
@@ -492,19 +789,16 @@ fn apply(source: &str, hits: &[Hit]) -> Option<String> {
 /// A module that ships in several chunks is minified separately in each (its
 /// local names differ), so each distinct source is a variant with its own
 /// patched copy. Every variant of a module must hold the same gates, and each
-/// gate must be in exactly one module.
+/// gate must be in exactly one module. The speed-menu gates go together (one
+/// problem drops all four); each prediction check stands on its own. A module
+/// holding gates of both sets is not used for the predictions. There is no
+/// plan when nothing at all can be patched.
 pub fn plan_from_chunks<'a>(
     chunks: impl IntoIterator<Item = (&'a str, &'a str)>,
 ) -> std::result::Result<Plan, NoPlan> {
     let no = |reason: String| NoPlan {
         version: PLAN_VERSION,
         reason,
-    };
-    let kind_name = |kind: GateKind| {
-        serde_json::to_value(kind)
-            .ok()
-            .and_then(|v| v.as_str().map(str::to_owned))
-            .unwrap_or_default()
     };
     // id -> variants (key, original source, hits), distinct sources only.
     let mut found: BTreeMap<String, Vec<(String, String, Vec<Hit>)>> = BTreeMap::new();
@@ -535,6 +829,8 @@ pub fn plan_from_chunks<'a>(
     }
     // Modules without any gate in any copy are not ours.
     found.retain(|_, variants| variants.iter().any(|(_, _, hits)| !hits.is_empty()));
+    // The first problem of each gate, and the modules holding it.
+    let mut problems: BTreeMap<GateKind, String> = BTreeMap::new();
     let mut modules_of: BTreeMap<GateKind, Vec<String>> = BTreeMap::new();
     for (id, variants) in &found {
         let kinds = |hits: &[Hit]| {
@@ -542,42 +838,108 @@ pub fn plan_from_chunks<'a>(
             k.sort();
             k
         };
+        let mut all: Vec<GateKind> = variants.iter().flat_map(|(_, _, h)| kinds(h)).collect();
+        all.sort();
+        all.dedup();
+        let mut fail = |kinds: &[GateKind], why: String| {
+            for k in kinds {
+                problems.entry(*k).or_insert_with(|| why.clone());
+            }
+        };
         let first = kinds(&variants[0].2);
         if variants.iter().any(|(_, _, hits)| kinds(hits) != first) {
-            return Err(no(format!("module {id}: copies differ in gates")));
+            fail(&all, format!("module {id}: copies differ in gates"));
+            continue;
         }
-        let mut unique = first.clone();
-        unique.dedup();
-        if unique.len() != first.len() {
-            return Err(no(format!("module {id}: a gate matches twice")));
+        let uses_import = variants.iter().any(|(_, original, _)| {
+            original.contains("import.meta") || IMPORT_CALL.is_match(original)
+        });
+        if uses_import {
+            // The copies are compiled in a classic script at the document's
+            // URL: module syntax or relative imports would break or resolve
+            // elsewhere.
+            fail(&all, format!("module {id} uses import"));
+            continue;
         }
-        for kind in first {
-            modules_of.entry(kind).or_default().push(id.clone());
+        let mixed = all.iter().any(|k| k.set() == PatchSet::SpeedMenu)
+            && all.iter().any(|k| k.set() == PatchSet::Predictions);
+        for kind in &all {
+            let n = first.iter().filter(|k| *k == kind).count();
+            if n != kind.hits_per_module() {
+                fail(
+                    &[*kind],
+                    format!("module {id}: {} matches {n} times", kind.name()),
+                );
+            } else if mixed && kind.set() == PatchSet::Predictions {
+                fail(
+                    &[*kind],
+                    format!("module {id}: {} shares it with the speed menu", kind.name()),
+                );
+            } else {
+                modules_of.entry(*kind).or_default().push(id.clone());
+            }
         }
     }
-    let problems: Vec<String> = GateKind::ALL
+    for kind in GateKind::SPEED_MENU
         .into_iter()
-        .filter_map(|kind| {
-            let n = modules_of.get(&kind).map_or(0, Vec::len);
-            (n != 1).then(|| format!("{}: {n} matches", kind_name(kind)))
-        })
-        .collect();
-    if !problems.is_empty() {
-        return Err(no(problems.join(", ")));
+        .chain(GateKind::PREDICTIONS)
+    {
+        let n = modules_of.get(&kind).map_or(0, Vec::len);
+        if n != 1 && !problems.contains_key(&kind) {
+            problems.insert(kind, format!("{}: {n} matches", kind.name()));
+        }
+    }
+    for (a, b) in GateKind::PAIRED {
+        for (x, y) in [(a, b), (b, a)] {
+            if problems.contains_key(&x) && !problems.contains_key(&y) {
+                problems.insert(y, format!("{}: needs {}", y.name(), x.name()));
+            }
+        }
+    }
+    let joined = |kinds: &[GateKind]| {
+        let mut reasons: Vec<&str> = Vec::new();
+        for k in kinds {
+            if let Some(r) = problems.get(k)
+                && !reasons.contains(&r.as_str())
+            {
+                reasons.push(r);
+            }
+        }
+        reasons.join(", ")
+    };
+    // The gates that get patched.
+    let mut patched: Vec<GateKind> = Vec::new();
+    let mut skipped: BTreeMap<PatchSet, String> = BTreeMap::new();
+    let speed = joined(&GateKind::SPEED_MENU);
+    if speed.is_empty() {
+        patched.extend(GateKind::SPEED_MENU);
+    } else {
+        skipped.insert(PatchSet::SpeedMenu, speed);
+    }
+    let predictions = joined(&GateKind::PREDICTIONS);
+    patched.extend(
+        GateKind::PREDICTIONS
+            .into_iter()
+            .filter(|k| !problems.contains_key(k)),
+    );
+    if !predictions.is_empty() {
+        skipped.insert(PatchSet::Predictions, predictions);
     }
     let mut modules = Vec::new();
     for (id, variants) in found {
         for (key, original, hits) in variants {
-            // The copies are compiled in a classic script at the document's
-            // URL: module syntax or relative imports would break or resolve
-            // elsewhere.
-            if original.contains("import.meta") || IMPORT_CALL.is_match(&original) {
-                return Err(no(format!("module {id} uses import")));
+            let hits: Vec<Hit> = hits
+                .into_iter()
+                .filter(|h| patched.contains(&h.kind))
+                .collect();
+            if hits.is_empty() {
+                continue;
             }
             let source =
                 apply(&original, &hits).ok_or_else(|| no(format!("overlapping gates in {id}")))?;
             let mut gates: Vec<GateKind> = hits.iter().map(|h| h.kind).collect();
             gates.sort();
+            gates.dedup();
             modules.push(PatchedModule {
                 key,
                 id: id.clone(),
@@ -588,9 +950,13 @@ pub fn plan_from_chunks<'a>(
             });
         }
     }
+    if modules.is_empty() {
+        return Err(no(skipped.into_values().collect::<Vec<_>>().join(", ")));
+    }
     Ok(Plan {
         version: PLAN_VERSION,
         modules,
+        skipped,
     })
 }
 
@@ -638,6 +1004,10 @@ mod tests {
     const UI: &str = r#"aB12(e,t,a){var n=a("Q1");a.d(t,{},{U:function(e){let t,a,c,d=(0,n.c)(10),u=(0,s.Ul)(i.Dc),hh=e?.hostId??u,pp=(0,o.tn)(hh),g=pp?.authMethod==="chatgpt"||pp?.authMethod==="personalAccessToken"||pp?.authMethod==="amazonBedrock",m=pp?.authMethod??null;d[0]!==hh||d[1]!==m?(t={authMethod:m,hostId:hh},d[0]=hh,d[1]=m,d[2]=t):t=d[2];let{data:f,isPending:x}=(0,s._U)(l.b9,t),y=!!pp?.isLoading||g&&x;return{serviceTierAccess:g&&!y&&null!=f?f:null,isLoading:y}}})}"#;
     const REQ: &str = r#"cD34(e,t,n){n.d(t,{},{e:async function(e,t,n,u){try{let m=await async function(q,w){let z=await (0,l.s)(q,w);if("chatgpt"!==z&&"personalAccessToken"!==z&&"amazonBedrock"!==z)return null;let i=await (0,o.Wr)(q,w,{priority:"critical"});return q.query.setData(o.b9,{authMethod:z,hostId:w},i),(0,r.W6)(i)}(e,t);return m}catch(e){return null}}})}"#;
     const QUEUE: &str = r#"eF56(e,t,n){this.x=function(e,{runtime:t},n,r){let i=null;return{async readServiceTier(r){for(;null!=i;)await i.catch(()=>void 0);return n(),f(e.requestClient,e.logger,r,async()=>{if("local"===e.getHostId()&&await t.isUsingCopilotInference())return!1;let k=await e.getAccount({priority:"critical"});return k.account?.type==="chatgpt"||k.account?.type==="amazonBedrock"})},async writeServiceTier(t,a){return 1}}},this.y={prepare:function(e,{settings:t,storage:n,filesystem:r,runtime:i},a,s,o){return async(l,u)=>{let d=u.submissionOptions,c=u.context.workPermissions,h=d?.executionHostId??e.getHostId();let[E,I]=await Promise.all([(async()=>{if(null==d)return a(null);if(null==d.serviceTier)return null;let{account:z}=await e.getAccount({priority:"critical"});return z?.type==="chatgpt"||z?.type==="amazonBedrock"?d.serviceTier:null})(),1]);return E}}}}"#;
+
+    /// The reasons of a bundle without any prediction check.
+    const NO_PREDICTIONS: &str = "prediction_settings: 0 matches, prediction_live: 0 matches, \
+         prediction_composer: 0 matches, prediction_services: 0 matches, prediction_client: 0 matches";
 
     fn chunk(modules: &[&str]) -> String {
         format!(
@@ -703,13 +1073,16 @@ mod tests {
         let err = plan_from_chunks([("a.js", partial.as_str())]).unwrap_err();
         assert_eq!(
             err.reason,
-            "queue_default: 0 matches, queue_explicit: 0 matches"
+            format!("queue_default: 0 matches, queue_explicit: 0 matches, {NO_PREDICTIONS}")
         );
         // The same gate in two different modules.
         let other_ui = UI.replacen("aB12", "zZ99", 1);
         let twice = chunk(&[UI, &other_ui, REQ, QUEUE]);
         let err = plan_from_chunks([("a.js", twice.as_str())]).unwrap_err();
-        assert_eq!(err.reason, "ui_access: 2 matches");
+        assert_eq!(
+            err.reason,
+            format!("ui_access: 2 matches, {NO_PREDICTIONS}")
+        );
     }
 
     #[test]
@@ -729,7 +1102,10 @@ mod tests {
         // A copy without the gate makes the module unusable.
         let broken = chunk(&[&UI.replace("\"personalAccessToken\"", "\"other\"")]);
         let err = plan_from_chunks([("a.js", a.as_str()), ("b.js", broken.as_str())]).unwrap_err();
-        assert_eq!(err.reason, "module aB12: copies differ in gates");
+        assert_eq!(
+            err.reason,
+            format!("module aB12: copies differ in gates, {NO_PREDICTIONS}")
+        );
     }
 
     #[test]
@@ -741,7 +1117,10 @@ mod tests {
         );
         let text = chunk(&[UI, REQ, &shadow]);
         let err = plan_from_chunks([("a.js", text.as_str())]).unwrap_err();
-        assert_eq!(err.reason, "queue_explicit: 0 matches");
+        assert_eq!(
+            err.reason,
+            format!("queue_explicit: 0 matches, {NO_PREDICTIONS}")
+        );
     }
 
     #[test]
@@ -749,7 +1128,293 @@ mod tests {
         let ui = UI.replace("var n=a(\"Q1\");", "var n=import(\"./x.js\");");
         let text = chunk(&[&ui, REQ, QUEUE]);
         let err = plan_from_chunks([("a.js", text.as_str())]).unwrap_err();
-        assert_eq!(err.reason, "module aB12 uses import");
+        assert_eq!(
+            err.reason,
+            format!("module aB12 uses import, {NO_PREDICTIONS}")
+        );
+    }
+
+    // Excerpts of the three prediction checks in app 26.1106 (minified as
+    // shipped, trimmed to the factory around them) and the cloud-task check
+    // that stays as it is.
+    const SETTINGS_1106: &str = r#"KM95(e,t,n){n.d(t,{},{$:function(){let e,t,a,c=(0,r.c)(17),u=(0,g.gh)(L.u);c[0]===Symbol.for("react.memo_cache_sentinel")?(e=(0,H.W)(),c[0]=e):e=c[0];let h=e.enabled,p=(0,F.iK)(h),m=(0,G.Zj)("4290031608"),f=Y.appServices.cumberbatch,y=(0,g.Ul)(q.chatGptAuthenticatedAccountId$),b=(0,g.Ul)(q.o8);c[1]!==y||c[2]!==b?(t=["cumberbatch-availability",y,b],c[1]=y,c[2]=b,c[3]=t):t=c[3],c[4]!==y||c[5]!==m||c[6]!==u||c[7]!==b?(a=m?async e=>{let{signal:t}=e;if(null!=f)return f.isEnabledByRemoteConfig();return!1}:V.hT,c[8]=a):a=c[8];return!m?null:a}})}"#;
+    const LIVE_1106: &str = r#"J8Ro(e,t,n){n.d(t,{},{L:async function(e,t,n,a){let s=q.appServices?.cumberbatch;if(!(null==s||null!=n.automationKind||(0,i.ZJQ)(n.hostId))&&a()&&(0,e$.ie)(e,"4290031608"))try{let i={stack:[],error:void 0,hasError:!1};try{let o=(0,r.mS)(i,await t.getCachedConversationMetadata(n.conversationId),!1);if(!a()||!(0,e$.ie)(e,"4290031608")||o?.streamRole?.role!=="owner"||o.ephemeral||o.sideConversation&&!(0,e$.ie)(e,"1248574746")||(0,tf.N)(o.threadStartKind,o.threadSource)||e.get(tm.D0,n.conversationId)||o.latestTurnId!==n.turnId)return;let l={hostId:n.hostId,threadId:n.conversationId,latestTurnId:n.turnId},u=e.get(G.chatGptAuthenticatedAccountId$),d=e.get(G.o8),c={...l,generationTrigger:"live"},p=(0,r.mS)(i,new th.AX(t=>{a()&&(0,tg.wq)({scope:e,target:c,ineligibility:t})}),!1),h=e.get(t_.S8),f=await (0,ey.P)(s.requestUserMessagePrediction(c,p))}finally{}}catch(e){}}})}"#;
+    const COMPOSER_1106: &str = r#"dlg1(e,t,n){var o=n("zTeN"),l=n("eEqo"),s=n("GaA7"),c=n("OWtl"),u=n("RxZZ"),m=n("OMIV");let p=(0,n("Nwp9").m3)("cumberbatch-has-accepted-prediction-1",!1),h=(0,o.un)(c.u,({get:e})=>e(m.JW,"4290031608")&&(0,u.CN)(e,(0,l.W)().enabled)&&null!=s.appServices.cumberbatch),f=(0,o.vP)(d.PR,()=>null);n.d(t,{},{k:h,p})}"#;
+    // The module of `appServices` (two chunks ship it, minified differently)
+    // and the renderer's app-server request client.
+    const SERVICES_1106: &str = r#"GaA7(e,t,r){let n,i;r.r(t),r.d(t,{appHost:()=>n,appServices:()=>i},{setAppHost:function(e){n=e},setAppServices:function(e){i=e}})}"#;
+    const SERVICES_1106_B: &str = r#"GaA7(e,p,s){let t,o;s.r(p),s.d(p,{appHost:()=>t,appServices:()=>o},{setAppHost:function(e){t=e},setAppServices:function(e){o=e}})}"#;
+    const CLIENT_1106: &str = r#"XyZ1(e,t,n){var A=n("aa"),E=n("bb");class F{hostId;dispatchMessage;useHostRequestScheduler;getThreadAccess;getRequestRejection;requestClientId=(0,A.A)();appServerVersion=null;requestLifecycleListeners=new Set;requestPromises=new Map;sendConfigReadRequestMemoized=E()((e,t,n)=>this.enqueueRequest("config/read",t,n,void 0,e).finally(()=>{this.pendingConfigReadRequests.delete(e)}),{promise:!0,normalizer:([e])=>e});constructor(e,t=null,n=!1,r=()=>void 0,i){this.hostId=e,this.dispatchMessage=t,this.useHostRequestScheduler=n,this.getThreadAccess=r,this.getRequestRejection=i}setAppServerVersion(e){this.appServerVersion=e}}n.d(t,{},{F:()=>F})}"#;
+    const CLOUD_1106: &str = r#"hXZ5(e,t,o){var g=o("OMIV");let y=(0,r.un)(h.u,({get:e})=>e(g.JW,"4290031608")&&(0,f.CN)(e,(0,u.W)().enabled)),b=1;o.d(t,{x:()=>y})}"#;
+
+    /// The 26.1103 copies: the same code with other local names.
+    fn v1103() -> [String; 3] {
+        [
+            SETTINGS_1106
+                .replace("KM95", "pqJp")
+                .replace("m=(0,G.Zj)", "f2=(0,G.Zj)")
+                .replace("c[5]!==m", "c[5]!==f2")
+                .replace("a=m?", "a=f2?")
+                .replace("!m?", "!f2?"),
+            LIVE_1106
+                .replace("(0,e$.ie)", "(0,ej.ie)")
+                .replace("q.appServices", "H.appServices")
+                .replace("e.get(G.", "e.get(L."),
+            COMPOSER_1106.to_owned(),
+        ]
+    }
+
+    const FORCED: &str = r#"||globalThis.__superbaSpeedMenu?.gate?.("4290031608")===!0)"#;
+
+    fn by_id(plan: &Plan) -> BTreeMap<&str, &PatchedModule> {
+        plan.modules.iter().map(|m| (m.id.as_str(), m)).collect()
+    }
+
+    #[test]
+    fn forces_the_prediction_gate_at_its_three_checks() {
+        let a = chunk(&[UI, REQ, SETTINGS_1106, SERVICES_1106]);
+        let b = chunk(&[QUEUE, LIVE_1106, CLOUD_1106, CLIENT_1106]);
+        let c = chunk(&[COMPOSER_1106, SERVICES_1106_B]);
+        let plan = plan_from_chunks([
+            ("a.js", a.as_str()),
+            ("b.js", b.as_str()),
+            ("c.js", c.as_str()),
+        ])
+        .unwrap();
+        assert!(plan.skipped.is_empty(), "{:?}", plan.skipped);
+        let m = by_id(&plan);
+        assert_eq!(
+            m.keys().copied().collect::<Vec<_>>(),
+            [
+                "GaA7", "J8Ro", "KM95", "XyZ1", "aB12", "cD34", "dlg1", "eF56"
+            ],
+            "the cloud check (hXZ5) is not patched"
+        );
+        assert_eq!(m["KM95"].gates, [GateKind::PredictionSettings]);
+        // Both copies of the services module are patched.
+        let services: Vec<&str> = plan
+            .modules
+            .iter()
+            .filter(|m| m.id == "GaA7")
+            .map(|m| m.source.as_str())
+            .collect();
+        assert_eq!(services.len(), 2);
+        assert!(
+            services.iter().any(|s| s.contains(
+                "setAppServices:function(e){i=globalThis.__superbaSpeedMenu?.services?.(e)??e}"
+            )),
+            "{services:?}"
+        );
+        assert!(
+            services.iter().any(|s| s.contains(
+                "setAppServices:function(e){o=globalThis.__superbaSpeedMenu?.services?.(e)??e}"
+            )),
+            "{services:?}"
+        );
+        assert!(m["XyZ1"].source.contains(
+            "this.getRequestRejection=i,globalThis.__superbaSpeedMenu?.client?.(this)}setAppServerVersion("
+        ), "{}", m["XyZ1"].source);
+        assert!(
+            m["KM95"]
+                .source
+                .contains(&format!("m=((0,G.Zj)(\"4290031608\"){FORCED},f=")),
+            "{}",
+            m["KM95"].source
+        );
+        let live = &m["J8Ro"].source;
+        assert_eq!(m["J8Ro"].gates, [GateKind::PredictionLive]);
+        assert!(
+            live.contains(&format!(
+                "&&a()&&((0,e$.ie)(e,\"4290031608\"){FORCED})try{{"
+            )),
+            "{live}"
+        );
+        assert!(
+            live.contains(&format!(
+                "if(!a()||!((0,e$.ie)(e,\"4290031608\"){FORCED}||o?."
+            )),
+            "{live}"
+        );
+        // Other gates in the same function stay.
+        assert!(live.contains("!(0,e$.ie)(e,\"1248574746\")||"), "{live}");
+        assert!(
+            m["dlg1"].source.contains(&format!(
+                "({{get:e}})=>(e(m.JW,\"4290031608\"){FORCED}&&(0,u.CN)(e,(0,l.W)().enabled)&&null!=s.appServices.cumberbatch)"
+            )),
+            "{}",
+            m["dlg1"].source
+        );
+        // A launch gets only the sets it wants.
+        let speed = plan
+            .select(PatchSets {
+                speed_menu: true,
+                predictions: false,
+            })
+            .unwrap();
+        assert_eq!(
+            by_id(&speed).keys().copied().collect::<Vec<_>>(),
+            ["aB12", "cD34", "eF56"]
+        );
+        let predictions = plan
+            .select(PatchSets {
+                speed_menu: false,
+                predictions: true,
+            })
+            .unwrap();
+        assert_eq!(
+            by_id(&predictions).keys().copied().collect::<Vec<_>>(),
+            ["GaA7", "J8Ro", "KM95", "XyZ1", "dlg1"]
+        );
+        assert_eq!(speed.settle_ids(), ["aB12", "cD34", "eF56"]);
+        assert_eq!(predictions.settle_ids(), ["J8Ro"]);
+        assert_eq!(
+            plan.select(PatchSets::default()).unwrap_err().reason,
+            "nothing to patch"
+        );
+    }
+
+    #[test]
+    fn the_1103_copies_match_too() {
+        let [settings, live, composer] = v1103();
+        let text = chunk(&[&settings, &live, &composer, SERVICES_1106, CLIENT_1106]);
+        let plan = plan_from_chunks([("a.js", text.as_str())]).unwrap();
+        let m = by_id(&plan);
+        assert_eq!(
+            m.keys().copied().collect::<Vec<_>>(),
+            ["GaA7", "J8Ro", "XyZ1", "dlg1", "pqJp"]
+        );
+        assert!(
+            m["pqJp"]
+                .source
+                .contains(&format!("f2=((0,G.Zj)(\"4290031608\"){FORCED},f=")),
+            "{}",
+            m["pqJp"].source
+        );
+        assert_eq!(m["J8Ro"].source.matches(FORCED).count(), 2);
+        // Without the speed-menu gates that set is skipped, not the plan.
+        assert_eq!(
+            plan.skipped[&PatchSet::SpeedMenu],
+            "ui_access: 0 matches, requirements: 0 matches, queue_default: 0 matches, queue_explicit: 0 matches"
+        );
+        assert!(!plan.skipped.contains_key(&PatchSet::Predictions));
+        let err = plan
+            .select(PatchSets {
+                speed_menu: true,
+                predictions: false,
+            })
+            .unwrap_err();
+        assert!(
+            err.reason.starts_with("ui_access: 0 matches"),
+            "{}",
+            err.reason
+        );
+    }
+
+    #[test]
+    fn each_prediction_check_stands_on_its_own() {
+        // The live check is gone: the other two are still patched.
+        let text = chunk(&[
+            UI,
+            REQ,
+            QUEUE,
+            SETTINGS_1106,
+            COMPOSER_1106,
+            SERVICES_1106,
+            CLIENT_1106,
+        ]);
+        let plan = plan_from_chunks([("a.js", text.as_str())]).unwrap();
+        let m = by_id(&plan);
+        assert!(m.contains_key("KM95") && m.contains_key("dlg1"));
+        assert_eq!(
+            plan.skipped[&PatchSet::Predictions],
+            "prediction_live: 0 matches"
+        );
+        // The live function with one of its two checks changed: not patched.
+        let once = LIVE_1106.replacen("&&a()&&(0,e$.ie)(e,\"4290031608\")", "&&a()", 1);
+        let text = chunk(&[SETTINGS_1106, &once]);
+        let plan = plan_from_chunks([("a.js", text.as_str())]).unwrap();
+        assert!(!by_id(&plan).contains_key("J8Ro"));
+        assert_eq!(
+            plan.skipped[&PatchSet::Predictions],
+            "module J8Ro: prediction_live matches 1 times, prediction_composer: 0 matches, \
+             prediction_services: 0 matches, prediction_client: 0 matches"
+        );
+        // A settings check without its context is not ours.
+        let other = SETTINGS_1106.replace("\"cumberbatch-availability\"", "\"other\"");
+        let text = chunk(&[&other, COMPOSER_1106]);
+        let plan = plan_from_chunks([("a.js", text.as_str())]).unwrap();
+        assert!(!by_id(&plan).contains_key("KM95"));
+        // The composer check with another getter: refused.
+        let getter = COMPOSER_1106.replace("=>e(m.JW", "=>x(m.JW");
+        let text = chunk(&[SETTINGS_1106, &getter]);
+        let plan = plan_from_chunks([("a.js", text.as_str())]).unwrap();
+        assert!(!by_id(&plan).contains_key("dlg1"));
+    }
+
+    #[test]
+    fn the_service_and_the_client_go_together() {
+        // Without the client the service swap is left out too, and the other
+        // way round.
+        let text = chunk(&[SETTINGS_1106, SERVICES_1106]);
+        let plan = plan_from_chunks([("a.js", text.as_str())]).unwrap();
+        assert!(!by_id(&plan).contains_key("GaA7"));
+        assert!(
+            plan.skipped[&PatchSet::Predictions].ends_with(
+                "prediction_services: needs prediction_client, prediction_client: 0 matches"
+            ),
+            "{:?}",
+            plan.skipped
+        );
+        let text = chunk(&[SETTINGS_1106, CLIENT_1106]);
+        let plan = plan_from_chunks([("a.js", text.as_str())]).unwrap();
+        assert!(!by_id(&plan).contains_key("XyZ1"));
+        assert!(
+            plan.skipped[&PatchSet::Predictions].ends_with(
+                "prediction_services: 0 matches, prediction_client: needs prediction_services"
+            ),
+            "{:?}",
+            plan.skipped
+        );
+        // A constructor storing other fields is not the client.
+        let other = CLIENT_1106.replace(
+            "this.useHostRequestScheduler=n",
+            "this.useHostRequestScheduler=r",
+        );
+        let text = chunk(&[SETTINGS_1106, SERVICES_1106, &other]);
+        let plan = plan_from_chunks([("a.js", text.as_str())]).unwrap();
+        assert!(!by_id(&plan).contains_key("XyZ1") && !by_id(&plan).contains_key("GaA7"));
+    }
+
+    #[test]
+    fn a_prediction_check_in_two_modules_or_a_speed_module_is_skipped() {
+        let twice = COMPOSER_1106.replacen("dlg1", "zz99", 1);
+        let text = chunk(&[SETTINGS_1106, COMPOSER_1106, &twice]);
+        let plan = plan_from_chunks([("a.js", text.as_str())]).unwrap();
+        let m = by_id(&plan);
+        assert!(!m.contains_key("dlg1") && !m.contains_key("zz99"));
+        assert!(m.contains_key("KM95"));
+        assert!(
+            plan.skipped[&PatchSet::Predictions].contains("prediction_composer: 2 matches"),
+            "{:?}",
+            plan.skipped
+        );
+        // The settings check inside the speed menu's module: the speed menu
+        // keeps it, the prediction check is left out.
+        let ui = UI.replacen(
+            "return{serviceTierAccess:",
+            "let m=(0,G.Zj)(\"4290031608\"),f=Y.appServices.cumberbatch,t2=[\"cumberbatch-availability\"],a2=async()=>f.isEnabledByRemoteConfig();return{serviceTierAccess:",
+            1,
+        );
+        let text = chunk(&[&ui, REQ, QUEUE]);
+        let plan = plan_from_chunks([("a.js", text.as_str())]).unwrap();
+        assert_eq!(by_id(&plan)["aB12"].gates, [GateKind::UiAccess]);
+        assert!(!by_id(&plan)["aB12"].source.contains(FORCED));
+        assert!(
+            plan.skipped[&PatchSet::Predictions]
+                .starts_with("module aB12: prediction_settings shares it with the speed menu"),
+            "{:?}",
+            plan.skipped
+        );
     }
 
     #[test]

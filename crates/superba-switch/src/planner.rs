@@ -56,6 +56,9 @@ pub(crate) struct PlanContext {
     /// Launch the app with its speed menu for API keys
     /// ([`superba_core::Settings::app_speed_menu`]).
     pub app_speed_menu: bool,
+    /// Launch the app with forced composer predictions
+    /// ([`superba_core::Settings::app_predictions`]).
+    pub app_predictions: bool,
     pub restart_app: bool,
     pub rollback_migration: Option<String>,
     pub rollback_remote: Option<TargetId>,
@@ -128,6 +131,7 @@ impl PlanContext {
             install_id: None,
             safe_mode,
             app_speed_menu: false,
+            app_predictions: false,
             restart_app: false,
             rollback_migration: None,
             rollback_remote: None,
@@ -1294,6 +1298,7 @@ impl Switcher {
                 install_id: dest.install_id,
                 safe_mode: set.settings.safe_mode,
                 app_speed_menu: set.settings.app_speed_menu,
+                app_predictions: set.settings.app_predictions,
                 restart_app: dest.restart_app,
                 rollback_migration: dest.rollback_migration,
                 rollback_remote: dest.rollback_remote,

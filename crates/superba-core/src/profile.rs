@@ -355,6 +355,14 @@ pub struct Settings {
     /// API-key sign-in like a ChatGPT one for the speed tier. On by default.
     #[serde(default = "default_true", skip_serializing_if = "is_true")]
     pub app_speed_menu: bool,
+    /// Force ChatGPT's composer predictions (it suggests the next message
+    /// after a reply; Tab accepts it): when Superba starts the app (with its
+    /// debugging port, so not in safe mode) the window reads the prediction
+    /// gate as on. The app still asks chatgpt.com whether predictions are on
+    /// for the signed-in ChatGPT account, so this only helps with a ChatGPT
+    /// sign-in (mixed login in router mode included). On by default.
+    #[serde(default = "default_true", skip_serializing_if = "is_true")]
+    pub app_predictions: bool,
     /// Notifications to a phone or chat (GH#12). Off by default; secrets of the
     /// channels live in the key store.
     #[serde(skip_serializing_if = "crate::NotifySettings::is_default")]
@@ -480,6 +488,7 @@ impl Default for Settings {
             reduce_motion: false,
             open_app_on_start: false,
             app_speed_menu: true,
+            app_predictions: true,
             notify: crate::NotifySettings::default(),
             analytics_preset_dropped: true,
             analytics_reapply: None,

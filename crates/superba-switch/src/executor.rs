@@ -1649,6 +1649,7 @@ impl Run<'_> {
             home_override: self.session.as_ref().and_then(|s| s.home_override.clone()),
             ready_timeout_ms: 0,
             speed_menu: self.pc.app_speed_menu,
+            predictions: self.pc.app_predictions,
         };
         // The app's Codex: a pin plan's new pin (not when reopening after a
         // cancel), else the configured one.

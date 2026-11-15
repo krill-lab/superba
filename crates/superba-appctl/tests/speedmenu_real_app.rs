@@ -26,6 +26,9 @@ fn plans_the_real_bundle() {
     let outcome = plan::plan_for_asar(&path).unwrap();
     eprintln!("planned in {:?}", started.elapsed());
     let plan = outcome.unwrap_or_else(|n| panic!("no plan: {}", n.reason));
+    for (set, why) in &plan.skipped {
+        eprintln!("skipped {set:?}: {why}");
+    }
     for m in &plan.modules {
         eprintln!(
             "{} gates={:?} len={} patched_len={}",
@@ -150,7 +153,8 @@ fn registers_in_the_real_window() {
         eprintln!("{outcome:?}");
         assert!(!outcome.late, "{outcome:?}");
         assert!(outcome.mismatched.is_empty(), "{outcome:?}");
-        for id in ["ipV4", "PAzX", "K6lt"] {
+        // The speed menu, and the prediction modules loaded at start.
+        for id in ["ipV4", "PAzX", "K6lt", "GaA7", "x2vX"] {
             assert!(outcome.patched.contains_key(id), "{id}: {outcome:?}");
         }
     });

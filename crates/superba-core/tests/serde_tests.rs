@@ -463,6 +463,21 @@ fn the_window_choices_persist_and_stay_out_of_a_default_file() {
 }
 
 #[test]
+fn forced_predictions_are_on_unless_turned_off() {
+    let default = serde_json::to_value(Settings::default()).unwrap();
+    assert!(default.get("app_predictions").is_none());
+    let old: Settings = serde_json::from_value(json!({"countdown_secs": 3})).unwrap();
+    assert!(old.app_predictions);
+    let off = Settings {
+        app_predictions: false,
+        ..Settings::default()
+    };
+    let value = serde_json::to_value(&off).unwrap();
+    assert_eq!(value["app_predictions"], false);
+    assert_eq!(serde_json::from_value::<Settings>(value).unwrap(), off);
+}
+
+#[test]
 fn the_app_speed_menu_is_on_unless_turned_off() {
     let default = serde_json::to_value(Settings::default()).unwrap();
     assert!(default.get("app_speed_menu").is_none());

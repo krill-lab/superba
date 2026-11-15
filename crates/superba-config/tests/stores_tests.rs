@@ -110,6 +110,7 @@ fn user_set() -> ProfileSet {
         reduce_motion: true,
         open_app_on_start: true,
         app_speed_menu: false,
+        app_predictions: false,
         notify: Default::default(),
         analytics_preset_dropped: true,
         analytics_reapply: None,
