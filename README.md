@@ -113,6 +113,12 @@ Geist look).
 - **Restore.** Back to the *original configuration* (byte for byte when nothing
   else changed), to your *official ChatGPT login* (stashed encrypted when
   Superba first replaced it), or to any earlier switch.
+- **Several ChatGPT accounts.** Keep more than one official ChatGPT login
+  (browser sign-in or "save current login", encrypted like the stash), see
+  each one's five-hour and weekly Codex limits and reset times, and switch
+  between them from Providers or the Overview through the usual preview,
+  restart and rollback (this computer only). Limits are read every minute with
+  Codex's own client in a private, throwaway Codex home.
 - **Session provider migration.** The app only lists conversations whose
   provider matches the current one. Users of the old Krill tutorial
   (`model_provider = "krill"`) can migrate those sessions to `openai` (and back),
@@ -616,6 +622,7 @@ accepts `--json` (exactly one JSON document on stdout) and `--locale en|zh-CN`.
 | `spb usage [log] [--provider P] [--source router\|rollout\|ccs\|ai-toolbox]` / `spb usage stats [--by model\|provider\|day\|session] [--source …]` | this computer's Codex requests (the router's log merged with Codex's session files; works without the router); totals per provider (Krill, each custom site) with each of its lines |
 | `spb account [--usage] [--days N] [--refresh]` | balance, plan and expiry; daily cost and per-model usage (Krill) |
 | `spb restore [original\|official\|generation] [--take-over]` | restore (what another tool changed is kept unless `--take-over`) |
+| `spb chatgpt list \| add \| save \| use ACCOUNT \| remove ACCOUNT \| quota [ACCOUNT]` | saved official ChatGPT accounts: add (browser sign-in), save the current login, switch, forget, five-hour and weekly limits |
 | `spb hand-off [--to cc-switch\|ai-toolbox\|other]` | let another tool manage Codex: release what Superba owns, keep the other tool's changes and a backup |
 | `spb launch [--restart]` | open (or fully restart) the desktop app through Superba, so it can be hot-switched |
 | `spb sessions [scan \| migrate --from krill \| rollback ID]` | session providers |

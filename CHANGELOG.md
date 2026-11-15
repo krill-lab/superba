@@ -5,6 +5,11 @@ All notable changes to Superba are documented here. The format follows
 [Semantic Versioning](https://semver.org/): later releases increment the patch
 number; the minor number changes only for breaking changes.
 
+## [Unreleased]
+
+### Added
+- Several official ChatGPT accounts (GitHub PR #20 by nm6566, issue #21): Providers → Official ChatGPT login lists the saved logins with their subscription and the five-hour and weekly Codex limits left (rounded bars coloured by what is left, reset times; a weekly-only account leaves the five-hour column empty). Add an account through the browser sign-in or save the current login; switch to one from that page or from the Overview's provider menu, through the usual preview, turn checks, restart (ChatGPT restarts to sign in with the other account), verification and rollback. The login Superba saved before is the first account, nothing to migrate. Logins stay encrypted in Superba's vault; limits are read every minute (also while Superba is in the tray) with Codex's own client in a private, disposable Codex home, one account at a time, never during a switch, keeping the last result with its time when a read fails. `spb chatgpt list|add|save|use|remove|quota` does the same from a terminal.
+
 ## [0.1.2-alpha.1] - 2026-11-15
 
 ### Added
