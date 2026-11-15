@@ -355,6 +355,15 @@ fn measure(root: &Path) -> (u64, u64) {
 
 /// Where the data of `home` is, with sizes (walks the directories).
 pub fn inspect(home: &CodexHome, data: &DataDir) -> CodexDataLocation {
+    locate_with(home, data, true)
+}
+
+/// [`inspect`] without sizes (no directory walk; for doctor checks).
+pub fn locate(home: &CodexHome, data: &DataDir) -> CodexDataLocation {
+    locate_with(home, data, false)
+}
+
+fn locate_with(home: &CodexHome, data: &DataDir, sizes: bool) -> CodexDataLocation {
     let record = read_record(data).unwrap_or_default();
     let entry = record.homes.get(&home_key(home.root()));
     let dirs: Vec<CodexDataDir> = CODEX_DATA_DIRS
@@ -363,6 +372,7 @@ pub fn inspect(home: &CodexHome, data: &DataDir) -> CodexDataLocation {
             let path = home.root().join(name);
             let placement = placement(&path, name, home.root(), entry);
             let (bytes, files) = match &placement {
+                _ if !sizes => (0, 0),
                 CodexDirPlacement::InHome => measure(&path),
                 CodexDirPlacement::Linked {
                     reachable: true, ..

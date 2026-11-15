@@ -849,4 +849,26 @@ impl SwitchService for LocatedService {
     async fn data_cleanup(&self) -> Result<superba_core::data::DataCleanupReport> {
         self.cleanup().await
     }
+
+    async fn codex_data_where(&self) -> Result<superba_core::data::CodexDataLocation> {
+        let (service, _lock) = self.read().await?;
+        service.codex_data_where().await
+    }
+
+    async fn codex_data_plan(
+        &self,
+        directory: Option<PathBuf>,
+    ) -> Result<superba_core::data::CodexDataPlan> {
+        let (service, _lock) = self.read().await?;
+        service.codex_data_plan(directory).await
+    }
+
+    async fn codex_data_move(
+        &self,
+        directory: Option<PathBuf>,
+        progress: superba_core::data::DataMoveProgressSink,
+    ) -> Result<superba_core::data::CodexDataMoveReport> {
+        let (service, _lock) = self.read().await?;
+        service.codex_data_move(directory, progress).await
+    }
 }

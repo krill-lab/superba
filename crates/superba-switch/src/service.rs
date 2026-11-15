@@ -814,6 +814,7 @@ impl Switcher {
                 text("switch.doctor.journal_pending"),
             ));
         }
+        out.extend(crate::codex_data::doctor(self).await);
         if let Ok(report) = d.sessions.scan(&home).await {
             let current = state
                 .as_ref()
@@ -943,6 +944,10 @@ impl Switcher {
             Ok(_) => {}
             Err(e) if e.is_not_implemented() => {}
             Err(e) => tracing::warn!(error = %e, "session migration recovery failed"),
+        }
+        // An interrupted move of Codex's session data (GitHub issue 15).
+        if let Some(text) = crate::codex_data::recover(self) {
+            report.notices.push(superba_core::Notice::warning(text));
         }
         let journal = SwitchJournal::new(&d.ctx.data_dir);
         for mut entry in journal.unfinished()? {
