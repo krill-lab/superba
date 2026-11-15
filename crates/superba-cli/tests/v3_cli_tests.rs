@@ -403,6 +403,40 @@ async fn router_stats_line_record_and_clear_change_the_stats_settings() {
     );
 }
 
+/// PR #25 (故障转移开关): `spb router failover on|off` keeps the other rules;
+/// without a state it shows the current one; `spb router status` names it.
+#[tokio::test]
+async fn router_failover_turns_failover_on_and_off() {
+    let service = service();
+    let rules = superba_core::RouterFailover {
+        cooldown_secs: 9,
+        ..Default::default()
+    };
+    service.v2.lock().unwrap().router.failover = Some(rules.clone());
+    let (code, stdout, stderr) = run(&service, &["router", "failover", "off"]).await;
+    transcript("spb router failover off", code, &stdout, &stderr);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(stdout.contains("Failover is off"), "{stdout}");
+    let saved = service.v2.lock().unwrap().router.failover.clone().unwrap();
+    assert_eq!(
+        saved,
+        superba_core::RouterFailover {
+            enabled: false,
+            ..rules.clone()
+        }
+    );
+    let (code, stdout, _) = run(&service, &["router", "failover"]).await;
+    assert_eq!(code, 0);
+    assert!(stdout.contains("Failover is off"), "{stdout}");
+    let (_, stdout, _) = run(&service, &["router", "status"]).await;
+    assert!(stdout.contains("Failover to other lines"), "{stdout}");
+    let (_, stdout, _) = run_zh(&service, &["router", "failover", "on"]).await;
+    assert!(stdout.contains("故障转移已开启"), "{stdout}");
+    assert_eq!(service.v2.lock().unwrap().router.failover, Some(rules));
+    use clap::Parser;
+    assert!(superba_cli::Cli::try_parse_from(["spb", "router", "failover", "maybe"]).is_err());
+}
+
 // --- versions, pin, app ---------------------------------------------------------------
 
 #[tokio::test]

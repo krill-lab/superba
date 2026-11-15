@@ -637,6 +637,15 @@ impl SwitchService for FakeService {
         v2.router.settings.stats = settings;
         Ok(v2.router.clone())
     }
+    async fn router_set_failover(
+        &self,
+        failover: superba_core::RouterFailover,
+    ) -> Result<RouterView> {
+        self.record("router_set_failover")?;
+        let mut v2 = self.v2.lock().unwrap();
+        v2.router.failover = Some(failover);
+        Ok(v2.router.clone())
+    }
     async fn session_titles(
         &self,
         keys: Vec<String>,

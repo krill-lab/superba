@@ -807,6 +807,9 @@ pub fn recovery_text(
     failover: Option<&superba_core::RouterFailover>,
 ) -> String {
     let f = failover.cloned().unwrap_or_default();
+    if !f.enabled {
+        return tr.t("router.preference.no_failover");
+    }
     let idle = if f.sticky_idle_minutes % 60 == 0 {
         tr.f(
             "router.preference.hours",
