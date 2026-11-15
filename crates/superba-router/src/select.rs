@@ -9,6 +9,11 @@
 //! once is most often this computer's network blipping, and the breakers are
 //! stale as soon as it is back, so a request is refused only after each line
 //! failed it.
+//!
+//! With failover off ([`crate::Tuning::failover_enabled`]) a request gets
+//! only the first of that order, whether its breaker is open or not: the
+//! conversation's line, else the first eligible line. Its failure goes back to
+//! the client and no other line or member is tried.
 
 use std::time::Instant;
 
@@ -35,6 +40,10 @@ pub trait Topology {
     fn available(&self, member: usize, line: usize, now: Instant) -> bool;
     /// When an open line turns half-open.
     fn reopens_at(&self, member: usize, line: usize) -> Option<Instant>;
+    /// A failed attempt moves on to the next candidate (see the module docs).
+    fn failover(&self) -> bool {
+        true
+    }
 }
 
 /// The attempt order for a request pinned to `pin` (if any).
@@ -63,6 +72,10 @@ pub fn candidates(topo: &dyn Topology, pin: Option<Pin>, now: Instant) -> Vec<Ca
         for line in 0..topo.lines(member) {
             order.push(Candidate { member, line });
         }
+    }
+    if !topo.failover() {
+        order.truncate(1);
+        return order;
     }
     let available: Vec<Candidate> = order
         .iter()

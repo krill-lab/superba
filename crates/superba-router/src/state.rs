@@ -416,6 +416,9 @@ impl Topology for View<'_> {
     fn reopens_at(&self, member: usize, line: usize) -> Option<Instant> {
         lock(&self.generation.members[member].lines[line].health).open_until()
     }
+    fn failover(&self) -> bool {
+        self.generation.config.tuning.failover_enabled
+    }
 }
 
 /// Totals since start.

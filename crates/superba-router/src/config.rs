@@ -262,6 +262,7 @@ impl Tuning {
     /// The failover and recovery settings in effect.
     pub fn failover(&self) -> superba_core::RouterFailover {
         superba_core::RouterFailover {
+            enabled: self.failover_enabled,
             cooldown_secs: u32::try_from(self.breaker_base_ms / 1000).unwrap_or(u32::MAX),
             max_cooldown_secs: u32::try_from(self.breaker_max_ms / 1000).unwrap_or(u32::MAX),
             failover_statuses: self.failover_statuses.clone(),
@@ -273,6 +274,7 @@ impl Tuning {
     /// Apply failover and recovery settings (validated first).
     pub fn set_failover(&mut self, f: &superba_core::RouterFailover) -> Result<()> {
         f.validate()?;
+        self.failover_enabled = f.enabled;
         self.breaker_base_ms = u64::from(f.cooldown_secs) * 1000;
         self.breaker_max_ms = u64::from(f.max_cooldown_secs) * 1000;
         let mut statuses = f.failover_statuses.clone();
@@ -309,6 +311,13 @@ pub struct Tuning {
     /// failure of the line). Every other status is passed to the client. An
     /// edge interception always fails over.
     pub failover_statuses: Vec<u16>,
+    /// A request whose line fails is tried on the next line or member. Off,
+    /// a request gets one line ([`crate::select`]): its conversation's, else
+    /// the first eligible one in order, even while that line cools down. A
+    /// failure still counts against the line (breakers, probes and status as
+    /// usual) and goes back to the client as the router's error; retries on
+    /// the same line (a body resent uncompressed, ciphertexts left out) stay.
+    pub failover_enabled: bool,
     /// A conversation pinned to a fallback member returns to an earlier
     /// member once one of its lines is available again (off: it stays on the
     /// fallback until it has been idle for [`Tuning::sticky_ttl_secs`]).
@@ -358,6 +367,7 @@ impl Default for Tuning {
             breaker_base_ms: 5_000,
             breaker_max_ms: 60_000,
             failover_statuses: DEFAULT_FAILOVER_STATUSES.to_vec(),
+            failover_enabled: true,
             return_to_preferred: false,
             probe_timeout_ms: 5_000,
             active_probes: true,

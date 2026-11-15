@@ -299,7 +299,9 @@ pub(super) async fn messages(
         if let Some(t) = &mut tracker {
             t.attempt_failed(a.c, status, &reason, started.elapsed());
         }
-        line.counters.failovers_away.fetch_add(1, Ordering::Relaxed);
+        if generation.config.tuning.failover_enabled {
+            line.counters.failovers_away.fetch_add(1, Ordering::Relaxed);
+        }
         failures.push(format!("{label}: {reason}"));
         if i + 1 < total {
             shared.totals.failovers.fetch_add(1, Ordering::Relaxed);

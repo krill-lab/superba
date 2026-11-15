@@ -1064,13 +1064,20 @@ async fn failover_rules_persist_and_survive_a_new_manager() {
         .await
         .unwrap();
     let rules = superba_core::RouterFailover {
+        enabled: false,
         cooldown_secs: 7,
         max_cooldown_secs: 900,
         ..Default::default()
     };
+    let admin = superba_router::client::AdminClient::from_runtime(manager.paths()).unwrap();
+    assert!(admin.status().await.unwrap().failover);
     assert!(
         manager.set_failover(&rules).await.unwrap(),
         "the running router reloads"
+    );
+    assert!(
+        !admin.status().await.unwrap().failover,
+        "the reloaded router has failover off"
     );
     assert!(
         !manager.set_failover(&rules).await.unwrap(),

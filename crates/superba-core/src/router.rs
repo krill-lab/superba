@@ -533,6 +533,10 @@ pub struct RouterConversion {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RouterFailover {
+    /// A request whose line fails is tried on the next line or member. Off:
+    /// it goes to one line only (its conversation's, else the first in order,
+    /// cooling down or not) and that line's error goes back to the tool.
+    pub enabled: bool,
     /// First cooldown of a failed line, in seconds; doubles on each failure.
     pub cooldown_secs: u32,
     /// Longest cooldown, in seconds.
@@ -549,6 +553,7 @@ pub struct RouterFailover {
 impl Default for RouterFailover {
     fn default() -> Self {
         Self {
+            enabled: true,
             cooldown_secs: 5,
             max_cooldown_secs: 60,
             failover_statuses: vec![502, 503, 504],

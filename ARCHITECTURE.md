@@ -493,6 +493,28 @@ member and the failed earlier lines, retained as an explanation after recovery.
 Concurrent conversations can use different lines; this observation is never
 used to decide which line a click promotes.
 
+**Failover off** (PR #25; `RouterFailover::enabled`, `Tuning::failover_enabled`,
+on by default and for configurations written before it existed). The Router
+page's 「故障转移」 switch and `spb router failover on|off` save it like the
+other failover rules (a reload, no Codex restart). Off, every ingress (Codex
+HTTP and WebSocket, Claude Code, OpenAI, Gemini) gives a request one attempt:
+the first of the usual order (`select::candidates`, `claude::route::attempts`),
+that is its conversation's pinned line, else the first eligible line in member
+and line order, **whether or not its breaker is open**. When it fails the
+request is not tried on another line or member: Codex gets the answer it gets
+today when every line failed (502 `router_unavailable` naming the line and its
+error), and statuses outside the failover list are passed through as always,
+so Codex's own retries go to the same line. Breakers, health probes, outage
+reports and the Router page's line states work as before (a failing line is
+shown down) but never move a request; failover counters stay at zero.
+Retries on the same line are kept: a zstd body refused and resent plain,
+ciphertexts left out and the body resent. Eligibility is not failover and
+still applies (members that cannot serve the protocol, WebSocket, a compacted
+conversation's owner); a WebSocket handshake that fails gets the router's 426
+and Codex continues over HTTP on the same line. `count_tokens` asks the first
+line only and estimates locally otherwise. Model tests name their line and are
+unaffected. The admin status reports the running setting (`RouterStatus::failover`).
+
 **Upstream transports per line** (user request 14). `LineProber::probe_transports`
 checks a line without a billed turn: the Responses WebSocket by its handshake
 alone (101 = supported, closed at once with a close frame; 426 or no upgrade =

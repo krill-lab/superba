@@ -46,11 +46,38 @@ impl Selection {
         pin: Option<Pin>,
         now: Instant,
     ) -> Vec<Candidate> {
+        self.order(g, route, pin, now, g.config.tuning.failover_enabled)
+    }
+
+    /// Every candidate, as with failover on: a model test picks its line out
+    /// of them whatever the failover setting is.
+    pub(crate) fn all_candidates(
+        &self,
+        g: &Generation,
+        route: &Route,
+        pin: Option<Pin>,
+        now: Instant,
+    ) -> Vec<Candidate> {
+        self.order(g, route, pin, now, true)
+    }
+
+    fn order(
+        &self,
+        g: &Generation,
+        route: &Route,
+        pin: Option<Pin>,
+        now: Instant,
+        failover: bool,
+    ) -> Vec<Candidate> {
         struct Selected<'a> {
             view: View<'a>,
             selection: &'a Selection,
+            failover: bool,
         }
         impl Topology for Selected<'_> {
+            fn failover(&self) -> bool {
+                self.failover
+            }
             fn members(&self) -> usize {
                 self.view.members()
             }
@@ -76,6 +103,7 @@ impl Selection {
                     route,
                 },
                 selection: self,
+                failover,
             },
             pin,
             now,
