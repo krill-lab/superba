@@ -248,7 +248,7 @@ pub fn model(
                 _ => None,
             })
             .unwrap_or_else(|| tr.t("overview.account.official"));
-        provider.menu = !data.providers().is_empty();
+        provider.menu = !data.providers().is_empty() || !data.chatgpt_accounts().is_empty();
     } else if let Some(h) = overview.config.as_ref().and_then(|c| c.handed_off.as_ref()) {
         // GH#5: another tool manages Codex; Superba owns nothing.
         provider.title = tr.f(
@@ -256,7 +256,7 @@ pub fn model(
             &[("tool", &crate::external::tool_name(cx, &h.to))],
         );
         provider.detail = tr.t("overview.hero.handed_off_detail");
-        provider.menu = !data.providers().is_empty();
+        provider.menu = !data.providers().is_empty() || !data.chatgpt_accounts().is_empty();
     } else if let (Some(p), Some(s)) = (profile, &site) {
         let name = crate::app::provider_name(tr, p, s);
         let line = super::lines::effective(cx, snap)
@@ -278,7 +278,7 @@ pub fn model(
         provider.ghost = true;
         provider.title = tr.t("overview.hero.no_provider");
         provider.detail = tr.t("overview.hero.no_provider_detail");
-        provider.menu = !data.providers().is_empty();
+        provider.menu = !data.providers().is_empty() || !data.chatgpt_accounts().is_empty();
     }
     provider.tip = tr.t(if provider.ghost && data.providers().is_empty() {
         "overview.hero.start_wizard"
@@ -930,6 +930,34 @@ pub(super) fn provider_popover(
                 }
                 ui.separator();
             }
+            let accounts = cx.data.chatgpt_accounts();
+            if !accounts.is_empty() {
+                // PR #20: the saved ChatGPT accounts, the one in use selected.
+                ui.label(Text::caption(cx.tr.t("chatgpt.title"), cx.pal));
+                let in_use = cx.data.chatgpt_account_in_use().map(|a| a.id.clone());
+                for account in accounts {
+                    let selected = in_use.as_deref() == Some(account.id.as_str());
+                    let right = cx
+                        .data
+                        .chatgpt_quota
+                        .get(&account.id)
+                        .and_then(|r| r.value.as_ref())
+                        .map(|q| quota_short(cx, q))
+                        .unwrap_or_default();
+                    if row(
+                        ui,
+                        !cx.busy && !selected,
+                        selected,
+                        account.email.clone(),
+                        right,
+                    ) {
+                        out.push(Action::Restore(superba_core::RestoreTarget::Account {
+                            identity: account.id.clone(),
+                        }));
+                    }
+                }
+                ui.separator();
+            }
             ui.label(Text::caption(cx.tr.t("overview.other_providers"), cx.pal));
             let active = cx.data.active_profile().map(|p| p.id.clone());
             if !cx.data.official_active()
@@ -989,6 +1017,20 @@ pub(super) fn provider_popover(
                 out.push(Action::Go(Page::Providers));
             }
         });
+}
+
+/// "5 h 60% · week 90%": the reported windows of an account's limits.
+fn quota_short(cx: &Cx<'_>, q: &superba_core::ChatGptQuota) -> String {
+    let pct = |w: &superba_core::ChatGptWindow| format!("{:.0}", w.remaining);
+    match (q.five_hour.as_ref(), q.weekly.as_ref()) {
+        (Some(f), Some(w)) => cx.tr.f(
+            "chatgpt.short_both",
+            &[("five", &pct(f)), ("weekly", &pct(w))],
+        ),
+        (Some(f), None) => cx.tr.f("chatgpt.short_five", &[("five", &pct(f))]),
+        (None, Some(w)) => cx.tr.f("chatgpt.short_weekly", &[("weekly", &pct(w))]),
+        (None, None) => String::new(),
+    }
 }
 
 /// Before a switch is chosen (user bug 61): whether it can be hot, and while

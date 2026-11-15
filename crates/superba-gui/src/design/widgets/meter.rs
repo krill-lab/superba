@@ -106,3 +106,62 @@ impl Widget for SplitBar {
         response
     }
 }
+
+/// A rounded bar of the share of a subscription quota that is left (PR #20):
+/// green above 20 %, amber above 10 %, red at 10 % or less.
+#[must_use = "add it with ui.add(..)"]
+pub struct QuotaBar {
+    remaining: f64,
+    width: Option<f32>,
+    height: f32,
+}
+
+impl QuotaBar {
+    /// A bar for `remaining` percent (0..=100).
+    pub fn new(remaining: f64) -> Self {
+        Self {
+            remaining: if remaining.is_finite() {
+                remaining.clamp(0.0, 100.0)
+            } else {
+                0.0
+            },
+            width: None,
+            height: 6.0,
+        }
+    }
+
+    /// A fixed width (default: the available width).
+    pub fn width(mut self, width: f32) -> Self {
+        self.width = Some(width);
+        self
+    }
+
+    /// The fill colour for `remaining` percent.
+    pub fn color(pal: &Palette, remaining: f64) -> Color32 {
+        if remaining <= 10.0 {
+            pal.red
+        } else if remaining <= 20.0 {
+            pal.amber
+        } else {
+            pal.green
+        }
+    }
+}
+
+impl Widget for QuotaBar {
+    fn ui(self, ui: &mut Ui) -> Response {
+        let pal = Palette::of(ui.ctx());
+        let width = self.width.unwrap_or_else(|| ui.available_width());
+        let (rect, response) = ui.allocate_exact_size(vec2(width, self.height), Sense::hover());
+        let r = (self.height / 2.0) as u8;
+        ui.painter().rect_filled(rect, r, pal.active);
+        let share = (self.remaining / 100.0) as f32;
+        if share > 0.0 {
+            let mut fill = rect;
+            fill.set_width((rect.width() * share).max(self.height));
+            ui.painter()
+                .rect_filled(fill, r, Self::color(pal, self.remaining));
+        }
+        response
+    }
+}

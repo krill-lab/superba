@@ -49,7 +49,7 @@ pub use dialog::{
 };
 pub use key_input::KeyInput;
 pub use latency::{Latency, LatencyBadge};
-pub use meter::{Meter, SplitBar};
+pub use meter::{Meter, QuotaBar, SplitBar};
 pub use segmented::{SegmentLayout, Segmented};
 pub use status::{Status, StatusDot};
 pub use table::Table;

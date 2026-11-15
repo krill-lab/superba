@@ -23,6 +23,7 @@
 pub mod account;
 mod actions;
 mod add;
+pub mod chatgpt;
 mod compaction;
 mod connection;
 mod detail;
@@ -155,6 +156,8 @@ pub struct State {
     pub(crate) disable_line: Option<(ProfileId, LineId)>,
     /// Mixed login on the official login's detail.
     pub(crate) mixed: mixed::MixedLogin,
+    /// Saved ChatGPT accounts on the official login's detail (PR #20).
+    pub(crate) chatgpt: chatgpt::Accounts,
 }
 
 impl std::fmt::Debug for State {
@@ -168,6 +171,22 @@ impl std::fmt::Debug for State {
 }
 
 impl State {
+    /// A ChatGPT sign-in waits in the browser (the shell pauses limits reads).
+    pub fn chatgpt_signing_in(&self) -> bool {
+        self.chatgpt.signing_in()
+    }
+
+    /// The sign-in page of a waiting ChatGPT sign-in.
+    pub fn chatgpt_sign_in_url(&self) -> Option<&str> {
+        self.chatgpt.sign_in_url()
+    }
+
+    /// Collect the answers of the ChatGPT accounts' tasks while another page
+    /// shows or the window is hidden; `true` while one runs.
+    pub fn chatgpt_poll(&mut self, tr: &crate::i18n::Tr, out: &mut Vec<Action>) -> bool {
+        self.chatgpt.poll(tr, out)
+    }
+
     /// A dialog of this page is open (the shell leaves Enter / Escape to it).
     pub fn is_modal_open(&self) -> bool {
         self.add.is_some()

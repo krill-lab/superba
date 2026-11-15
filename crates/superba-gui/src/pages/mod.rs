@@ -378,6 +378,8 @@ impl Action {
 pub enum Action {
     /// Navigate.
     Go(Page),
+    /// Read this saved ChatGPT account's limits next (PR #20).
+    RefreshChatGptQuota(String),
     /// Reload overview, profiles, sites.
     Refresh,
     /// Probe the lines of a site.
@@ -630,6 +632,9 @@ pub struct Data {
     pub update_inventory_count: Option<u32>,
     /// Enabled notifications have missing, untrusted or unreadable hooks.
     pub notify_hooks_attention: bool,
+    /// Limits of the saved ChatGPT accounts, read by the shell on its own
+    /// timer (PR #20; [`crate::quota`]).
+    pub chatgpt_quota: crate::quota::QuotaBoard,
 }
 
 /// Superba's own paths, shown on Diagnostics and opened from Preferences.
@@ -738,6 +743,22 @@ impl Data {
     /// The applied site (official login included).
     pub fn active_site(&self) -> Option<Site> {
         self.site(self.active_site_id()?)
+    }
+
+    /// The saved official ChatGPT logins of this computer (PR #20).
+    pub fn chatgpt_accounts(&self) -> &[superba_core::ChatGptAccount] {
+        self.overview
+            .value
+            .as_ref()
+            .map_or(&[], |o| o.chatgpt_accounts.as_slice())
+    }
+
+    /// The saved ChatGPT account Codex uses now (the official login applied).
+    pub fn chatgpt_account_in_use(&self) -> Option<&superba_core::ChatGptAccount> {
+        if !self.official_active() {
+            return None;
+        }
+        self.chatgpt_accounts().iter().find(|a| a.active)
     }
 
     /// The official ChatGPT login is applied.
