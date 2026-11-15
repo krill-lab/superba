@@ -30,9 +30,8 @@ fn settings() -> Settings {
 #[test]
 fn channels_test_button_and_hooks() {
     let service = Arc::new(FakeService::new(FakeOptions::default()));
-    // Tall enough for the whole section below the scrolled-to title (the
-    // General section above it is longer on Windows).
-    let mut h = Harness::new([1280.0, 8000.0], Locale::ZhCn, service.clone(), false);
+    // Tall enough for the whole section below the scrolled-to title.
+    let mut h = Harness::new([1280.0, 4800.0], Locale::ZhCn, service.clone(), false);
     let mut prefs = settings();
     let mut state = notify::State::default();
     // The palette's "Notifications" scrolls the section into view.
@@ -52,6 +51,35 @@ fn channels_test_button_and_hooks() {
         },
         |f| f.has("My phone") && f.has("在 Codex 中信任"),
     );
+    // The section scrolls into view with an animation: wait until the rows
+    // stop moving, or the click below lands where the button used to be
+    // (slower frames on Windows CI).
+    let mut f = f;
+    let mut settled = 0;
+    for _ in 0..600 {
+        let before = f.find("My phone");
+        f = h.frame(|ui, cx, out| {
+            superba::show(
+                ui,
+                cx,
+                SuperbaSection::Notify,
+                &mut superba::State::default(),
+                &mut prefs,
+                &mut state,
+                &mut superba_gui::pages::superba::updates::State::default(),
+                out,
+            )
+        });
+        if before.is_some() && f.find("My phone") == before {
+            settled += 1;
+            if settled == 3 {
+                break;
+            }
+        } else {
+            settled = 0;
+        }
+    }
+    assert_eq!(settled, 3, "the notifications section kept moving");
     for want in [
         "通知",
         "发送通知",
@@ -72,13 +100,20 @@ fn channels_test_button_and_hooks() {
     // No secret value is ever drawn, only the masked hints.
     assert!(!f.has("x9Qzx"));
 
-    // The first channel's test button: one forced send to that channel.
+    // The first channel's test button: one forced send to that channel. The
+    // "测试" on the row of "My phone" (other sections, longer on Windows, can
+    // draw a "测试" of their own above it).
+    let phone = f.find("My phone").expect("the first channel's row");
     let test = f
         .texts
         .iter()
         .filter(|(t, _)| t == "测试")
         .map(|(_, r)| *r)
-        .next()
+        .min_by(|a, b| {
+            let da = (a.center().y - phone.center().y).abs();
+            let db = (b.center().y - phone.center().y).abs();
+            da.total_cmp(&db)
+        })
         .expect("a test button");
     h.click_at(test.center());
     let f = h.until(
