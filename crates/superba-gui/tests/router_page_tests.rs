@@ -519,9 +519,11 @@ fn the_price_section_links_to_the_models_page() {
         let mut state = State::default();
         open_advanced(&mut h, &mut state, locale);
         let moved = tr.t("prices.moved");
+        // Scrolled until the link is inside the window, not just laid out
+        // below it (the 高级 group sits further down since the failover switch).
         let f = h.until_scrolled(
             |ui, cx, out| router::show(ui, cx, &mut state, out),
-            |f| f.has(&moved),
+            |f| f.find(&moved).is_some_and(|r| f.rect.contains(r.center())),
         );
         assert!(f.has(&tr.t("prices.title")));
         // No ratio table here any more.
