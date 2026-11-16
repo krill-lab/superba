@@ -252,6 +252,8 @@ struct Dest {
     /// The app runs this computer's Codex inside this WSL distribution ("Run
     /// Codex in WSL", user bug 54 (b)).
     legacy_wsl: Option<String>,
+    /// Another saved ChatGPT account replaces the live login (PR #20).
+    account_change: bool,
 }
 
 /// One line judged for a switch (auth decision, Codex path, blocks).
@@ -1099,6 +1101,7 @@ impl Switcher {
                     migration: migration.is_some() || dest.rollback_migration.is_some(),
                     current_family: state.auth.family(),
                     target_family: dest.auth.map(AuthMode::family),
+                    account_change: dest.account_change,
                     app: app_facts,
                     hot_supported: rules::platform_hot_supported(),
                 })
@@ -1706,6 +1709,9 @@ impl Switcher {
                     Ok(self.restore_original(request, Some(*provider), baseline, false, draft))
                 }
                 RestoreTarget::Official => Ok(self.restore_official(request, None, draft).await),
+                RestoreTarget::Account { identity } => {
+                    self.restore_account(request, identity, state, draft).await
+                }
                 RestoreTarget::Generation { generation } => {
                     let resolved = ResolvedProfile {
                         model_catalog: None,
@@ -2262,6 +2268,62 @@ impl Switcher {
             }
             Err(e) => draft.skipped("login", &e),
         }
+        Self::official_dest(request, profile_id)
+    }
+
+    /// The official login with one saved account (PR #20): the same
+    /// destination as [`Self::restore_official`], `auth.json` gets exactly
+    /// that login. This computer only: remote hosts and WSL distributions
+    /// never follow it (their logins are their own).
+    async fn restore_account(
+        &self,
+        request: &SwitchRequest,
+        identity: &str,
+        state: &ConfigState,
+        draft: &mut Draft,
+    ) -> Result<Dest> {
+        if !request.targets.local || !request.targets.remotes.is_empty() {
+            return Err(Error::invalid(
+                "a saved ChatGPT account can only be used on this computer",
+            ));
+        }
+        let d = &self.deps;
+        let scope = StashScope::Local(d.ctx.codex_home().root().to_path_buf());
+        let account = d
+            .config
+            .login_accounts(&scope)
+            .await?
+            .into_iter()
+            .find(|a| a.id == identity)
+            .ok_or_else(|| Error::NotFound {
+                what: "saved ChatGPT account".into(),
+            })?;
+        if !account.active
+            && let Some(since) = account.last_refresh
+        {
+            let days = d
+                .clock
+                .now()
+                .duration_since(since)
+                .map_or(0, |dur| (dur.as_secs() / 86_400) as i64);
+            if days > LOGIN_STASH_WARN_DAYS {
+                draft.warn(text("switch.warn.login_stash_age").arg("days", days));
+            }
+        }
+        let mut dest = Self::official_dest(request, None);
+        if let Some(r) = dest.resolved.as_mut() {
+            r.mode = ResolvedMode::ChatGptAccount {
+                identity: account.id.clone(),
+            };
+        }
+        dest.label = text("switch.destination.chatgpt_account").arg("email", &account.email);
+        dest.account_change =
+            !account.active && matches!(state.auth, superba_core::AuthShape::ChatGpt { .. });
+        Ok(dest)
+    }
+
+    /// The official login's destination (no checks).
+    fn official_dest(request: &SwitchRequest, profile_id: Option<ProfileId>) -> Dest {
         let site = catalog::official_site();
         Dest {
             resolved: Some(ResolvedProfile {
@@ -2387,7 +2449,11 @@ impl Switcher {
     ) {
         let leaves_provider = matches!(
             dest.resolved.as_ref().map(|r| &r.mode),
-            Some(ResolvedMode::Token { .. } | ResolvedMode::Official)
+            Some(
+                ResolvedMode::Token { .. }
+                    | ResolvedMode::Official
+                    | ResolvedMode::ChatGptAccount { .. }
+            )
         ) || matches!(
             dest.resolved.as_ref().map(|r| &r.mode),
             Some(ResolvedMode::Original {
@@ -3197,7 +3263,9 @@ pub(crate) fn remote_resolution(
 ) -> (ResolvedProfile, superba_core::RemoteApplyScope) {
     let mut resolved = base.clone();
     match resolved.mode {
-        ResolvedMode::Token { .. } | ResolvedMode::Official => {
+        ResolvedMode::Token { .. }
+        | ResolvedMode::Official
+        | ResolvedMode::ChatGptAccount { .. } => {
             resolved.settings = Default::default();
             resolved.model_catalog = None;
             resolved.model.speed = None;

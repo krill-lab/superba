@@ -77,6 +77,10 @@ Superba 是一个小巧的桌面启动器（附带无界面 CLI），用来把
   结束（或询问你）再重启。
 - **还原。** 回到*原始配置*（其他内容没变时逐字节一致）、回到*ChatGPT 官方登录*
   （Superba 第一次替换它时已加密暂存），或回到任意一次之前的切换。
+- **多个 ChatGPT 账号。** 保存多个官方 ChatGPT 登录（浏览器登录或“保存当前登录”，
+  与暂存一样加密），查看每个账号的 Codex 5 小时和每周剩余额度及重置时间，并在供应商页
+  或概览中切换（走正常的预览、重启和回滚流程，仅本机）。额度每分钟用 Codex 自己的客户端
+  在一个私有的临时 Codex 目录里读取。
 - **会话 provider 迁移。** app 只显示 provider 与当前一致的会话。用过旧版 Krill
   教程（`model_provider = "krill"`）的用户可以把这些会话迁移到 `openai`（也可以
   迁回去），带备份、迁移账本和精确回滚。迁移时终端和编辑器里的 Codex 需要关闭；
@@ -457,6 +461,7 @@ ChaCha20-Poly1305 加密。
 | `spb usage [log] [--provider P] [--source router\|rollout\|ccs\|ai-toolbox]` / `spb usage stats [--by model\|provider\|day\|session] [--source …]` | 这台电脑上的 Codex 请求（路由的请求记录合并 Codex 会话记录，不开路由也可用）；按供应商（Krill、每个自定义站点）汇总，并列出其各条线路 |
 | `spb account [--usage] [--days N] [--refresh]` | 余额、套餐和到期时间；每日费用和按模型的用量（Krill） |
 | `spb restore [original\|official\|generation] [--take-over]` | 还原（其他工具改过的内容默认保留，`--take-over` 才一并还原） |
+| `spb chatgpt list \| add \| save \| use ACCOUNT \| remove ACCOUNT \| quota [ACCOUNT]` | 已保存的官方 ChatGPT 账号：添加（浏览器登录）、保存当前登录、切换、删除、5 小时和每周额度 |
 | `spb hand-off [--to cc-switch\|ai-toolbox\|other]` | 交给另一个工具管理 Codex：释放 Superba 拥有的内容，保留其他工具的修改并留有备份 |
 | `spb launch [--restart]` | 通过 Superba 打开（或完整重启）桌面 app，以便热切换 |
 | `spb sessions [scan \| migrate --from krill \| rollback ID]` | 会话 provider |

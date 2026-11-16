@@ -28,6 +28,7 @@ unknown = "意外的响应（{status}）：{message}"
 
 [restart.reason]
 certificate_trust_changed = "需要重启 ChatGPT，才能使用更新后的本机路由证书设置。"
+account_changed = "要切换到另一个 ChatGPT 账号：ChatGPT 会重启并用它登录。"
 no_cdp = "ChatGPT 不是从 Superba 打开的，无法热切。"
 no_bridge = "当前 ChatGPT 版本没有提供重启接口。"
 cross_auth_family = "要在官方登录和 API Key 之间切换。"

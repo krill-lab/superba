@@ -376,6 +376,7 @@ pub fn overview() -> Overview {
         lost_projects: None,
         baseline_at: None,
         login_stash: None,
+        chatgpt_accounts: Vec::new(),
         runtime: None,
         notices: vec![Notice::warning(messages::text(
             "switch.warn.daemon_running",

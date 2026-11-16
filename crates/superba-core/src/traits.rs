@@ -184,6 +184,60 @@ pub trait ConfigEngine: Send + Sync {
     /// Decrypt the stashed login for `scope` (input of [`RenderInput::login_stash`]).
     async fn load_login_stash(&self, scope: &StashScope) -> Result<Option<SecretBytes>>;
 
+    /// The saved ChatGPT logins of `scope` as accounts (PR #20), oldest first;
+    /// for a local home the one its live `auth.json` holds is marked
+    /// [`crate::ChatGptAccount::active`]. Metadata only: nothing is decrypted.
+    async fn login_accounts(&self, scope: &StashScope) -> Result<Vec<crate::ChatGptAccount>> {
+        let _ = scope;
+        Err(Error::not_implemented("saved ChatGPT accounts"))
+    }
+
+    /// Save `auth_json` (a ChatGPT login) as an account of `scope`, keeping
+    /// its first-save time, without changing which login a plain official
+    /// restore picks (unless none is saved). The user's explicit save also
+    /// lifts a "signed out of this login" mark.
+    async fn save_login_account(
+        &self,
+        scope: &StashScope,
+        auth_json: &SecretBytes,
+    ) -> Result<crate::ChatGptAccount> {
+        let _ = (scope, auth_json);
+        Err(Error::not_implemented("save a ChatGPT account"))
+    }
+
+    /// Decrypt the saved login with exactly this identity (never another one).
+    async fn load_login_account(
+        &self,
+        scope: &StashScope,
+        identity: &str,
+    ) -> Result<Option<SecretBytes>> {
+        let _ = (scope, identity);
+        Err(Error::not_implemented("load a ChatGPT account"))
+    }
+
+    /// Forget a saved account. The login the live `auth.json` holds is
+    /// refused (`Error::Conflict`): switch away from it first.
+    async fn remove_login_account(&self, scope: &StashScope, identity: &str) -> Result<bool> {
+        let _ = (scope, identity);
+        Err(Error::not_implemented("remove a ChatGPT account"))
+    }
+
+    /// Keep the tokens a helper's Codex rotated while it read an account's
+    /// limits: `after` replaces the saved copy only while it still is
+    /// `before`, and the live `auth.json` only while it still is `before`
+    /// (compare-and-swap under the lock that applies, rollbacks and recovery
+    /// take), so a newer login written meanwhile always wins. A changed
+    /// identity is refused.
+    async fn store_rotated_login(
+        &self,
+        scope: &StashScope,
+        before: &SecretBytes,
+        after: &SecretBytes,
+    ) -> Result<()> {
+        let _ = (scope, before, after);
+        Err(Error::not_implemented("store a rotated ChatGPT login"))
+    }
+
     /// The keys Superba's current generation owns in the home's `config.toml`
     /// with the values it wrote (empty = it owns nothing): the file editor
     /// marks them and names the ones an edit changes (GitHub issue 9).
@@ -1044,6 +1098,44 @@ impl SwitchDecider for SafeDefaults {
 /// switch flow: plan -> (UI countdown / confirmation) -> execute -> verify.
 #[async_trait]
 pub trait SwitchService: Send + Sync {
+    /// Saved official ChatGPT logins of this computer (PR #20); no
+    /// credentials. Switching to one is [`crate::RestoreTarget::Account`]
+    /// through the ordinary plan.
+    async fn chatgpt_accounts(&self) -> Result<Vec<crate::ChatGptAccount>> {
+        Err(Error::not_implemented("ChatGPT accounts"))
+    }
+
+    /// Save the current official login of this computer (the live
+    /// `auth.json` when it holds a ChatGPT login) as an account.
+    async fn chatgpt_save_current(&self) -> Result<crate::ChatGptAccount> {
+        Err(Error::not_implemented("save the ChatGPT login"))
+    }
+
+    /// Add an account through Codex's browser sign-in in a private,
+    /// disposable Codex home; the current login and connection stay as they
+    /// are. `events` receives the sign-in page and can cancel.
+    async fn chatgpt_add_account(
+        &self,
+        events: crate::ChatGptLoginEvents,
+    ) -> Result<crate::ChatGptAccount> {
+        let _ = events;
+        Err(Error::not_implemented("add a ChatGPT account"))
+    }
+
+    /// Forget a saved account (not the one in use).
+    async fn chatgpt_remove_account(&self, id: &str) -> Result<()> {
+        let _ = id;
+        Err(Error::not_implemented("remove a ChatGPT account"))
+    }
+
+    /// Read one account's five-hour and weekly Codex limits through Codex's
+    /// own client in a private Codex home (read-only requests, one helper at
+    /// a time, never while a switch runs).
+    async fn chatgpt_quota(&self, id: &str) -> Result<crate::ChatGptQuota> {
+        let _ = id;
+        Err(Error::not_implemented("ChatGPT limits"))
+    }
+
     /// Active data directory and its fixed locator (does not scan session files).
     async fn data_where(&self) -> Result<crate::data::DataLocation> {
         Err(Error::not_implemented("data location"))

@@ -41,7 +41,10 @@ pub(super) fn show(
     header(ui, cx, state, p, out);
     ui.add_space(10.0);
     if p.kind == ProviderKind::Official {
-        official(ui, cx, state, out);
+        egui::ScrollArea::vertical()
+            .id_salt("providers-official-detail")
+            .auto_shrink([false, false])
+            .show(ui, |ui| official(ui, cx, state, out));
         return;
     }
     let account = p.has_key() && p.profile.is_some();
@@ -339,6 +342,8 @@ fn official(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
         None => cx.tr.t("providers.official.stash_none"),
     };
     ui.add(egui::Label::new(Text::small(stash, cx.pal)).wrap());
+    section_gap(ui, cx);
+    super::chatgpt::show(ui, cx, &mut state.chatgpt, out);
     ui.add_space(12.0);
     ui.horizontal_wrapped(|ui| {
         if cx

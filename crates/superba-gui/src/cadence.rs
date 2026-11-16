@@ -12,8 +12,10 @@
 //!
 //! While the window is hidden or minimised only the router watchdog keeps its
 //! [`ROUTER_WATCH_EVERY`] tick (it falls back to direct mode when the router
-//! dies); nothing else is asked and the window is not woken up for anything
-//! else. Showing it again or giving it the focus reads the overview at once.
+//! dies), with the notification watcher and the limits of saved ChatGPT
+//! accounts ([`crate::quota`], its own one-minute timer); nothing else is asked
+//! and the window is not woken up for anything else. Showing it again or giving
+//! it the focus reads the overview at once.
 
 use std::time::{Duration, Instant};
 

@@ -568,6 +568,11 @@ impl Switcher {
             .await
             .ok()
             .flatten();
+        let chatgpt_accounts = d
+            .config
+            .login_accounts(&superba_core::StashScope::Local(home.root().to_path_buf()))
+            .await
+            .unwrap_or_default();
         // Slow facts from the environment monitor's snapshot (no detection on
         // this polled path); fast facts from one look at the process table.
         let facts = self.monitor.facts().await;
@@ -698,6 +703,7 @@ impl Switcher {
             baseline_captured,
             baseline_at,
             login_stash,
+            chatgpt_accounts,
             runtime: Some(runtime),
             notices,
             external,

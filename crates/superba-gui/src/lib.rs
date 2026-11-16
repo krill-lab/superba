@@ -48,6 +48,7 @@ pub mod memory;
 pub mod movers;
 pub mod notices;
 pub mod pages;
+pub mod quota;
 pub mod runtime;
 pub mod shell;
 pub mod startup;

@@ -211,6 +211,9 @@ pub struct LoginInfo {
     pub email: Option<String>,
     /// ChatGPT account id.
     pub account_id: Option<String>,
+    /// Subscription claim (`chatgpt_plan_type`): a display label only, never
+    /// used to infer limits (PR #20).
+    pub plan_type: Option<String>,
     /// `last_refresh`.
     pub last_refresh: Option<Timestamp>,
     /// id_token `exp`.
@@ -285,9 +288,45 @@ fn login_info_from(m: &Map<String, Value>) -> LoginInfo {
         },
         email,
         account_id,
+        plan_type: auth_claims
+            .and_then(|a| a.get("chatgpt_plan_type"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned),
         last_refresh,
         id_token_exp,
     }
+}
+
+/// Codex is about to renew this ChatGPT login: its access token expires
+/// within `margin` of `now`, or its `last_refresh` is at least `max_age` old.
+/// A reader of the same login must leave the renewal to that Codex (the
+/// refresh token is single-use; PR #20).
+pub fn renewal_due(
+    bytes: &[u8],
+    now: Timestamp,
+    margin: std::time::Duration,
+    max_age: std::time::Duration,
+) -> bool {
+    let Ok(m) = parse_object(bytes) else {
+        return false;
+    };
+    let exp = m
+        .get(f::TOKENS)
+        .and_then(|t| t.get("access_token"))
+        .and_then(Value::as_str)
+        .and_then(jwt_claims)
+        .and_then(|c| c.get("exp").and_then(Value::as_i64))
+        .map(|s| Timestamp::from_millis(s.saturating_mul(1000)));
+    if exp.is_some_and(|exp| exp <= now.saturating_add(margin)) {
+        return true;
+    }
+    m.get(f::LAST_REFRESH)
+        .and_then(Value::as_str)
+        .and_then(parse_rfc3339)
+        .and_then(|t| now.duration_since(t))
+        .is_some_and(|age| age >= max_age)
 }
 
 /// Decode the (unverified) claims of a JWT. Only used to label and age logins.
@@ -380,6 +419,40 @@ mod tests {
         assert_eq!(parse_rfc3339("2026-10-16"), None);
         assert_eq!(parse_rfc3339("2026-13-16T00:00:00Z"), None);
         assert_eq!(parse_rfc3339("2026-10-16T00:00:00"), None);
+    }
+
+    #[test]
+    fn a_login_about_to_be_renewed_is_recognized() {
+        use base64::Engine as _;
+        use std::time::Duration;
+        let jwt = |exp: i64| {
+            let enc =
+                |v: Value| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(v.to_string());
+            format!(
+                "{}.{}.sig",
+                enc(serde_json::json!({"alg": "none"})),
+                enc(serde_json::json!({"exp": exp}))
+            )
+        };
+        let auth = |exp: i64, refreshed: &str| {
+            serde_json::to_vec(&serde_json::json!({
+                "tokens": {"access_token": jwt(exp)},
+                "last_refresh": refreshed
+            }))
+            .unwrap()
+        };
+        let now = Timestamp::from_millis(1_800_000_000_000);
+        let (margin, age) = (Duration::from_secs(300), Duration::from_secs(7 * 86_400));
+        let fresh = "2027-01-15T00:00:00Z";
+        assert!(!renewal_due(&auth(1_800_100_000, fresh), now, margin, age));
+        assert!(renewal_due(&auth(1_800_000_100, fresh), now, margin, age));
+        assert!(renewal_due(
+            &auth(1_800_100_000, "2027-01-01T00:00:00Z"),
+            now,
+            margin,
+            age
+        ));
+        assert!(!renewal_due(b"not json", now, margin, age));
     }
 
     #[test]

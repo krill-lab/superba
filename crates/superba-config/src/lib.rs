@@ -39,6 +39,7 @@
 
 pub mod authjson;
 pub mod autostart;
+pub mod chatgpt_home;
 pub mod claude;
 pub mod codex_files;
 pub mod compaction_keys;

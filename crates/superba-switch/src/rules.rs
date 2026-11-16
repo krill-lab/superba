@@ -189,6 +189,8 @@ pub struct LocalFacts {
     pub current_family: Option<AuthFamily>,
     /// Auth family of the destination (`None` = unknown up front, e.g. generation restore).
     pub target_family: Option<AuthFamily>,
+    /// Another saved ChatGPT account replaces the login in `auth.json` (PR #20).
+    pub account_change: bool,
     /// Desktop app.
     pub app: AppFacts,
     /// This platform build can hot-restart the app-server at all.
@@ -213,7 +215,9 @@ pub const fn platform_hot_supported() -> bool {
 /// 2. session migration -> `FullAppRestart(SessionMigration)` (every Codex process,
 ///    CLI included, must stop, so this holds even when the app is not running)
 /// 3. auth family changes while the app runs -> `FullAppRestart(CrossAuthFamily)`
-///    (with the app stopped no process can race on auth.json, so rule 4 applies)
+///    (with the app stopped no process can race on auth.json, so rule 4 applies);
+///    another ChatGPT account while it runs -> `FullAppRestart(AccountChanged)`
+///    (the app reloads its signed-in account, as for a change of family)
 /// 4. app not running -> `None`
 /// 5. no hot switch on this platform / no CDP / no bridge ->
 ///    `FullAppRestart(PlatformNoHot | NoCdp | NoBridge)`
@@ -235,6 +239,9 @@ pub fn decide_local(f: &LocalFacts) -> RestartKind {
         && from != to
     {
         return full(FullRestartReason::CrossAuthFamily);
+    }
+    if f.account_change {
+        return full(FullRestartReason::AccountChanged);
     }
     if !f.hot_supported {
         return full(FullRestartReason::PlatformNoHot);

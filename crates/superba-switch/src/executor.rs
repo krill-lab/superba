@@ -1045,6 +1045,7 @@ impl Run<'_> {
                 Some(
                     superba_core::ResolvedMode::Original { .. }
                         | superba_core::ResolvedMode::Official
+                        | superba_core::ResolvedMode::ChatGptAccount { .. }
                 )
             )
         });

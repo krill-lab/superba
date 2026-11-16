@@ -2,6 +2,7 @@
 
 mod account;
 mod autostart;
+mod chatgpt;
 mod claude;
 mod config;
 mod data;
@@ -155,6 +156,7 @@ pub(crate) async fn dispatch(command: &Command, rt: &Runtime, out: &mut Output) 
             }
         },
         Command::Remote { command } => remote::run(command, rt, out).await,
+        Command::ChatGpt { command } => chatgpt::run(command, rt, out).await,
         Command::Wsl { command } => wsl::run(command, rt, out).await,
         Command::Tools { command } => tools::run(command, rt, out).await,
         Command::Import(args) => match &args.what {

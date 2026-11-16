@@ -1456,6 +1456,8 @@ async fn mixed_login_uses_the_stashed_account_when_auth_json_holds_the_router_to
         id_token_exp: None,
         email: Some("me@example.com".into()),
         account_id: Some("acct-stash".into()),
+        plan_type: None,
+        added_at: None,
     });
     let plan = sw.plan(req("work")).await.unwrap();
     assert_eq!(token(&plan).0, AuthMode::MixedOfficial);

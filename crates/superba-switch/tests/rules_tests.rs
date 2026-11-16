@@ -33,6 +33,7 @@ fn ready_facts() -> LocalFacts {
         migration: false,
         current_family: Some(AuthFamily::Token),
         target_family: Some(AuthFamily::Token),
+        account_change: false,
         app: running(true, true),
         hot_supported: true,
     }
@@ -185,6 +186,11 @@ fn documented_decision(facts: &LocalFacts) -> RestartKind {
             is_running && cross_family,
             full(FullRestartReason::CrossAuthFamily),
         ),
+        (
+            35,
+            is_running && facts.account_change,
+            full(FullRestartReason::AccountChanged),
+        ),
         (40, !is_running, RestartKind::None),
         (
             50,
@@ -207,7 +213,7 @@ fn all_local_fact_combinations_follow_the_documented_first_match_order() {
     // Plan 7.1 rules 1-6: every combination also exercises non-adjacent precedence.
     let families = [None, Some(AuthFamily::Token), Some(AuthFamily::ChatGpt)];
     let mut checked = 0;
-    for mask in 0..64 {
+    for mask in 0..128 {
         let flag = |bit| mask & (1 << bit) != 0;
         for current_family in families {
             for target_family in families {
@@ -226,6 +232,7 @@ fn all_local_fact_combinations_follow_the_documented_first_match_order() {
                     hot_supported: flag(3),
                     current_family,
                     target_family,
+                    account_change: flag(6),
                 };
                 assert_eq!(
                     rules::decide_local(&facts),
@@ -236,7 +243,7 @@ fn all_local_fact_combinations_follow_the_documented_first_match_order() {
             }
         }
     }
-    assert_eq!(checked, 576);
+    assert_eq!(checked, 1152);
 }
 
 #[test]

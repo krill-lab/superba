@@ -103,6 +103,11 @@ pub enum Command {
         #[command(subcommand)]
         command: RemoteCommand,
     },
+    #[command(name = "chatgpt", about = english("cli.help.chatgpt_group"))]
+    ChatGpt {
+        #[command(subcommand)]
+        command: ChatGptCommand,
+    },
     #[command(about = english("cli.help.wsl_group"))]
     Wsl {
         #[command(subcommand)]
@@ -1519,6 +1524,34 @@ pub enum RemoteCommand {
         target: String,
         #[command(subcommand)]
         action: RemoteCodexCommand,
+    },
+}
+
+/// `spb chatgpt ...`: saved official ChatGPT accounts (PR #20).
+#[derive(Debug, Subcommand)]
+pub enum ChatGptCommand {
+    #[command(about = english("cli.help.chatgpt_list"))]
+    List,
+    #[command(about = english("cli.help.chatgpt_add"))]
+    Add,
+    #[command(about = english("cli.help.chatgpt_save"))]
+    Save,
+    #[command(name = "use", about = english("cli.help.chatgpt_use"))]
+    Use {
+        #[arg(value_name = "ACCOUNT", help = english("cli.help.chatgpt_account"))]
+        account: String,
+        #[command(flatten)]
+        exec: ExecArgs,
+    },
+    #[command(about = english("cli.help.chatgpt_remove"))]
+    Remove {
+        #[arg(value_name = "ACCOUNT", help = english("cli.help.chatgpt_account"))]
+        account: String,
+    },
+    #[command(about = english("cli.help.chatgpt_quota"))]
+    Quota {
+        #[arg(value_name = "ACCOUNT", help = english("cli.help.chatgpt_account"))]
+        account: Option<String>,
     },
 }
 

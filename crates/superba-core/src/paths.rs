@@ -396,6 +396,12 @@ impl DataDir {
         self.root.join("secrets")
     }
 
+    /// `secrets/chatgpt-sessions/`: disposable private Codex homes of the
+    /// sign-in and limits helpers (PR #20), each removed when its helper ends.
+    pub fn chatgpt_sessions_dir(&self) -> PathBuf {
+        self.secrets_dir().join("chatgpt-sessions")
+    }
+
     /// `app-sessions.json` (apps launched by Superba: pid, CDP port, start time).
     pub fn app_sessions_json(&self) -> PathBuf {
         self.root.join("app-sessions.json")

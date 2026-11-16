@@ -335,6 +335,8 @@ pub struct SuperbaApp {
     selfupdate_problem_announced: bool,
     /// A scan for failed Codex turns to notify about (GH#12) is running.
     notify_watch: Option<crate::runtime::ReadTask<superba_core::NotifyReport>>,
+    /// The limits read of one saved ChatGPT account (PR #20, [`crate::quota`]).
+    quota_task: Option<(String, crate::runtime::ReadTask<superba_core::ChatGptQuota>)>,
     /// Start-up notices wait until the main window shows (not behind the
     /// setup wizard): the elevated-token notice (who runs, the data
     /// directory for its marker) and toasts held back, with whether showing
@@ -433,6 +435,7 @@ impl SuperbaApp {
             wizard_catalog_mode: None,
             selfupdate_problem_announced: false,
             notify_watch: None,
+            quota_task: None,
             elevated_notice: None,
             held_toasts: Vec::new(),
             ack_selfupdate_problem: false,
@@ -849,6 +852,53 @@ impl SuperbaApp {
         let inputs = self.cadence_inputs(ctx, visible);
         if let Some(wait) = self.cadence.next_wake(now, inputs) {
             ctx.request_repaint_after(wait.max(Duration::from_millis(100)));
+        }
+        self.tick_chatgpt_quota(ctx);
+    }
+
+    /// The saved ChatGPT accounts' limits: one read at a time on the board's
+    /// timer, shown or hidden in the tray (PR #20, [`crate::quota`]).
+    fn tick_chatgpt_quota(&mut self, ctx: &egui::Context) {
+        let mut actions = Vec::new();
+        if self.pages.providers.chatgpt_poll(&self.tr, &mut actions) {
+            ctx.request_repaint_after(Duration::from_millis(100));
+        }
+        for action in actions {
+            self.handle_action(ctx, action);
+        }
+        let now = Timestamp::now();
+        if let Some((id, task)) = &self.quota_task
+            && let Some(result) = task.poll()
+        {
+            self.data.chatgpt_quota.finish(id, result, now);
+            self.quota_task = None;
+        }
+        if self.data.overview.value.is_some() {
+            let ids: Vec<String> = self
+                .data
+                .chatgpt_accounts()
+                .iter()
+                .map(|a| a.id.clone())
+                .collect();
+            self.data.chatgpt_quota.sync(ids.iter().map(String::as_str));
+        }
+        let paused = self.flow.is_running()
+            || self.flow.is_planning()
+            || self.pages.providers.chatgpt_signing_in();
+        if self.quota_task.is_none()
+            && let Some(id) = self.data.chatgpt_quota.start_due(now, paused)
+        {
+            let service = self.service.clone();
+            let read = id.clone();
+            self.quota_task = Some((
+                id,
+                crate::runtime::task(async move { service.chatgpt_quota(&read).await }),
+            ));
+        }
+        if self.quota_task.is_some() {
+            ctx.request_repaint_after(Duration::from_millis(250));
+        } else if let Some(wait) = self.data.chatgpt_quota.wake_in(now) {
+            ctx.request_repaint_after(wait.max(Duration::from_secs(1)));
         }
     }
 
@@ -1735,6 +1785,10 @@ impl SuperbaApp {
             Action::SetLocale(l) => self.set_locale(l),
             Action::OpenUrl(url) => {
                 let _ = open::that_detached(url);
+            }
+            Action::RefreshChatGptQuota(id) => {
+                self.data.chatgpt_quota.refresh_now(&id);
+                ctx.request_repaint();
             }
             Action::Copy(text) => {
                 ctx.copy_text(text);

@@ -289,6 +289,7 @@ Superba data dir (`SUPERBA_DATA_DIR` or the platform data dir,
 | `state.lock`, `journal/switch/` | switch |
 | `backups/first-write/`, `backups/switch/`, `backups/login-stash/` (encrypted), `backups/rc/` | config |
 | `secrets/` (0600 key files when no keyring) | config |
+| `secrets/chatgpt-sessions/` (disposable private Codex homes of the ChatGPT sign-in and limits helpers, removed when each ends; PR #20) | config (`chatgpt_home`), switch |
 | `backups/editor/` (the file editor: an encrypted copy of the file each save replaces, `index.json` with the backups and the last save per home and file; GitHub issue 9) | config (`codex_files::EditorStore`) |
 | `backups/migrate-<id>/` (sqlite backup, rollout pre-images, ledger) | sessions |
 | `app-sessions.json` (apps launched by Superba: pid, CDP port, start time) | appctl |
@@ -1070,6 +1071,72 @@ distribution), and:
   app's WSL connection; `spb wsl list` names the distribution the app runs
   Codex in.
 
+### Saved ChatGPT accounts (GitHub PR #20, issue #21)
+
+Several official ChatGPT logins can be kept, compared by their Codex limits
+and switched between (Providers → Official ChatGPT login, the Overview's
+provider menu, `spb chatgpt list|add|save|use|remove|quota`).
+
+- **Store.** An account is an entry of the local home's encrypted login stash
+  (`backups/login-stash/local-<hash>/<identity>.enc` + `index.json`, §9): the
+  stash was already keyed by login identity, so the single "saved login" of
+  0.1.1 is read as one account without a migration (`LoginStashInfo` gained
+  optional `plan_type` and `added_at`; `stashed_at` stands in for an old entry's
+  first-save time). The index's `latest` stays the login a plain official
+  restore (`RestoreTarget::Official`) brings back; adding or saving an account
+  moves it only when none is set. `ConfigEngine::login_accounts` lists them
+  (metadata only, the one the live `auth.json` holds marked `active`);
+  `save_login_account` (an explicit save also lifts the home's "signed out of
+  this login" mark), `load_login_account` (exact identity), `remove_login_account`
+  (refused for the live login) and `store_rotated_login` complete it. Every
+  credential write (apply, rollback, recovery whole; saves; the rotated-token
+  publish) takes `backups/login-stash/credentials.lock`. A stash of an older
+  copy of a login never replaces a saved copy with a newer `last_refresh` (its
+  refresh token would be dead).
+- **Switch.** `RestoreTarget::Account { identity }` plans like the official
+  login with `ResolvedMode::ChatGptAccount { identity }`: plans carry only the
+  identity; the engine decrypts that login while it renders, keeps the live
+  file when it already is that login, otherwise stashes the outgoing login and
+  writes the chosen one (a foreign API key in `auth.json` raises the usual
+  owned-key conflict). It is local only: an explicit remote target is refused,
+  WSL distributions and followers do not follow. A different account while the
+  app runs is a full app restart (`FullRestartReason::AccountChanged`, rule 3 of
+  `decide_local`), so the app signs in again; preview, countdown, turn checks,
+  verification and rollback are the ordinary ones.
+- **Helpers.** Sign-in and limits run Codex's own client: `codex app-server`
+  (the newest runnable Codex of the environment monitor's snapshot) with
+  `CODEX_HOME` set to a private, disposable directory under
+  `secrets/chatgpt-sessions/` (`superba_config::chatgpt_home`, 0700, removed when
+  the helper ends, leftovers swept), file credentials, plugins, bundled skills,
+  analytics, feedback and update checks off, Superba's own credential and
+  endpoint variables removed. Adding an account sends `account/login/start
+  {type: chatgpt}` (the page must be HTTPS on an OpenAI sign-in host), waits for
+  its `account/login/completed` (15 min) and saves the login Codex wrote; the
+  current connection is not touched. A limits read sends
+  `account/rateLimits/read {excludeResetCreditDetails: true}` and, only when no
+  plan was reported, `account/read {refreshToken: false}`: nothing is consumed
+  or redeemed. Windows are recognised by `windowDurationMins` (300, 10080) in the
+  `codex` bucket of `rateLimitsByLimitId` (else `rateLimits`); a window that is
+  not reported is absent, never 100 %. Tokens Codex rotated during a read go back
+  through the compare-and-swap (`store_rotated_login`: the saved copy only while
+  it still holds the old tokens, the live `auth.json` only while it is still
+  byte-identical, staged and re-checked like every write of it). The active
+  account is read from the live file; when that login is about to be renewed
+  (access token expiring within 5 min or `last_refresh` older than 7 days) and a
+  Codex process uses the home, the read is postponed (`Error::Locked`) so the
+  two never race for the single-use refresh token. One helper runs at a time
+  (`chatgpt::Gate`), none while `execute` / `recover` run (they take the gate
+  exclusively; a read during a switch is postponed). Payloads are never logged.
+- **Timer.** The GUI reads every saved account every 60 s on every page and
+  while hidden in the tray (`superba_gui::quota::QuotaBoard`, ticked from
+  `run_cadence`): one read at a time, none while a switch is planned or running
+  or a sign-in waits, never two for one account; a failure keeps the last limits
+  with their time and retries after 1, 2, 4, 8 then 15 min; a postponed read
+  comes back after 10 s; a manual refresh runs next. This is the one timer
+  besides the router watchdog and the notification watcher that starts a
+  process (§11, user request 34): only when accounts are saved, one short helper
+  per account and minute.
+
 ### Account-display auth (not implemented)
 
 A planned auth mode shows the Krill plan, usage and name inside the app by
@@ -1471,7 +1538,9 @@ no demo mode; tests use an in-memory `SwitchService` under
 ### Background probing (user request 34)
 
 Nothing on a timer starts a process, and nothing runs while the window is hidden
-except the router watchdog.
+except the router watchdog, the notification watcher and, only while ChatGPT
+accounts are saved, their limits reads (one short Codex helper per account and
+minute, section 8 "Saved ChatGPT accounts").
 
 - **Environment monitor** (`superba_switch::monitor::EnvMonitor`, one thread
   `superba-env-monitor` per `Switcher`, started by the GUI's first
