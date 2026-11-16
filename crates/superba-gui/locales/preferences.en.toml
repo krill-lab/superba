@@ -84,7 +84,7 @@ wizard.body = "Choose the provider, key and line again; existing configuration i
 wizard.run = "Run setup again"
 wizard.title = "Setup wizard"
 
-data.move_note = "Moves all Superba data, including backups and keys. Choose an empty folder on a local disk. The router stops during the move; finish active requests first. Codex’s own sessions stay where they are."
+data.move_note = "Moves all Superba data, including backups and keys. Choose an empty folder on a local disk. The router stops during the move; finish active requests first. Codex’s own sessions stay where they are; move them under Codex session data below."
 data.destination = "New data directory (absolute path)"
 data.choose = "Choose…"
 data.move = "Move all data"
@@ -102,6 +102,24 @@ data.cleanup_note = "Clean now removes expired request rows and refetchable cach
 data.clean = "Clean now"
 data.cleaned = "Reclaimed {size}."
 data.retention_here = "Manage request retention in Superba → Data."
+
+codex_data.title = "Codex session data"
+codex_data.note = "Conversations of the ChatGPT app and the Codex CLI can grow to many gigabytes. Superba can keep them in a folder on another local disk: it copies and verifies them, then leaves links with the same names in the Codex home, so the app, the CLI and editors find them unchanged. Quit Codex first."
+codex_data.in_home = "In the Codex home {path} · {size}"
+codex_data.moved_to = "In {path} · {size} (linked from {home})"
+codex_data.unreachable = "{path} cannot be reached. Connect the drive again before using Codex."
+codex_data.foreign = "A session folder is a link Superba did not create; Superba leaves it alone."
+codex_data.pending = "An interrupted move waits for recovery; restart Superba to finish it."
+codex_data.destination = "Folder on another disk (absolute path)"
+codex_data.preview = "Preview move"
+codex_data.back = "Move back to the Codex home"
+codex_data.item = "{from} → {to} · {size}"
+codex_data.total = "To copy: {size} · free at the destination: {free}"
+codex_data.blocked = "Cannot move now: {reason}"
+codex_data.move = "Move session data"
+codex_data.move_back = "Move back now"
+codex_data.done = "Codex's session data is now in {path}."
+codex_data.done_back = "Codex's session data is back in {path}."
 
 [prefs.app_location]
 section = "ChatGPT app"

@@ -83,7 +83,7 @@ wizard.body = "重新选择供应商、Key 和线路；已有的配置会保留�
 wizard.run = "重新运行设置向导"
 wizard.title = "设置向导"
 
-data.move_note = "迁移全部 Superba 数据，包括备份和密钥。请选择本地磁盘上的空目录。迁移期间会停止路由，请先结束正在进行的请求。Codex 自己的会话位置保持不变。"
+data.move_note = "迁移全部 Superba 数据，包括备份和密钥。请选择本地磁盘上的空目录。迁移期间会停止路由，请先结束正在进行的请求。Codex 自己的会话位置保持不变，可在下方“Codex 会话数据”中单独迁移。"
 data.destination = "新的数据目录（绝对路径）"
 data.choose = "选择…"
 data.move = "迁移全部数据"
@@ -101,6 +101,24 @@ data.cleanup_note = "立即清理会删除过期请求记录和可重新获取�
 data.clean = "立即清理"
 data.cleaned = "已释放 {size}。"
 data.retention_here = "请求记录保留期在“Superba → 数据”中管理。"
+
+codex_data.title = "Codex 会话数据"
+codex_data.note = "ChatGPT 桌面端和 Codex 命令行的会话记录可能累积到数 GB。Superba 可以把它们放到另一块本地磁盘上的文件夹：先复制并校验，再在 Codex 主目录中留下同名链接，桌面端、命令行和编辑器照常找到它们。请先退出 Codex。"
+codex_data.in_home = "位于 Codex 主目录 {path} · {size}"
+codex_data.moved_to = "位于 {path} · {size}（由 {home} 中的链接指向）"
+codex_data.unreachable = "无法访问 {path}。使用 Codex 前请重新连接该磁盘。"
+codex_data.foreign = "有一个会话文件夹是链接，但不是 Superba 创建的，Superba 不会改动它。"
+codex_data.pending = "有一次中断的迁移等待恢复，重启 Superba 即可完成。"
+codex_data.destination = "其他磁盘上的文件夹（绝对路径）"
+codex_data.preview = "预览迁移"
+codex_data.back = "迁回 Codex 主目录"
+codex_data.item = "{from} → {to} · {size}"
+codex_data.total = "需复制：{size} · 目标可用：{free}"
+codex_data.blocked = "现在无法迁移：{reason}"
+codex_data.move = "迁移会话数据"
+codex_data.move_back = "立即迁回"
+codex_data.done = "Codex 会话数据现在位于 {path}。"
+codex_data.done_back = "Codex 会话数据已迁回 {path}。"
 
 [prefs.app_location]
 section = "ChatGPT app"

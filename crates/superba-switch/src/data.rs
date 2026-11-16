@@ -110,28 +110,8 @@ pub(crate) async fn move_data(
     // Finish any interrupted switch before its receipts change directories.
     // recover itself takes state.lock, so pending switch journals are refused
     // here; the existing startup recovery can finish them before retrying.
-    for sub in ["journal/config", "journal/switch"] {
-        let dir = ctx.data_dir.root().join(sub);
-        if dir.is_dir() {
-            for entry in fs::read_dir(&dir).map_err(|e| Error::io(&dir, &e))? {
-                let path = entry.map_err(|e| Error::io(&dir, &e))?.path();
-                if path.extension().is_some_and(|e| e == "json") {
-                    let value: serde_json::Value =
-                        serde_json::from_slice(&fs::read(&path).map_err(|e| Error::io(&path, &e))?)
-                            .map_err(|e| Error::parse("switch journal", e.to_string()))?;
-                    if value
-                        .get("status")
-                        .or_else(|| value.get("phase"))
-                        .and_then(|v| v.as_str())
-                        .is_some_and(|s| {
-                            matches!(s, "applying" | "rolling_back" | "pending" | "publishing")
-                        })
-                    {
-                        return Err(Error::invalid("data.pending_switch"));
-                    }
-                }
-            }
-        }
+    if switch_pending(ctx)? {
+        return Err(Error::invalid("data.pending_switch"));
     }
     // StateLock is redundant with the location lock for new clients, but guards
     // against an already running older client. Keep it through copying and commit.
@@ -139,6 +119,35 @@ pub(crate) async fn move_data(
         home: ctx.home_dir.clone(),
     };
     move_with_router(ctx, &destination, &progress, &router).await
+}
+
+/// A config or switch journal is still applying or rolling back.
+pub(crate) fn switch_pending(ctx: &LocalContext) -> Result<bool> {
+    for sub in ["journal/config", "journal/switch"] {
+        let dir = ctx.data_dir.root().join(sub);
+        if !dir.is_dir() {
+            continue;
+        }
+        for entry in fs::read_dir(&dir).map_err(|e| Error::io(&dir, &e))? {
+            let path = entry.map_err(|e| Error::io(&dir, &e))?.path();
+            if path.extension().is_some_and(|e| e == "json") {
+                let value: serde_json::Value =
+                    serde_json::from_slice(&fs::read(&path).map_err(|e| Error::io(&path, &e))?)
+                        .map_err(|e| Error::parse("switch journal", e.to_string()))?;
+                if value
+                    .get("status")
+                    .or_else(|| value.get("phase"))
+                    .and_then(|v| v.as_str())
+                    .is_some_and(|s| {
+                        matches!(s, "applying" | "rolling_back" | "pending" | "publishing")
+                    })
+                {
+                    return Ok(true);
+                }
+            }
+        }
+    }
+    Ok(false)
 }
 
 async fn move_with_router(

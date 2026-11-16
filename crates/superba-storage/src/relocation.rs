@@ -16,14 +16,22 @@ pub(crate) const OWNER_FILE: &str = ".superba-data-owner";
 const RESERVE: u64 = 16 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct Entry {
-    relative: PathBuf,
-    bytes: u64,
-    modified: Option<SystemTime>,
-    directory: bool,
+pub(crate) struct Entry {
+    pub(crate) relative: PathBuf,
+    pub(crate) bytes: u64,
+    pub(crate) modified: Option<SystemTime>,
+    pub(crate) directory: bool,
 }
 
 fn inventory(root: &Path) -> Result<Vec<Entry>> {
+    inventory_except(root, &fixed_file)
+}
+
+/// Every directory and regular file below `root` (relative paths, sorted),
+/// leaving out paths `skip` names (and what is below them). Links and special
+/// files anywhere below `root` are refused (`data.path.link`); `root` itself
+/// must be a real directory.
+pub(crate) fn inventory_except(root: &Path, skip: &dyn Fn(&Path) -> bool) -> Result<Vec<Entry>> {
     let mut todo = vec![PathBuf::new()];
     let mut entries = Vec::new();
     while let Some(relative) = todo.pop() {
@@ -36,7 +44,7 @@ fn inventory(root: &Path) -> Result<Vec<Entry>> {
             for entry in fs::read_dir(&path).map_err(|e| Error::io(&path, &e))? {
                 let entry = entry.map_err(|e| Error::io(&path, &e))?;
                 let next = relative.join(entry.file_name());
-                if !fixed_file(&next) {
+                if !skip(&next) {
                     todo.push(next);
                 }
             }
@@ -56,6 +64,84 @@ fn inventory(root: &Path) -> Result<Vec<Entry>> {
     }
     entries.sort_by(|a, b| a.relative.cmp(&b.relative));
     Ok(entries)
+}
+
+/// Copy one regular file of `entry` into the new file `to`: hash while
+/// copying, sync, refuse a source whose size or modification time changed,
+/// re-read the copy and compare hashes, keep owner-only permission bits (Unix)
+/// and the modification time. `progress` gets each chunk's byte count and
+/// returning false cancels.
+pub(crate) fn copy_file_verified(
+    from: &Path,
+    to: &Path,
+    entry: &Entry,
+    buffer: &mut [u8],
+    progress: &mut dyn FnMut(u64) -> bool,
+) -> Result<()> {
+    let mut input = File::open(from).map_err(|e| Error::io(from, &e))?;
+    let mut options = OpenOptions::new();
+    options.create_new(true).write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut output = options.open(to).map_err(|e| Error::io(to, &e))?;
+    let mut hash = Sha256::new();
+    let mut file_bytes = 0u64;
+    loop {
+        let n = input.read(buffer).map_err(|e| Error::io(from, &e))?;
+        if n == 0 {
+            break;
+        }
+        output
+            .write_all(&buffer[..n])
+            .map_err(|e| Error::io(to, &e))?;
+        hash.update(&buffer[..n]);
+        file_bytes += n as u64;
+        if !progress(n as u64) {
+            return Err(Error::Cancelled);
+        }
+    }
+    output.sync_all().map_err(|e| Error::io(to, &e))?;
+    let meta = input.metadata().map_err(|e| Error::io(from, &e))?;
+    if file_bytes != entry.bytes || meta.modified().ok() != entry.modified {
+        return Err(Error::Conflict {
+            message: "data.changed".into(),
+        });
+    }
+    let expected = hash.finalize();
+    let mut verified = Sha256::new();
+    let mut check = File::open(to).map_err(|e| Error::io(to, &e))?;
+    loop {
+        let n = check.read(buffer).map_err(|e| Error::io(to, &e))?;
+        if n == 0 {
+            break;
+        }
+        verified.update(&buffer[..n]);
+    }
+    if expected != verified.finalize() {
+        return Err(Error::other("data.verify"));
+    }
+    // Windows cannot atomically replace a destination still held by the
+    // verification reader. Metadata rewriting replaces the file afterwards.
+    drop(check);
+    // Keep executable bits for downloaded programs. Never make private
+    // data readable by a wider set of users than its original mode.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = meta.permissions().mode() & 0o700;
+        fs::set_permissions(to, fs::Permissions::from_mode(mode | 0o600))
+            .map_err(|e| Error::io(to, &e))?;
+    }
+    if let Some(modified) = entry.modified {
+        output
+            .set_modified(modified)
+            .map_err(|e| Error::io(to, &e))?;
+    }
+    drop(output);
+    Ok(())
 }
 
 /// Space is checked on the destination filesystem, with headroom for filesystem
@@ -188,6 +274,8 @@ impl PreparedMove {
         )?;
         self.journal.write(&self.anchor)?;
         let mut copied = 0u64;
+        let total_bytes = self.total_bytes();
+        let mut buffer = vec![0u8; 1024 * 1024];
         for entry in &self.entries {
             let from = self.journal.source.join(&entry.relative);
             let to = self.journal.staging.join(&entry.relative);
@@ -198,75 +286,14 @@ impl PreparedMove {
             if let Some(parent) = to.parent() {
                 private_dir(parent)?;
             }
-            let mut input = File::open(&from).map_err(|e| Error::io(&from, &e))?;
-            let mut options = OpenOptions::new();
-            options.create_new(true).write(true);
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::OpenOptionsExt;
-                options.mode(0o600);
-            }
-            let mut output = options.open(&to).map_err(|e| Error::io(&to, &e))?;
-            let mut hash = Sha256::new();
-            let mut buffer = vec![0u8; 1024 * 1024];
-            let mut file_bytes = 0u64;
-            loop {
-                let n = input.read(&mut buffer).map_err(|e| Error::io(&from, &e))?;
-                if n == 0 {
-                    break;
-                }
-                output
-                    .write_all(&buffer[..n])
-                    .map_err(|e| Error::io(&to, &e))?;
-                hash.update(&buffer[..n]);
-                file_bytes += n as u64;
-                copied += n as u64;
-                if !progress(DataMoveProgress {
+            copy_file_verified(&from, &to, entry, &mut buffer, &mut |n| {
+                copied += n;
+                progress(DataMoveProgress {
                     phase: DataMovePhase::Copying,
                     copied_bytes: copied,
-                    total_bytes: self.total_bytes(),
-                }) {
-                    return Err(Error::Cancelled);
-                }
-            }
-            output.sync_all().map_err(|e| Error::io(&to, &e))?;
-            let meta = input.metadata().map_err(|e| Error::io(&from, &e))?;
-            if file_bytes != entry.bytes || meta.modified().ok() != entry.modified {
-                return Err(Error::Conflict {
-                    message: "data.changed".into(),
-                });
-            }
-            let expected = hash.finalize();
-            let mut verified = Sha256::new();
-            let mut check = File::open(&to).map_err(|e| Error::io(&to, &e))?;
-            loop {
-                let n = check.read(&mut buffer).map_err(|e| Error::io(&to, &e))?;
-                if n == 0 {
-                    break;
-                }
-                verified.update(&buffer[..n]);
-            }
-            if expected != verified.finalize() {
-                return Err(Error::other("data.verify"));
-            }
-            // Windows cannot atomically replace a destination still held by the
-            // verification reader. Metadata rewriting below replaces the file.
-            drop(check);
-            // Keep executable bits for downloaded programs. Never make private
-            // data readable by a wider set of users than its original mode.
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let mode = meta.permissions().mode() & 0o700;
-                fs::set_permissions(&to, fs::Permissions::from_mode(mode | 0o600))
-                    .map_err(|e| Error::io(&to, &e))?;
-            }
-            if let Some(modified) = entry.modified {
-                output
-                    .set_modified(modified)
-                    .map_err(|e| Error::io(&to, &e))?;
-            }
-            drop(output);
+                    total_bytes,
+                })
+            })?;
             if metadata_file(&entry.relative) {
                 let bytes = fs::read(&to).map_err(|e| Error::io(&to, &e))?;
                 let mut value: Value = serde_json::from_slice(&bytes).map_err(|e| {

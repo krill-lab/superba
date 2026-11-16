@@ -187,6 +187,30 @@ pub enum DataCommand {
     },
     #[command(about = english("cli.data.help.usage"))]
     Usage,
+    #[command(about = english("cli.data.codex.help.group"))]
+    Codex {
+        #[command(subcommand)]
+        command: CodexDataCommand,
+    },
+}
+
+/// Where Codex keeps its session data (GitHub issue 15).
+#[derive(Debug, Subcommand)]
+pub enum CodexDataCommand {
+    #[command(about = english("cli.data.codex.help.where"))]
+    Where,
+    #[command(about = english("cli.data.codex.help.move"))]
+    Move {
+        #[arg(value_name = "DIR", help = english("cli.data.codex.help.directory"))]
+        directory: std::path::PathBuf,
+        #[arg(long, help = english("cli.data.codex.help.dry_run"))]
+        dry_run: bool,
+    },
+    #[command(about = english("cli.data.codex.help.restore"))]
+    Restore {
+        #[arg(long, help = english("cli.data.codex.help.dry_run"))]
+        dry_run: bool,
+    },
 }
 
 /// Options shared by all commands that execute a plan.

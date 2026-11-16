@@ -30,6 +30,7 @@ pub mod ciphers;
 pub mod claude;
 mod claude_router;
 pub mod claude_usage;
+mod codex_data;
 pub mod compaction;
 pub mod core_watch;
 mod data;
@@ -1170,6 +1171,25 @@ impl SwitchService for Switcher {
 
     async fn doctor(&self) -> Result<Vec<DoctorFinding>> {
         self.doctor_impl().await
+    }
+
+    async fn codex_data_where(&self) -> Result<superba_core::data::CodexDataLocation> {
+        codex_data::location(self).await
+    }
+
+    async fn codex_data_plan(
+        &self,
+        directory: Option<PathBuf>,
+    ) -> Result<superba_core::data::CodexDataPlan> {
+        codex_data::plan(self, directory, Default::default()).await
+    }
+
+    async fn codex_data_move(
+        &self,
+        directory: Option<PathBuf>,
+        progress: superba_core::data::DataMoveProgressSink,
+    ) -> Result<superba_core::data::CodexDataMoveReport> {
+        codex_data::move_data(self, directory, Default::default(), progress).await
     }
 
     async fn runtime(&self) -> Result<superba_core::RuntimeView> {

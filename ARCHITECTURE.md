@@ -303,6 +303,65 @@ Superba data dir (`SUPERBA_DATA_DIR` or the platform data dir,
 | `router/` (`config.json`, 0600 `secrets.json` and `runtime.json`, log, `compactions.json`: which member made each compaction item, by fingerprint) | router |
 | `catalog/` (a downloaded, signature-checked settings catalog; unused while remote updates are off) | catalog |
 | `selfupdate.json` (ETags and answers of the release check, last check time, skipped version, macOS backup to remove, the record of the last install attempt; no secrets), `downloads/superba-update/` (verified Superba packages and staging), `logs/selfupdate*.log` (the install attempts' steps) | versions |
+| `codex-data.json` (per canonical Codex home: the folder its session data was moved to, the move id and time, old copies it could not remove), `codex-data-move.json` (the journal of a Codex data move in progress) | storage (`codex_data`) |
+
+### Codex data location (GitHub issue 15)
+
+Codex keeps every conversation as rollout files in `<CODEX_HOME>/sessions/` and
+`archived_sessions/`; on Windows `CODEX_HOME` defaults to `%USERPROFILE%\.codex`
+on the system drive. Superba → Data → "Codex session data" and `spb data codex
+where|move <DIR>|restore [--dry-run]` put both folders on another local disk
+(`superba_storage::codex_data`, orchestrated by `superba_switch::codex_data`).
+
+- **Design: links, not a new `CODEX_HOME`.** The two folders are copied into the
+  chosen folder and replaced in the Codex home by a directory junction (Windows;
+  `FSCTL_SET_REPARSE_POINT` mount point, no administrator rights or Developer
+  Mode) or a symlink (macOS, Linux) with the same name. `CODEX_HOME` and every
+  path stay the same, so the desktop app, the CLI, IDE extensions, terminals
+  opened before the move, the daemon and the app's "Run Codex in WSL" mode (it
+  forwards the Windows `CODEX_HOME` through `WSLENV`) cannot disagree about where
+  the data is, and nothing that stores absolute paths needs rewriting: Codex's
+  `threads.rollout_path` (its thread list drops rows whose rollout does not exist),
+  Superba's `state.json` keyed by home, migration ledgers and the editor index.
+  Setting a user-level `CODEX_HOME` was rejected: running shells and editors keep
+  the old environment and would write a second home, and all of the above would
+  need rewriting. Both folders always move together: Codex archives with a plain
+  `rename` from `sessions/` to `archived_sessions/`, which fails across volumes.
+  Codex canonicalizes rollout paths and the sessions root alike before comparing
+  them (`thread-store` `scoped_rollout_path`), and the sessions folders are not
+  sandbox writable roots, so Seatbelt's refusal of symlinked writable roots does
+  not apply. Every Superba walker (sessions scan, usage, turn activity, export)
+  follows a linked root (`walkdir` follows root links); storage use counts what
+  the links point to.
+- **Move.** Refused while any Codex process of the home runs (app, app-server,
+  CLI, IDE, daemon; listed by pid), while a switch waits for recovery, and when
+  elevated; `state.lock` is held throughout. The destination must be a new or
+  empty local folder (the data relocation's checks: absolute, not a system
+  folder, local volume, write probe), outside the Codex home and Superba's data,
+  without a `sessions` / `archived_sessions` component, with room for the data
+  plus a reserve. Steps: journal → copy each file into staging next to the
+  destination (size, mtime, SHA-256 of the copy read back) → re-inventory the
+  source (unchanged) → publish the copies → create the links under temporary
+  names → rename the old folders aside in the home and the links into place →
+  read the data back through the links and compare → write `codex-data.json`
+  (commit) → delete the old copies only if they still match the new data
+  (otherwise kept and reported as leftovers). A marker
+  (`<dest>/.superba-codex-data`, naming the home) keeps the links recognisable
+  without the record. Moving back into the home and between two folders use the
+  same steps. A link Superba did not create, a non-folder or an unreachable
+  target blocks every move.
+- **Failure and recovery.** Any error before the commit, cancellation during the
+  copy or a crash (start-up `recover` runs `codex_data::recover` under
+  `state.lock`) puts the old folders or links back and deletes only copies the
+  move created (published copies only when the journal says so). A crash after
+  the commit finishes the cleanup. If Codex created a folder during the swap, both
+  are kept and the journal stays for the user.
+- **Doctor.** `codex_data_unreachable` (danger: a link points to a missing
+  folder, e.g. an unplugged drive; Codex cannot save conversations),
+  `codex_data_pending`, `codex_data_leftovers`, `codex_data_moved`.
+- Not moved: `state_5.sqlite` and the logs database (Codex's own
+  `sqlite_home` / `CODEX_SQLITE_HOME` and `log_dir` cover them), and the desktop
+  app's Electron data (MSIX: `%LOCALAPPDATA%\Packages\OpenAI.Codex_…\LocalCache`).
 
 Shell rc marker blocks (`# >>> superba >>>` … `# <<< superba <<<`) and legacy-line
 comments (`# [superba] export …`) are rendered by `superba_core::env` for both local

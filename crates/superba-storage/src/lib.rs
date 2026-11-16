@@ -7,6 +7,7 @@
 //! roll back an interrupted operation on the next start.
 
 mod atomic;
+pub mod codex_data;
 mod location;
 mod relocation;
 mod usage;

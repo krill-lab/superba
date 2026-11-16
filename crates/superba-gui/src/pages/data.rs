@@ -37,12 +37,14 @@ pub struct State {
     progress: Arc<Mutex<DataMoveProgress>>,
     reclaimed: Option<u64>,
     requested: bool,
+    /// Where Codex keeps its session data (GitHub issue 15).
+    pub codex: super::codex_data::State,
 }
 
 impl State {
     /// Whether relocating or cleaning currently excludes other GUI mutations.
     pub fn busy(&self) -> bool {
-        self.moving.is_some() || self.cleaning.is_some()
+        self.moving.is_some() || self.cleaning.is_some() || self.codex.busy()
     }
 
     fn scan(&mut self, cx: &Cx<'_>) {
@@ -320,6 +322,10 @@ pub fn body_ui(
             state.scan(cx);
         }
     });
+
+    ui.add_space(12.0);
+    let codex_enabled = !cx.busy && state.moving.is_none() && state.cleaning.is_none();
+    super::codex_data::card_ui(ui, cx, &mut state.codex, codex_enabled);
 
     ui.add_space(12.0);
     Card::new().flat().show(ui, |ui| {

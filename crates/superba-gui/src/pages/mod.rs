@@ -35,6 +35,7 @@
 //! several pages live in [`shared`] (never import another page's module).
 
 pub mod claude;
+pub mod codex_data;
 pub mod data;
 pub mod hosts;
 pub mod import;

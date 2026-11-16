@@ -138,3 +138,77 @@ fn data_help_is_bilingual_and_available_in_the_gui_command_dispatch() {
         "where".into()
     ]));
 }
+
+#[test]
+fn codex_session_data_moves_to_another_folder_and_back() {
+    let f = Fixture::new();
+    let codex = f.root.join("codex");
+    let target = f.root.join("disk-d").join("Codex 数据");
+    let location = f.json(&["--json", "data", "codex", "where"]);
+    assert_eq!(location["dirs"][0]["placement"]["kind"], "in_home");
+    assert_eq!(location["dirs"][1]["placement"]["kind"], "missing");
+    let plan = f.run(&[
+        "--json",
+        "data",
+        "codex",
+        "move",
+        target.to_str().unwrap(),
+        "--dry-run",
+    ]);
+    let plan_json: Value = serde_json::from_slice(&plan.stdout).unwrap();
+    let blockers = plan_json["blockers"].as_array().unwrap();
+    if blockers
+        .iter()
+        .any(|b| b["key"] == "switch.codex_data.running")
+    {
+        // A Codex of unknown home runs on this machine: the refusal is right.
+        eprintln!("skipping the move: {blockers:?}");
+        return;
+    }
+    assert!(plan.status.success(), "{blockers:?}");
+    assert_eq!(plan_json["moves"].as_array().unwrap().len(), 2);
+    assert!(!target.exists(), "a dry run writes nothing");
+
+    let moved = f.json(&["--json", "data", "codex", "move", target.to_str().unwrap()]);
+    assert_eq!(
+        Path::new(moved["location"]["directory"].as_str().unwrap()),
+        superba_core::paths::canonical(&target).unwrap()
+    );
+    assert_eq!(
+        fs::read(codex.join("sessions/sample.jsonl")).unwrap(),
+        b"codex session stays here"
+    );
+    assert!(target.join("sessions/sample.jsonl").is_file());
+    let text = f.run(&["data", "codex", "where"]);
+    assert!(text.status.success());
+    assert!(
+        String::from_utf8_lossy(&text.stdout).contains("moved by Superba"),
+        "{}",
+        String::from_utf8_lossy(&text.stdout)
+    );
+    let usage = f.json(&["--json", "data", "usage"]);
+    assert_eq!(
+        usage["codex_sessions_bytes"],
+        b"codex session stays here".len()
+    );
+
+    f.json(&["--json", "data", "codex", "restore"]);
+    assert!(!target.exists());
+    assert!(
+        !fs::symlink_metadata(codex.join("sessions"))
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    assert_eq!(
+        fs::read(codex.join("sessions/sample.jsonl")).unwrap(),
+        b"codex session stays here"
+    );
+    let again = f.run(&["--locale", "zh-CN", "data", "codex", "restore"]);
+    assert_eq!(again.status.code(), Some(3));
+    assert!(
+        String::from_utf8_lossy(&again.stdout).contains("已经在 Codex 主目录中"),
+        "{}",
+        String::from_utf8_lossy(&again.stdout)
+    );
+}
