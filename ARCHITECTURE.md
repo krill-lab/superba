@@ -443,6 +443,14 @@ folder stands for its package family (the installed version is used); the app lo
 check refuses such a folder (`AppLocationCheck::StorePackage`), and doctor explains the
 variable.
 
+ChatGPT 26.1111 on Windows asks its app-server `windowsSandbox/readiness` again right
+after every `codex-app-server-restart` (Superba's hot restart, the app's own first-start
+Windows setup), often while its main process still refuses the call ("Hosted
+AppServerManager identity is not ready"), and keeps that failure (`retry: false`), so the
+composer refuses to send until "Try again". After a local hot restart and after a launch,
+`superba_appctl::sandbox_recheck` leaves a script in the window that fetches a failed
+readiness query of the app's query cache again (what "Try again" does), for 60 s / 10 min.
+
 Platform code sits behind `cfg(target_os = ...)`, is kept small and commented, and
 must compile on Linux. Linux is the reference implementation and the only platform
 exercised end-to-end in CI at first.

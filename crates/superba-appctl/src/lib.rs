@@ -44,6 +44,7 @@ pub mod quit;
 mod reasoning_efforts;
 pub mod renderer;
 pub mod runnable;
+pub mod sandbox_recheck;
 pub mod speedmenu;
 pub mod stop;
 pub mod store;
@@ -95,6 +96,9 @@ pub struct Tunables {
     pub daemon_stop_timeout: Duration,
     /// Renderer selectors.
     pub hooks: DomHooks,
+    /// After a local hot restart and a launch, re-run the app's Agent sandbox
+    /// check when it failed ([`sandbox_recheck`]; Windows by default).
+    pub sandbox_recheck: bool,
 }
 
 impl Default for Tunables {
@@ -110,6 +114,7 @@ impl Default for Tunables {
             app_server_wait: Duration::from_secs(10),
             daemon_stop_timeout: Duration::from_secs(10),
             hooks: DomHooks::default(),
+            sandbox_recheck: sandbox_recheck::wanted(),
         }
     }
 }
@@ -634,6 +639,16 @@ impl DesktopAppController {
         Ok((target.url, v))
     }
 
+    /// Start the page's watch over the app's Agent sandbox check
+    /// ([`sandbox_recheck`]). Best effort: a failure is only logged.
+    async fn start_sandbox_recheck(&self, ws: &str, window: Duration) {
+        let js = sandbox_recheck::watch_js(window);
+        match cdp::evaluate(ws, &js, self.tunables.cdp_timeout).await {
+            Ok(v) => tracing::info!(watch = %v, "Agent sandbox check watch"),
+            Err(e) => tracing::warn!(error = %e, "cannot watch the app's Agent sandbox check"),
+        }
+    }
+
     async fn dom_probe(&self, session: &AppSession) -> Result<renderer::DomProbe> {
         let js = renderer::probe_js(&self.tunables.hooks);
         let (_, v) = self.eval_main(session, &js).await?;
@@ -1053,6 +1068,23 @@ impl AppController for DesktopAppController {
             }
             None => None,
         };
+        if let Some(ep) = cdp.as_ref().filter(|_| self.tunables.sandbox_recheck) {
+            // The app's first-start Windows setup restarts its app-server,
+            // which may leave the Agent sandbox check failed (ChatGPT 26.1111).
+            match cdp::list_targets(ep.port, self.tunables.cdp_timeout).await {
+                Ok(targets) => {
+                    if let Some(ws) =
+                        cdp::pick_main_target(&targets, ep.port).and_then(|t| t.ws_url.clone())
+                    {
+                        self.start_sandbox_recheck(&ws, sandbox_recheck::AFTER_LAUNCH)
+                            .await;
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "no renderer for the Agent sandbox check watch")
+                }
+            }
+        }
         let record = store::LaunchRecord {
             install_id: Some(install.id.clone()),
             executable: Some(install.executable.clone()),
@@ -1152,6 +1184,12 @@ impl AppController for DesktopAppController {
             }
         }
         tracing::info!(host = %request.host_id, kill = request.kill_remote, "restart IPC sent");
+        if local && self.tunables.sandbox_recheck {
+            // The app's restart recovery may leave its Agent sandbox check
+            // failed (ChatGPT 26.1111 on Windows); watch it from the page.
+            self.start_sandbox_recheck(&ws, sandbox_recheck::AFTER_RESTART)
+                .await;
+        }
         if local && !before.is_empty() {
             let new_pid = self.wait_new_app_server(session.main_pid, &before).await?;
             tracing::info!(new_pid, ?before, "new app-server running");

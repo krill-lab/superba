@@ -172,6 +172,58 @@ async fn hot_restart_sends_ipc() {
 }
 
 #[tokio::test]
+async fn hot_restart_watches_the_sandbox_check_on_windows() {
+    // ChatGPT 26.1111 on Windows: a restart can leave its Agent sandbox
+    // check failed; a local hot restart starts the page's watch right after
+    // the restart IPC, a remote one does not.
+    let tmp = tempfile::tempdir().unwrap();
+    let c = controller(&tmp).with_tunables(superba_appctl::Tunables {
+        sandbox_recheck: true,
+        ..Default::default()
+    });
+    let fake = common::serve(vec!["app://-/index.html"], responder()).await;
+    let s = session(Some(fake.port));
+    c.hot_restart(&s, &HotRestartRequest::local())
+        .await
+        .unwrap();
+    c.hot_restart(&s, &HotRestartRequest::remote("devbox-1"))
+        .await
+        .unwrap();
+    let ev = fake.evaluated.lock().unwrap().clone();
+    let kinds: Vec<&str> = ev
+        .iter()
+        .filter_map(|e| {
+            if e.contains("codex-app-server-restart") {
+                Some("restart")
+            } else if e.contains("__superbaSandboxRecheck") {
+                Some("watch")
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(kinds, ["restart", "watch", "restart"]);
+    let watch = ev
+        .iter()
+        .find(|e| e.contains("__superbaSandboxRecheck"))
+        .unwrap();
+    assert!(watch.contains(r#"["windows-sandbox","readiness"]"#));
+
+    // Off (the default outside Windows): no watch.
+    let fake = common::serve(vec!["app://-/index.html"], responder()).await;
+    let plain = controller(&tmp).with_tunables(superba_appctl::Tunables {
+        sandbox_recheck: false,
+        ..Default::default()
+    });
+    plain
+        .hot_restart(&session(Some(fake.port)), &HotRestartRequest::local())
+        .await
+        .unwrap();
+    let ev = fake.evaluated.lock().unwrap().clone();
+    assert!(ev.iter().all(|e| !e.contains("__superbaSandboxRecheck")));
+}
+
+#[tokio::test]
 async fn hot_restart_refused_and_no_cdp() {
     let tmp = tempfile::tempdir().unwrap();
     let c = controller(&tmp);
