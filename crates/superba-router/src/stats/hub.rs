@@ -826,7 +826,14 @@ impl Tracker {
             line_id,
             line_name,
             upstream_host: host,
-            failovers: self.failovers,
+            // A failed attempt counts as a failover only when another
+            // candidate was tried after it: when no line answered, the last
+            // failure was not followed by one (always so with failover off).
+            failovers: if self.answered.is_some() {
+                self.failovers
+            } else {
+                self.failovers.saturating_sub(1)
+            },
             transport: self.meta.transport,
             originator: self.meta.originator.clone(),
             client: self.meta.client,

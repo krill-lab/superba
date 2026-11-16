@@ -967,3 +967,46 @@ async fn with_failover_off_a_failed_handshake_is_not_tried_on_the_next_line() {
     assert_eq!(st.totals.failovers, 0);
     assert_eq!(st.members[0].lines[0].failovers_away, 0);
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_request_log_counts_a_failover_only_when_another_line_was_tried() {
+    let bad = || upstream(Mode::Json(502, r#"{"error":"bad gateway"}"#));
+    // Failover off: one attempt, no other line tried, so no failover.
+    let (x1, x2) = (bad().await, upstream(decoding()).await);
+    let mut cfg = test_config(vec![member(
+        "krill",
+        MemberKind::Krill,
+        false,
+        vec![
+            line("a", x1.base("/backend-api/codex")),
+            line("b", x2.base("/backend-api/codex")),
+        ],
+    )]);
+    failover_off(&mut cfg);
+    let (r, paths, _dir) = start_recording(cfg).await;
+    let resp = post(&r, RESPONSES, big_body(), None).await;
+    assert_eq!(resp.status(), 502);
+    let details = recorded(&paths, 1).await;
+    assert_eq!(details[0].attempts.len(), 1);
+    assert_eq!(details[0].row.failovers, 0, "nothing was tried after it");
+    r.handle.shutdown();
+
+    // Failover on: both lines fail, one move between them.
+    let (y1, y2) = (bad().await, bad().await);
+    let cfg = test_config(vec![member(
+        "krill",
+        MemberKind::Krill,
+        false,
+        vec![
+            line("a", y1.base("/backend-api/codex")),
+            line("b", y2.base("/backend-api/codex")),
+        ],
+    )]);
+    let (r, paths, _dir) = start_recording(cfg).await;
+    let resp = post(&r, RESPONSES, big_body(), None).await;
+    assert_eq!(resp.status(), 502);
+    let details = recorded(&paths, 1).await;
+    assert_eq!(details[0].attempts.len(), 2);
+    assert_eq!(details[0].row.failovers, 1, "one move from a to b");
+    r.handle.shutdown();
+}
