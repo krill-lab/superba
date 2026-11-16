@@ -821,6 +821,11 @@ pub enum RouterCommand {
         #[arg(value_enum, help = english("cli.help.on_off"))]
         state: OnOff,
     },
+    #[command(about = english("cli.help.router_failover"))]
+    Failover {
+        #[arg(value_enum, help = english("cli.help.router_failover_state"))]
+        state: Option<OnOff>,
+    },
     #[command(about = english("cli.help.router_clear"))]
     Clear {
         #[arg(long, value_parser = parse_age, value_name = "AGE", help = english("cli.help.router_older_than"))]

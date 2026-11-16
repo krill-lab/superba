@@ -385,6 +385,12 @@ async fn proxy_request(
         );
     }
     let mut order = match &openai_meta {
+        // A model test names its line: picked out of every candidate below,
+        // whatever the failover setting.
+        None if probe.is_some() => catalog_selection
+            .as_ref()
+            .expect("selection")
+            .all_candidates(&generation, &route, pin, now),
         None if catalog_selection.is_some() => catalog_selection
             .as_ref()
             .expect("selection")
@@ -946,7 +952,9 @@ async fn proxy_request(
         if let Some(t) = &mut tracker {
             t.attempt_failed(c, status, &reason, started.elapsed());
         }
-        line.counters.failovers_away.fetch_add(1, Ordering::Relaxed);
+        if generation.config.tuning.failover_enabled {
+            line.counters.failovers_away.fetch_add(1, Ordering::Relaxed);
+        }
         failures.push(format!("{label}: {reason}"));
         if i + 1 < total {
             shared.totals.failovers.fetch_add(1, Ordering::Relaxed);

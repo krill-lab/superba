@@ -211,6 +211,12 @@ pub(crate) fn attempts(
             });
         }
     }
+    // Failover off: the first attempt only, cooling down or not
+    // ([`crate::select`]).
+    if !generation.config.tuning.failover_enabled {
+        order.truncate(1);
+        return order;
+    }
     let health = |a: &Attempt| lock(&generation.members[a.c.member].lines[a.c.line].health);
     let available: Vec<Attempt> = order
         .iter()

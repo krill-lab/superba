@@ -245,3 +245,69 @@ fn the_log_fits_every_window_size_without_cut_filters_or_elided_numbers() {
         }
     }
 }
+
+#[test]
+fn the_newest_500_notice_keeps_the_filters_and_the_table_inside_the_page() {
+    // PR #25 (用量面板右侧截断): with more than 500 matching requests the
+    // "Newest 500 shown" notice was a right-to-left child of the filter row. It
+    // took the rest of the row before the status / client filters were drawn,
+    // so they, the row and with it the log below grew past the page's right
+    // edge.
+    let service = fake();
+    let mut rows = FakeService::many_request_rows(Timestamp::now(), 520);
+    // Imported rows add the source filter to the row.
+    for r in rows.iter_mut().step_by(2) {
+        r.source = RequestSource::CcSwitch;
+        r.member_id = superba_core::ProfileId::new("import:ccs:packy");
+        r.member_name = "PackyCode".into();
+    }
+    service.set_request_rows(rows);
+    for window in [[960.0, 640.0], [1280.0, 800.0], [1440.0, 900.0]] {
+        for locale in [Locale::En, Locale::ZhCn] {
+            let tr = Tr::new(locale);
+            let label = format!("{window:?} {locale:?}");
+            let mut h = Harness::new(window, locale, service.clone(), true);
+            let mut state = State::default();
+            let notice = tr.f("requests.truncated", &[("n", &500)]);
+            let f = h.until(
+                |ui, cx, out| router::show_usage(ui, cx, &mut state, out),
+                |f| f.has(&notice) && f.has(" %"),
+            );
+            assert_eq!(state.recent.shown.len(), 500, "{label}");
+            let right = f.rect.max.x + 0.5;
+            let beyond: Vec<(&str, f32)> = f
+                .texts
+                .iter()
+                .filter(|(_, r)| r.max.x > right)
+                .map(|(t, r)| (t.as_str(), r.max.x))
+                .collect();
+            assert!(
+                beyond.is_empty(),
+                "{label}: past the page edge {right}: {beyond:?}"
+            );
+            let frames: Vec<egui::Rect> = f
+                .outlines
+                .iter()
+                .map(|(r, _)| *r)
+                .filter(|r| r.max.x > right + 1.0)
+                .collect();
+            assert!(
+                frames.is_empty(),
+                "{label}: controls past the edge: {frames:?}"
+            );
+            for t in [
+                notice.clone(),
+                tr.t("requests.filter.client.all"),
+                tr.t("requests.filter.status.all"),
+                tr.t("requests.filter.source.all"),
+                tr.t("requests.filter.all_hosts"),
+            ] {
+                let r = f
+                    .find(&t)
+                    .unwrap_or_else(|| panic!("{label}: {t} not drawn"));
+                assert!(r.max.x <= right, "{label}: {t} at {r:?}");
+                assert!(!f.elided.contains(&t), "{label}: {t} cut");
+            }
+        }
+    }
+}

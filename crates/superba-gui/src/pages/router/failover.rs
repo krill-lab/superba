@@ -3,7 +3,8 @@
 //! the router configuration and a running router reloads it (no restart of
 //! Codex): the first and the longest cooldown of a failed line, the statuses
 //! that fail over to the next line, how long a conversation stays on its line
-//! and whether it returns to the preferred member once that has recovered.
+//! and whether it returns to the preferred member once that has recovered;
+//! and above them whether the router fails over at all (PR #25, 故障转移开关).
 
 use egui::Ui;
 use superba_core::RouterFailover;
@@ -162,6 +163,33 @@ pub(super) fn section_ui(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
     let f = saved.unwrap_or_default();
     let secs = cx.tr.t("router.failover.seconds");
     let mins = cx.tr.t("router.failover.minutes");
+
+    // The switch itself (PR #25): off, a request gets one line and that
+    // line's error goes back to the tool.
+    let title = cx.tr.t("router.failover.enabled");
+    crate::pages::superba::row(
+        ui,
+        cx,
+        &title,
+        &cx.tr.t("router.failover.enabled_hint"),
+        false,
+        |ui| {
+            let mut on = f.enabled;
+            if ui
+                .add(Toggle::new(&mut on, &title).enabled(enabled))
+                .changed()
+            {
+                let mut next = f.clone();
+                next.enabled = on;
+                save(state, cx, next);
+            }
+        },
+    );
+    if !f.enabled {
+        ui.add_space(space::XS);
+        crate::pages::note(ui, cx, Status::Warn, cx.tr.t("router.failover.off_note"));
+        ui.add_space(space::S);
+    }
 
     let title = cx.tr.t("router.failover.cooldown");
     let mut next = f.clone();

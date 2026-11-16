@@ -322,7 +322,7 @@ pub(crate) async fn dial(
                 let reason = describe_error(&e);
                 let opened = lock(&line.health).on_hard_failure(Instant::now(), reason.clone());
                 note_line_down(shared, generation, c, opened, &reason);
-                failed_over(shared, member, line, &mut failures, &label, reason);
+                failed_over(shared, generation, c, &mut failures, &label, reason);
                 continue;
             }
             Ok(resp) => resp,
@@ -334,7 +334,7 @@ pub(crate) async fn dial(
         ) {
             let opened = lock(&line.health).on_soft_failure(Instant::now(), reason.clone());
             note_line_down(shared, generation, c, opened, &reason);
-            failed_over(shared, member, line, &mut failures, &label, reason);
+            failed_over(shared, generation, c, &mut failures, &label, reason);
             continue;
         }
         let status = resp.status();
@@ -375,7 +375,7 @@ pub(crate) async fn dial(
                 let reason = format!("upgrade failed: {}", e.without_url());
                 let opened = lock(&line.health).on_hard_failure(Instant::now(), reason.clone());
                 note_line_down(shared, generation, c, opened, &reason);
-                failed_over(shared, member, line, &mut failures, &label, reason);
+                failed_over(shared, generation, c, &mut failures, &label, reason);
                 continue;
             }
         };
@@ -485,20 +485,25 @@ pub(crate) async fn tunnel<D>(
 
 fn failed_over(
     shared: &Shared,
-    member: &crate::state::MemberRt,
-    line: &crate::state::LineRt,
+    generation: &Generation,
+    c: Candidate,
     failures: &mut Vec<String>,
     label: &str,
     reason: String,
 ) {
-    line.counters.failovers_away.fetch_add(1, Ordering::Relaxed);
-    shared.totals.failovers.fetch_add(1, Ordering::Relaxed);
-    shared.event(
-        RouteEventKind::Failover,
-        Some(&member.cfg.id),
-        Some(&line.cfg.id),
-        Some(format!("websocket: {reason}")),
-    );
+    // Failover off: the handshake had one line, nothing moved on.
+    if generation.config.tuning.failover_enabled {
+        let member = &generation.members[c.member];
+        let line = &member.lines[c.line];
+        line.counters.failovers_away.fetch_add(1, Ordering::Relaxed);
+        shared.totals.failovers.fetch_add(1, Ordering::Relaxed);
+        shared.event(
+            RouteEventKind::Failover,
+            Some(&member.cfg.id),
+            Some(&line.cfg.id),
+            Some(format!("websocket: {reason}")),
+        );
+    }
     failures.push(format!("{label}: {reason}"));
 }
 

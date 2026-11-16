@@ -89,6 +89,7 @@ pub(super) async fn run(command: &RouterCommand, rt: &Runtime, out: &mut Output)
             .await
         }
         RouterCommand::Record { state } => super::requests::record(*state, rt, out).await,
+        RouterCommand::Failover { state } => failover(*state, rt, out).await,
         RouterCommand::Clear { older_than, yes } => {
             if older_than.is_none() && !yes {
                 return Err(usage(out, text("cli.requests.clear_all_needs_yes")));
@@ -96,6 +97,28 @@ pub(super) async fn run(command: &RouterCommand, rt: &Runtime, out: &mut Output)
             super::requests::clear(*older_than, rt, out).await
         }
     }
+}
+
+/// `spb router failover [on|off]` (PR #25): whether a request whose line fails
+/// is tried on the next line or member; without a state, the current one. The
+/// other failover rules are kept; a running router reloads, Codex keeps running.
+async fn failover(state: Option<crate::OnOff>, rt: &Runtime, out: &mut Output) -> Result {
+    let view = rt.service.router_status().await?;
+    let mut rules = view.failover.clone().unwrap_or_default();
+    let view = match state {
+        Some(state) => {
+            rules.enabled = state.is_on();
+            rt.service.router_set_failover(rules.clone()).await?
+        }
+        None => view,
+    };
+    out.line(text(if rules.enabled {
+        "cli.router.failover_on"
+    } else {
+        "cli.router.failover_off"
+    }))?;
+    out.value(&view)?;
+    Ok(exit::OK)
 }
 
 /// `spb router uninstall --quiet [--keep-service]`, run by the Windows installer before it
@@ -446,6 +469,9 @@ fn render(view: &RouterView, out: &mut Output) -> Result<()> {
     out.field("cli.router.running", out.boolean(view.running))?;
     out.field("cli.router.port", out.optional(view.port))?;
     out.field("cli.router.codex_routed", out.boolean(view.codex_routed))?;
+    if let Some(f) = &view.failover {
+        out.field("cli.router.failover", out.boolean(f.enabled))?;
+    }
     if view.running {
         out.field("cli.router.requests", view.requests)?;
         out.field("cli.router.failovers", view.failovers)?;

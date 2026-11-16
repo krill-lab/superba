@@ -195,6 +195,46 @@ fn the_failover_rules_are_settings_that_save() {
     }
 }
 
+/// PR #25 (故障转移开关): failover is a switch at the top of the rules, on by
+/// default; turning it off saves at once, says what it means, and the line
+/// order help on the other pages says so too.
+#[test]
+fn failover_can_be_turned_off() {
+    assert!(RouterFailover::default().enabled);
+    for locale in [Locale::En, Locale::ZhCn] {
+        let tr = Tr::new(locale);
+        let service = members();
+        let mut h = AppHarness::new(service.clone(), locale, Page::Router);
+        let name = tr.t("router.failover.enabled");
+        h.wait_for(Some(Role::Switch), &name);
+        let note = tr.t("router.failover.off_note");
+        assert!(!h.settle().has_containing(&note));
+        h.click(Some(Role::Switch), &name);
+        h.until("failover off saved", |_| !service.router_failover().enabled);
+        let tree = h.until("the off note", |t| t.has_containing(&note));
+        assert!(tree.find(Some(Role::Switch), &name).is_some());
+        // The other rules are kept as they were.
+        let f = service.router_failover();
+        assert_eq!(
+            f,
+            RouterFailover {
+                enabled: false,
+                ..RouterFailover::default()
+            }
+        );
+        assert_eq!(
+            router::recovery_text(&tr, Some(&f)),
+            tr.t("router.preference.no_failover")
+        );
+        assert_ne!(
+            router::recovery_text(&tr, None),
+            tr.t("router.preference.no_failover")
+        );
+        h.click(Some(Role::Switch), &name);
+        h.until("failover on again", |_| service.router_failover().enabled);
+    }
+}
+
 /// alpha.9: the cooldown fields take a value from UI Automation's
 /// ValuePattern.SetValue (text) and from the keyboard, and their steppers
 /// change it by one; out-of-range input is clamped.

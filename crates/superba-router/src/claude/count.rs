@@ -76,8 +76,12 @@ pub(super) async fn count(shared: &Arc<Shared>, parts: &Parts, raw: Bytes) -> Re
     }
     let (body, _) = passthrough::body(&req, mc, &target.model);
     let body = body.unwrap_or_else(|| Bytes::from(serde_json::to_vec(&req).unwrap_or_default()));
-    for (li, line) in member.lines.iter().enumerate() {
-        if !lock(&line.health).is_available(Instant::now()) {
+    // Failover off: the first line only, cooling down or not; a failure
+    // gives the local estimate as usual.
+    let failover = generation.config.tuning.failover_enabled;
+    let lines = if failover { member.lines.len() } else { 1 };
+    for (li, line) in member.lines.iter().enumerate().take(lines) {
+        if failover && !lock(&line.health).is_available(Instant::now()) {
             continue;
         }
         let base = &mc.base[li];

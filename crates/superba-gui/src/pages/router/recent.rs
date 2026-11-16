@@ -620,6 +620,7 @@ fn filters(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
     ui.horizontal(|ui| {
         range_filter(ui, cx, r);
         extra_filters(ui, cx, r);
+        truncated_notice(ui, cx, r);
     });
     ui.add_space(FILTER_GAP);
     tool_filters(ui, cx, r);
@@ -714,7 +715,7 @@ pub(super) fn tool_filters(ui: &mut Ui, cx: &Cx<'_>, r: &mut Recent) {
     });
 }
 
-/// The range segments, and "showing the newest n" on the right.
+/// The range segments.
 fn range_filter(ui: &mut Ui, cx: &Cx<'_>, r: &mut Recent) {
     ui.spacing_mut().item_spacing.x = 6.0;
     let mut range = r.range;
@@ -728,18 +729,26 @@ fn range_filter(ui: &mut Ui, cx: &Cx<'_>, r: &mut Recent) {
         r.range = range;
         r.changed();
     }
-    if r.truncated {
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            ui.add(
-                egui::Label::new(Text::caption(
-                    cx.tr.f("requests.truncated", &[("n", &r.shown.len())]),
-                    cx.pal,
-                ))
-                .truncate(),
-            )
-            .on_hover_text(cx.tr.t("requests.truncated_tip"));
-        });
+}
+
+/// "Showing the newest n" right-aligned in what the filter row leaves. Drawn
+/// last: a right-to-left child takes the rest of the row, so filters drawn
+/// after it went past the page's right edge and widened the row, and the log
+/// below with it (PR #25, 用量面板右侧截断).
+fn truncated_notice(ui: &mut Ui, cx: &Cx<'_>, r: &Recent) {
+    if !r.truncated {
+        return;
     }
+    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+        ui.add(
+            egui::Label::new(Text::caption(
+                cx.tr.f("requests.truncated", &[("n", &r.shown.len())]),
+                cx.pal,
+            ))
+            .truncate(),
+        )
+        .on_hover_text(cx.tr.t("requests.truncated_tip"));
+    });
 }
 
 /// Provider, model, status, client and (with imported rows) source

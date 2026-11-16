@@ -911,3 +911,59 @@ async fn an_ordinary_400_on_both_bodies_returns_the_first_answer_and_is_not_reme
         assert_eq!(st.totals.failovers, 0);
     }
 }
+
+fn failover_off(cfg: &mut superba_router::RouterConfig) {
+    cfg.tuning
+        .set_failover(&superba_core::RouterFailover {
+            enabled: false,
+            ..Default::default()
+        })
+        .unwrap();
+}
+
+#[tokio::test]
+async fn with_failover_off_a_refused_zstd_body_still_goes_again_plain_to_the_same_line() {
+    // Not a failover: the same line gets the body once more.
+    let up = upstream(refusing(415, "{}")).await;
+    let other = upstream(decoding()).await;
+    let mut cfg = test_config(vec![member(
+        "krill",
+        MemberKind::Krill,
+        false,
+        vec![
+            zstd_line("a", &up, Some(true)),
+            zstd_line("b", &other, None),
+        ],
+    )]);
+    failover_off(&mut cfg);
+    let r = start(cfg).await;
+    let resp = post(&r, RESPONSES, big_body(), None).await;
+    assert_eq!(resp.status(), 200);
+    let seen = up.seen();
+    assert_eq!(seen.len(), 2);
+    assert!(is_zstd(&seen[0].headers) && !is_zstd(&seen[1].headers));
+    assert_eq!(other.hits(), 0);
+}
+
+#[tokio::test]
+async fn with_failover_off_a_failed_handshake_is_not_tried_on_the_next_line() {
+    let bad = upstream(Mode::Json(502, "{}")).await;
+    let ok = upstream(Mode::WsEcho).await;
+    let mut cfg = test_config(vec![member(
+        "krill",
+        MemberKind::Krill,
+        true,
+        vec![
+            line("a", bad.base("/backend-api/codex")),
+            line("b", ok.base("/backend-api/codex")),
+        ],
+    )]);
+    failover_off(&mut cfg);
+    let r = start(cfg).await;
+    // 426 from the router: Codex goes on over HTTP, to the same line.
+    assert_eq!(ws_status(&r).await, 426);
+    assert_eq!((bad.hits(), ok.hits()), (1, 0));
+    let st = r.status().await;
+    assert_eq!(st.totals.failovers, 0);
+    assert_eq!(st.members[0].lines[0].failovers_away, 0);
+}

@@ -332,6 +332,7 @@ pub(crate) fn status(shared: &Shared) -> RouterStatus {
             upload_wire_bytes: t.upload_wire_bytes.load(Ordering::Relaxed),
         },
         sticky_sessions,
+        failover: generation.config.tuning.failover_enabled,
         recent: lock(&shared.events).iter().cloned().collect(),
         stats: shared.stats.status(generation.config.stats.as_ref()),
         local: shared.limits.status(),

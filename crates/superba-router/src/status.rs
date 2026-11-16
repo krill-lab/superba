@@ -48,6 +48,11 @@ pub struct RouterStatus {
     pub totals: Totals,
     /// Conversations currently pinned.
     pub sticky_sessions: usize,
+    /// The running configuration fails over to other lines and members
+    /// ([`crate::Tuning::failover_enabled`]; on from a router that does not
+    /// report it).
+    #[serde(default = "on")]
+    pub failover: bool,
     /// Most recent routing events, newest last.
     pub recent: Vec<RouteEvent>,
     /// Request recording (`None` without a `stats` configuration).
@@ -64,6 +69,10 @@ pub struct RouterStatus {
     /// (`ps/plugins/installed`, `wham/usage`, `wham/*`…).
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub local_answers: std::collections::BTreeMap<String, u64>,
+}
+
+fn on() -> bool {
+    true
 }
 
 /// The router's local budget ([`crate::limits`]) and the local shortages it
