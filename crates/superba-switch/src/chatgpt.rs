@@ -438,10 +438,12 @@ impl Switcher {
             }
         }
         found.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        let env = self.deps.ctx.env.clone();
+        // The MSIX app's packaged Codex runs as a copy (the app's or
+        // Superba's own), like everywhere else Superba starts the app's Codex.
+        let ctx = self.deps.ctx.clone();
         tokio::task::spawn_blocking(move || {
             found.into_iter().find_map(|(path, _)| {
-                superba_appctl::runnable::runnable_codex(&path, env.as_ref())
+                superba_appctl::runnable::runnable_codex(&path, &ctx)
                     .ok()
                     .filter(|p| p.is_file())
             })
