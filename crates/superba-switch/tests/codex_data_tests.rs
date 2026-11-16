@@ -124,7 +124,13 @@ async fn moved_sessions_are_still_found_by_superba_and_codex_paths() {
     let after = migrator.scan(&home).await.unwrap();
     assert_eq!(after.distribution(), before.distribution());
     let location = service.codex_data_where().await.unwrap();
-    assert_eq!(location.directory.as_deref(), Some(dest.as_path()));
+    // Reported in canonical form (macOS /var → /private/var, Windows 8.3
+    // names expanded): compare canonical paths.
+    let canonical = |p: &std::path::Path| superba_core::paths::canonical(p).unwrap();
+    assert_eq!(
+        location.directory.as_deref().map(canonical),
+        Some(canonical(&dest))
+    );
     assert_eq!(location.dirs[0].files, 1);
     let doctor = service.doctor().await.unwrap();
     assert!(

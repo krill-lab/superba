@@ -601,12 +601,19 @@ fn advanced_is_a_plain_section_at_the_end_in_both_states() {
                     |f| loaded(f, &tr, state),
                 );
                 let title = tr.t("router.advanced.title");
+                let caption_text = tr.t("router.advanced.caption");
+                // Title and caption both inside the view: a title on the
+                // bottom edge leaves the caption below it undrawn (taller
+                // fonts on macOS).
                 let f = h.until_scrolled(
                     |ui, cx, out| router::show(ui, cx, &mut page, out),
                     |f| {
-                        f.clipped_texts
-                            .iter()
-                            .any(|(t, r, clip)| t == &title && clip.contains_rect(*r))
+                        let visible = |want: &str| {
+                            f.clipped_texts
+                                .iter()
+                                .any(|(t, r, clip)| t == want && clip.contains_rect(*r))
+                        };
+                        visible(&title) && visible(&caption_text)
                     },
                 );
                 let line = f.find(&title).unwrap();
