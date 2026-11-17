@@ -1,7 +1,7 @@
 {
   "format": 1,
-  "serial": 13,
-  "generated": "2026-11-15",
+  "serial": 15,
+  "generated": "2026-11-17",
   "files": [
     {
       "path": "app-versions.json",
@@ -15,13 +15,13 @@
     },
     {
       "path": "models.json",
-      "size": 16661,
-      "sha256": "c06ebc16fdf04e8d4f8300c44f81fa22e28371a41a106e5c323dc9112d361d37"
+      "size": 19383,
+      "sha256": "0ce0e8ea97a46007d731a52486b2aff116ba097d023de2c84618b0821a66e9bc"
     },
     {
       "path": "prices.json",
-      "size": 37196,
-      "sha256": "8a83c0305b3a310db291cd9231dbaf5667d48b0148882e59339da1e6d13b92f0"
+      "size": 39002,
+      "sha256": "269083146cee6a3de2456d957ec4fcfce2e63efaffb1c8e0977286dccab67185"
     },
     {
       "path": "prompts/0fae6672.md",
