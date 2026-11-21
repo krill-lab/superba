@@ -1,15 +1,15 @@
 {
   "catalog_format": 1,
-  "codex_version": "0.171.0-alpha.5",
+  "codex_version": "0.173.0-alpha.4",
   "source": {
     "repo": "openai/codex",
-    "tag": "rust-v0.171.0-alpha.5",
-    "commit": "466da69cf6b72983f0d28c498c7cdb8d9bf2d114",
+    "tag": "rust-v0.173.0-alpha.4",
+    "commit": "e5e0304dd1693dc2b640449bec34349584d065e5",
     "prerelease": true,
     "files": {
-      "codex-rs/core/config.schema.json": "4940a64483ae8f2786b2a872bbf8f79900b1df3a",
+      "codex-rs/core/config.schema.json": "4635d21a837677e9d45e3cf0ceaf4483c296084a",
       "codex-rs/features/src/legacy.rs": "3e6df58ed1852665c58c3173550d18dbe43f2d06",
-      "codex-rs/features/src/lib.rs": "669cd73697aa4e884dbb14d3f5f8f0cf4893c4c1"
+      "codex-rs/features/src/lib.rs": "014759f35b4cd84f4802baf61fed536494be8edc"
     }
   },
   "config_keys": [
@@ -537,6 +537,27 @@
       "under_map": true
     },
     {
+      "path": "apps.<name>.tools.<name>.approvals_reviewer",
+      "kind": "enum",
+      "types": [
+        "string"
+      ],
+      "enum_values": [
+        {
+          "value": "user"
+        },
+        {
+          "value": "auto_review"
+        },
+        {
+          "value": "guardian_subagent"
+        }
+      ],
+      "description": "Reviewer for this tool's approval prompts, overriding link-level and app-level settings.",
+      "definition": "ApprovalsReviewer",
+      "under_map": true
+    },
+    {
       "path": "apps.<name>.tools.<name>.enabled",
       "kind": "boolean",
       "types": [
@@ -901,6 +922,25 @@
       "types": [
         "boolean"
       ]
+    },
+    {
+      "path": "code_mode",
+      "kind": "table",
+      "types": [
+        "object"
+      ],
+      "description": "Code Mode session settings.",
+      "definition": "CodeModeToml"
+    },
+    {
+      "path": "code_mode.heartbeat_interval_s",
+      "kind": "integer",
+      "types": [
+        "integer"
+      ],
+      "format": "uint32",
+      "minimum": 0.0,
+      "description": "Idle seconds between gRPC stream heartbeats. Zero (the default) disables them."
     },
     {
       "path": "compact_prompt",
@@ -1565,6 +1605,13 @@
       ]
     },
     {
+      "path": "features.connector_tool_result_passthrough",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ]
+    },
+    {
       "path": "features.connectors",
       "kind": "boolean",
       "types": [
@@ -1685,6 +1732,13 @@
     },
     {
       "path": "features.daemon_auto_start",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ]
+    },
+    {
+      "path": "features.daemon_updates",
       "kind": "boolean",
       "types": [
         "boolean"
@@ -1824,6 +1878,13 @@
       ]
     },
     {
+      "path": "features.file_backed_tool_audio",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ]
+    },
+    {
       "path": "features.gateway_setup_wizard",
       "kind": "boolean",
       "types": [
@@ -1888,6 +1949,13 @@
     },
     {
       "path": "features.guardian_native_multi_agent_history",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ]
+    },
+    {
+      "path": "features.guardian_nested_approval_context",
       "kind": "boolean",
       "types": [
         "boolean"
@@ -2342,14 +2410,67 @@
       ]
     },
     {
-      "path": "features.hooks",
+      "path": "features.guardianv3.housekeeper",
+      "kind": "table",
+      "types": [
+        "object"
+      ],
+      "definition": "GuardianV3HousekeeperConfigToml"
+    },
+    {
+      "path": "features.guardianv3.housekeeper.batch_timeout_ms",
+      "kind": "integer",
+      "types": [
+        "integer"
+      ],
+      "format": "uint32",
+      "minimum": 1.0,
+      "description": "Time budget for routing one batch, in milliseconds. Defaults to 90,000."
+    },
+    {
+      "path": "features.guardianv3.housekeeper.routing_instructions",
+      "kind": "string",
+      "types": [
+        "string"
+      ],
+      "description": "Guidance for grouping originals into channels and describing their topics. Ignored in project config."
+    },
+    {
+      "path": "features.guardianv3.max_instruction_tokens",
+      "kind": "integer",
+      "types": [
+        "integer"
+      ],
+      "format": "uint",
+      "minimum": 0.0,
+      "description": "Maximum estimated tokens per custom routing or retrieval prompt. Unset means uncapped. Ignored in project config."
+    },
+    {
+      "path": "features.guardianv3.message_board_in_memory",
       "kind": "boolean",
       "types": [
         "boolean"
-      ]
+      ],
+      "description": "Keep each fresh root's Guardian board in memory until the runtime closes. Defaults to false."
     },
     {
-      "path": "features.hosted_search_policy",
+      "path": "features.guardianv3.reviewer",
+      "kind": "table",
+      "types": [
+        "object"
+      ],
+      "definition": "GuardianV3ReviewerConfigToml"
+    },
+    {
+      "path": "features.guardianv3.reviewer.retrieval_instructions",
+      "kind": "string",
+      "types": [
+        "string"
+      ],
+      "description": "Guidance for searching the Guardian board and managing channel subscriptions. Ignored in project config."
+    },
+    {
+      "path": "features.hooks",
       "kind": "boolean",
       "types": [
         "boolean"
@@ -2545,6 +2666,13 @@
       ]
     },
     {
+      "path": "features.mcp_shared_repl_cwd",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ]
+    },
+    {
       "path": "features.mcp_tool_list_changed",
       "kind": "boolean",
       "types": [
@@ -2649,6 +2777,14 @@
       "types": [
         "boolean"
       ]
+    },
+    {
+      "path": "features.multi_agent_v2.interrupt_at_item_boundary",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ],
+      "description": "Let a subagent finish its current output item while cancelling tools immediately."
     },
     {
       "path": "features.multi_agent_v2.max_concurrent_threads_per_session",
@@ -3024,6 +3160,14 @@
       ]
     },
     {
+      "path": "features.network_proxy.transparent_tcp",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ],
+      "description": "Route outbound TCP from managed Linux sandbox commands through the managed SOCKS5 proxy."
+    },
+    {
       "path": "features.network_proxy.unix_sockets",
       "kind": "map",
       "types": [
@@ -3101,6 +3245,13 @@
       ]
     },
     {
+      "path": "features.per_environment_context",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ]
+    },
+    {
       "path": "features.personality",
       "kind": "boolean",
       "types": [
@@ -3172,6 +3323,13 @@
     },
     {
       "path": "features.realtime_conversation",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ]
+    },
+    {
+      "path": "features.realtime_frames_local",
       "kind": "boolean",
       "types": [
         "boolean"
@@ -3269,6 +3427,13 @@
       ]
     },
     {
+      "path": "features.restored_history_prewarm",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ]
+    },
+    {
       "path": "features.retain_client_developer_messages",
       "kind": "boolean",
       "types": [
@@ -3307,13 +3472,23 @@
       "description": "Stop when the shared budget is exhausted. Defaults to true."
     },
     {
+      "path": "features.rollout_budget.limit_budget",
+      "kind": "number",
+      "types": [
+        "number"
+      ],
+      "format": "double",
+      "description": "Positive, finite allowance in budget units. Set either limit_tokens or limit_budget. Spending exactly this amount is allowed."
+    },
+    {
       "path": "features.rollout_budget.limit_tokens",
       "kind": "integer",
       "types": [
         "integer"
       ],
       "format": "int64",
-      "minimum": 1.0
+      "minimum": 1.0,
+      "description": "Positive whole-token allowance. Set either limit_tokens or limit_budget."
     },
     {
       "path": "features.rollout_budget.prefill_token_weight",
@@ -3323,6 +3498,14 @@
       ],
       "format": "double",
       "minimum": 0.0
+    },
+    {
+      "path": "features.rollout_budget.reminder_at_context_start",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ],
+      "description": "Restate the balance when a thread starts or its context is compacted. Defaults to true. Set false with an empty threshold list for no budget reminders."
     },
     {
       "path": "features.rollout_budget.reminder_at_remaining_tokens",
@@ -3635,6 +3818,14 @@
       "description": "Developer message sampled before an automatic context-window rollover."
     },
     {
+      "path": "features.token_budget.context_window_as_tool_output",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ],
+      "description": "Render the context window and its hints as an agent.thread_hint tool output."
+    },
+    {
       "path": "features.token_budget.enabled",
       "kind": "boolean",
       "types": [
@@ -3851,6 +4042,13 @@
     },
     {
       "path": "features.use_xaa",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ]
+    },
+    {
+      "path": "features.utc_environment_date",
       "kind": "boolean",
       "types": [
         "boolean"
@@ -4620,7 +4818,7 @@
         },
         {
           "value": "ema_auth",
-          "description": "Exchange an enterprise IdP refresh token for resource-specific authorization. Alternate credentials and ordinary OAuth fallback are not permitted."
+          "description": "Exchange an enterprise IdP refresh token or, if none was issued, a current ID token for resource-specific authorization. Alternate credentials and ordinary OAuth fallback are not permitted."
         }
       ],
       "schema_default": null,
@@ -7330,6 +7528,27 @@
       "under_map": true
     },
     {
+      "path": "plugins.<name>.apps.<name>.tools.<name>.approvals_reviewer",
+      "kind": "enum",
+      "types": [
+        "string"
+      ],
+      "enum_values": [
+        {
+          "value": "user"
+        },
+        {
+          "value": "auto_review"
+        },
+        {
+          "value": "guardian_subagent"
+        }
+      ],
+      "description": "Reviewer for this tool's approval prompts, overriding link-level and app-level settings.",
+      "definition": "ApprovalsReviewer",
+      "under_map": true
+    },
+    {
       "path": "plugins.<name>.apps.<name>.tools.<name>.enabled",
       "kind": "boolean",
       "types": [
@@ -7760,6 +7979,34 @@
       "definition": "RealtimeVoice"
     },
     {
+      "path": "responses",
+      "kind": "table",
+      "types": [
+        "object"
+      ],
+      "description": "Controls how Codex processes model responses.",
+      "definition": "ResponsesToml"
+    },
+    {
+      "path": "responses.process_mode",
+      "kind": "enum",
+      "types": [
+        "string"
+      ],
+      "enum_values": [
+        {
+          "value": "streaming",
+          "description": "Process items as they arrive. A tool can start before its response is complete."
+        },
+        {
+          "value": "after_complete_response",
+          "description": "Process buffered items in order after the response completes, synchronous post-hooks finish, and any budget charges are posted."
+        }
+      ],
+      "description": "When to process response items, including text and tool calls. Defaults to `streaming`.",
+      "definition": "ResponseProcessMode"
+    },
+    {
       "path": "responses_api_metadata",
       "kind": "map",
       "types": [
@@ -7782,6 +8029,35 @@
         "string"
       ],
       "description": "Review model override used by the `/review` feature."
+    },
+    {
+      "path": "rollout_trace",
+      "kind": "table",
+      "types": [
+        "object"
+      ],
+      "description": "Capture limits for local rollout traces when recording is enabled.",
+      "definition": "RolloutTraceToml"
+    },
+    {
+      "path": "rollout_trace.max_bytes",
+      "kind": "integer",
+      "types": [
+        "integer"
+      ],
+      "format": "uint64",
+      "minimum": 0.0,
+      "description": "Maximum bytes for the manifest, event log, and compressed payload shards. Defaults to 256 MiB."
+    },
+    {
+      "path": "rollout_trace.max_payload_bytes",
+      "kind": "integer",
+      "types": [
+        "integer"
+      ],
+      "format": "uint",
+      "minimum": 0.0,
+      "description": "Maximum uncompressed bytes retained per new body or separated value. Defaults to 64 MiB."
     },
     {
       "path": "sandbox_mode",
@@ -8102,23 +8378,6 @@
       ],
       "description": "Nested tools section for feature toggles",
       "definition": "ToolsToml"
-    },
-    {
-      "path": "tools.client_search_provider",
-      "kind": "enum",
-      "types": [
-        "string"
-      ],
-      "enum_values": [
-        {
-          "value": "standalone"
-        },
-        {
-          "value": "search_mcp"
-        }
-      ],
-      "description": "Client provider preference when the model does not select a provider.",
-      "definition": "WebSearchProvider"
     },
     {
       "path": "tools.experimental_request_user_input",
@@ -8482,6 +8741,8 @@
           "hide": null,
           "new_task": null,
           "new_worktree": null,
+          "next_group": null,
+          "previous_group": null,
           "rename": null,
           "resume": null,
           "search": null,
@@ -8516,8 +8777,10 @@
           "history_search_next": null,
           "history_search_previous": null,
           "queue": null,
+          "redo": null,
           "submit": null,
-          "toggle_shortcuts": null
+          "toggle_shortcuts": null,
+          "undo": null
         },
         "editor": {
           "delete_backward": null,
@@ -8540,6 +8803,7 @@
         },
         "global": {
           "change_host": null,
+          "choose_cloud_environment": null,
           "clear_terminal": null,
           "close_sidebar_tab": null,
           "copy": null,
@@ -8593,6 +8857,7 @@
           "half_page_up": null,
           "jump_bottom": null,
           "jump_top": null,
+          "mark_markdown": null,
           "page_down": null,
           "page_up": null,
           "scroll_down": null,
@@ -8692,6 +8957,8 @@
         "hide": null,
         "new_task": null,
         "new_worktree": null,
+        "next_group": null,
+        "previous_group": null,
         "rename": null,
         "resume": null,
         "search": null,
@@ -8759,6 +9026,26 @@
         "array"
       ],
       "description": "Open a new session in a worktree from the project default branch.",
+      "definition": "KeybindingsSpec"
+    },
+    {
+      "path": "tui.keymap.agents.next_group",
+      "kind": "union",
+      "types": [
+        "string",
+        "array"
+      ],
+      "description": "Select the first task in the next group.",
+      "definition": "KeybindingsSpec"
+    },
+    {
+      "path": "tui.keymap.agents.previous_group",
+      "kind": "union",
+      "types": [
+        "string",
+        "array"
+      ],
+      "description": "Select the first task in the previous group.",
       "definition": "KeybindingsSpec"
     },
     {
@@ -9060,8 +9347,10 @@
         "history_search_next": null,
         "history_search_previous": null,
         "queue": null,
+        "redo": null,
         "submit": null,
-        "toggle_shortcuts": null
+        "toggle_shortcuts": null,
+        "undo": null
       },
       "definition": "TuiComposerKeymap"
     },
@@ -9096,6 +9385,16 @@
       "definition": "KeybindingsSpec"
     },
     {
+      "path": "tui.keymap.composer.redo",
+      "kind": "union",
+      "types": [
+        "string",
+        "array"
+      ],
+      "description": "Redo an undone composer edit.",
+      "definition": "KeybindingsSpec"
+    },
+    {
       "path": "tui.keymap.composer.submit",
       "kind": "union",
       "types": [
@@ -9113,6 +9412,16 @@
         "array"
       ],
       "description": "Toggle the composer shortcut overlay.",
+      "definition": "KeybindingsSpec"
+    },
+    {
+      "path": "tui.keymap.composer.undo",
+      "kind": "union",
+      "types": [
+        "string",
+        "array"
+      ],
+      "description": "Undo the last edit to the composer draft.",
       "definition": "KeybindingsSpec"
     },
     {
@@ -9320,6 +9629,7 @@
       ],
       "schema_default": {
         "change_host": null,
+        "choose_cloud_environment": null,
         "clear_terminal": null,
         "close_sidebar_tab": null,
         "copy": null,
@@ -9363,6 +9673,16 @@
         "array"
       ],
       "description": "Change where a new conversation runs.",
+      "definition": "KeybindingsSpec"
+    },
+    {
+      "path": "tui.keymap.global.choose_cloud_environment",
+      "kind": "union",
+      "types": [
+        "string",
+        "array"
+      ],
+      "description": "Choose a saved environment for a new Cloud conversation.",
       "definition": "KeybindingsSpec"
     },
     {
@@ -9819,6 +10139,7 @@
         "half_page_up": null,
         "jump_bottom": null,
         "jump_top": null,
+        "mark_markdown": null,
         "page_down": null,
         "page_up": null,
         "scroll_down": null,
@@ -9894,6 +10215,16 @@
         "array"
       ],
       "description": "Jump to the beginning.",
+      "definition": "KeybindingsSpec"
+    },
+    {
+      "path": "tui.keymap.pager.mark_markdown",
+      "kind": "union",
+      "types": [
+        "string",
+        "array"
+      ],
+      "description": "Mark Markdown structure under the caret in transcript selection mode.",
       "definition": "KeybindingsSpec"
     },
     {
@@ -11461,9 +11792,9 @@
       "key": "code_mode_host_grpc",
       "config_path": "features.code_mode_host_grpc",
       "variant": "CodeModeHostGrpc",
-      "stage": "stable",
-      "default_enabled": true,
-      "rustdoc": "Use gRPC over stdio for the process-owned code-mode host."
+      "stage": "removed",
+      "default_enabled": false,
+      "rustdoc": "Removed compatibility flag. The local code-mode host always uses gRPC over stdio."
     },
     {
       "key": "code_mode_host_output_truncation",
@@ -11578,6 +11909,14 @@
       "rustdoc": "Request sequential cutoff reasoning summary delivery."
     },
     {
+      "key": "connector_tool_result_passthrough",
+      "config_path": "features.connector_tool_result_passthrough",
+      "variant": "ConnectorToolResultPassthrough",
+      "stage": "under_development",
+      "default_enabled": false,
+      "rustdoc": "Record executed tool calls and attach eligible connector results to their metadata."
+    },
+    {
       "key": "content_item_kinds",
       "config_path": "features.content_item_kinds",
       "variant": "ContentItemKinds",
@@ -11632,6 +11971,14 @@
       "stage": "stable",
       "default_enabled": true,
       "rustdoc": "Automatically start the shared local daemon for eligible interactive launches."
+    },
+    {
+      "key": "daemon_updates",
+      "config_path": "features.daemon_updates",
+      "variant": "DaemonUpdates",
+      "stage": "stable",
+      "default_enabled": true,
+      "rustdoc": "Allow automatic and explicit daemon updates.  Requirements-only gate: this should be set from requirements, not user config."
     },
     {
       "key": "daybreak_program_propagation",
@@ -11770,6 +12117,14 @@
       "rustdoc": "Enable Fast mode selection in the TUI and request layer."
     },
     {
+      "key": "file_backed_tool_audio",
+      "config_path": "features.file_backed_tool_audio",
+      "variant": "FileBackedToolAudio",
+      "stage": "under_development",
+      "default_enabled": false,
+      "rustdoc": "Allow this host's attachment store to prepare fresh tool audio before persistence."
+    },
+    {
       "key": "gateway_setup_wizard",
       "config_path": "features.gateway_setup_wizard",
       "variant": "GatewaySetupWizard",
@@ -11850,6 +12205,14 @@
       "rustdoc": "Review state-changing MAv2 calls and preserve native calls in Guardian history."
     },
     {
+      "key": "guardian_nested_approval_context",
+      "config_path": "features.guardian_nested_approval_context",
+      "variant": "GuardianNestedApprovalContext",
+      "stage": "under_development",
+      "default_enabled": false,
+      "rustdoc": "Include the verified enclosing invocation in nested Guardian approvals."
+    },
+    {
       "key": "guardian_node_repl_transcript_images",
       "config_path": "features.guardian_node_repl_transcript_images",
       "variant": "GuardianNodeReplTranscriptImages",
@@ -11928,14 +12291,6 @@
       "stage": "stable",
       "default_enabled": true,
       "rustdoc": "Enable Claude-style lifecycle hooks loaded from hooks.json files."
-    },
-    {
-      "key": "hosted_search_policy",
-      "config_path": "features.hosted_search_policy",
-      "variant": "HostedSearchPolicy",
-      "stage": "under_development",
-      "default_enabled": false,
-      "rustdoc": "Let the host authorize MCP search independently of native search through per-turn policy."
     },
     {
       "key": "image_detail_original",
@@ -12038,7 +12393,7 @@
       "config_path": "features.incremental_tools_legacy",
       "variant": "IncrementalToolsLegacy",
       "stage": "stable",
-      "default_enabled": false,
+      "default_enabled": true,
       "rustdoc": "Publish incremental tool declarations on regular Amazon Bedrock Responses."
     },
     {
@@ -12129,16 +12484,16 @@
       "key": "mcp_connection_sharing",
       "config_path": "features.mcp_connection_sharing",
       "variant": "McpConnectionSharing",
-      "stage": "under_development",
-      "default_enabled": false,
+      "stage": "stable",
+      "default_enabled": true,
       "rustdoc": "Discover and share eligible local stdio connections across chats."
     },
     {
       "key": "mcp_lazy_stdio_startup",
       "config_path": "features.mcp_lazy_stdio_startup",
       "variant": "McpLazyStdioStartup",
-      "stage": "under_development",
-      "default_enabled": false,
+      "stage": "stable",
+      "default_enabled": true,
       "rustdoc": "Defer optional stdio server startup in regular chats with a warm tool catalog."
     },
     {
@@ -12148,6 +12503,14 @@
       "stage": "stable",
       "default_enabled": true,
       "rustdoc": "Let RMCP coordinate OAuth refresh through the configured credential store."
+    },
+    {
+      "key": "mcp_shared_repl_cwd",
+      "config_path": "features.mcp_shared_repl_cwd",
+      "variant": "McpSharedReplCwd",
+      "stage": "under_development",
+      "default_enabled": false,
+      "rustdoc": "Use the app server's fixed launch directories for shared REPL servers."
     },
     {
       "key": "mcp_tool_list_changed",
@@ -12283,6 +12646,14 @@
       "rustdoc": "Request encrypted sampled output for token-preserving replay."
     },
     {
+      "key": "per_environment_context",
+      "config_path": "features.per_environment_context",
+      "variant": "PerEnvironmentContext",
+      "stage": "under_development",
+      "default_enabled": false,
+      "rustdoc": "Describe each selected environment's filesystem and permissions separately."
+    },
+    {
       "key": "personality",
       "config_path": "features.personality",
       "variant": "Personality",
@@ -12374,6 +12745,14 @@
       "stage": "removed",
       "default_enabled": true,
       "rustdoc": "Removed compatibility flag. TUI voice availability follows platform support."
+    },
+    {
+      "key": "realtime_frames_local",
+      "config_path": "features.realtime_frames_local",
+      "variant": "RealtimeFramesLocal",
+      "stage": "under_development",
+      "default_enabled": false,
+      "rustdoc": "Enroll paginated local threads in canonical realtime frame history."
     },
     {
       "key": "reasoning_effort_override",
@@ -12474,6 +12853,14 @@
       "stage": "removed",
       "default_enabled": false,
       "rustdoc": "Legacy rollout flag for Responses API WebSocket transport v2 experiments."
+    },
+    {
+      "key": "restored_history_prewarm",
+      "config_path": "features.restored_history_prewarm",
+      "variant": "RestoredHistoryPrewarm",
+      "stage": "under_development",
+      "default_enabled": false,
+      "rustdoc": "Warm persisted thread history before the first generation on cold resume."
     },
     {
       "key": "retain_client_developer_messages",
@@ -12796,8 +13183,12 @@
       "key": "tui_extensions_statusline",
       "config_path": "features.tui_extensions_statusline",
       "variant": "TuiExtensionsStatusLine",
-      "stage": "under_development",
+      "stage": "experimental",
       "default_enabled": false,
+      "experimental": {
+        "name": "Custom status line",
+        "menu_description": "Restart the TUI, then use /statusline."
+      },
       "rustdoc": "Enable experimental MCP status line providers."
     },
     {
@@ -12902,7 +13293,7 @@
       "variant": "UseLegacyLandlock",
       "stage": "deprecated",
       "default_enabled": false,
-      "rustdoc": "Use the legacy Landlock Linux sandbox fallback instead of the default bubblewrap pipeline."
+      "rustdoc": "Request the legacy Landlock mode of the Linux sandbox."
     },
     {
       "key": "use_linux_sandbox_bwrap",
@@ -12919,6 +13310,14 @@
       "stage": "under_development",
       "default_enabled": false,
       "rustdoc": "Enable enterprise refresh-token authorization for configured MCP resources."
+    },
+    {
+      "key": "utc_environment_date",
+      "config_path": "features.utc_environment_date",
+      "variant": "UtcEnvironmentDate",
+      "stage": "under_development",
+      "default_enabled": false,
+      "rustdoc": "Use UTC for the date in model-visible environment context."
     },
     {
       "key": "view_image",
@@ -13045,6 +13444,7 @@
     "ignored_feature_keys": [
       "apply_patch_freeform",
       "apps_mcp_path_override",
+      "code_mode_host_grpc",
       "guardianv2.thread_context",
       "image_detail_original",
       "item_ids",
@@ -13131,6 +13531,7 @@
     "RemoteMessageBoardConfigToml": "Connection settings for a remote message board.",
     "ResumeCwdMode": "Working directory to use when resuming or forking a session.",
     "RightClickPaste": "Right-click text paste when the fullscreen TUI has no selection.",
+    "RolloutTraceToml": "Storage budgets for one native rollout trace, shared by the root and its children.",
     "SessionPickerViewMode": "Preferred layout for the resume/fork session picker.",
     "ShellEnvironmentPolicyFilter": "Assigns a shell environment variable pattern to the include-only or exclude set. Includes do not re-add variables removed by another exclude pattern.",
     "ShellEnvironmentPolicyToml": "Policy for building the `env` when spawning a process via shell-like tools.",
@@ -13156,7 +13557,6 @@
     "TuiVimSearchKeymap": "Search motions shared by Vim normal and operator-pending input.",
     "TuiVimTextObjectKeymap": "Vim text-object keybindings for modal editing inside text areas.",
     "Verbosity": "Controls output length/detail on GPT-5 models via the Responses API. Serialized with lowercase values to match the OpenAI API.",
-    "WebSearchProvider": "Provider preference selected by the resolved model catalog entry.",
     "WireApi": "Wire protocol that the provider speaks."
   }
 }

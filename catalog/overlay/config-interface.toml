@@ -494,6 +494,18 @@ zh_name = "在新工作树中新建"
 zh = "从项目默认分支新建一个 Git 工作树（worktree），并在其中打开新会话。默认 `w`。"
 zh_basis = "d2e8ff2eff1cee8c"
 
+["config:tui.keymap.agents.next_group"]
+en = "Select the first task in the next group."
+en_source = "openai/codex rust-v0.173.0-alpha.4: codex-rs/core/config.schema.json"
+en_hash = "372b309ed9bcfe5f"
+zh = ""
+
+["config:tui.keymap.agents.previous_group"]
+en = "Select the first task in the previous group."
+en_source = "openai/codex rust-v0.173.0-alpha.4: codex-rs/core/config.schema.json"
+en_hash = "4c13a7dfcf4e4e5f"
+zh = ""
+
 ["config:tui.keymap.agents.rename"]
 en = "Rename the selected task."
 en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
@@ -739,6 +751,12 @@ zh_name = "排队发送"
 zh = "任务运行期间把当前草稿加入待发送队列，等当前轮次结束后再发出。默认 `tab`，优先于 `global.queue`。"
 zh_basis = "67d38a6e01371eb2"
 
+["config:tui.keymap.composer.redo"]
+en = "Redo an undone composer edit."
+en_source = "openai/codex rust-v0.171.0: codex-rs/core/config.schema.json"
+en_hash = "d700b2b8850e967a"
+zh = ""
+
 ["config:tui.keymap.composer.submit"]
 en = "Submit the current composer draft."
 en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
@@ -754,6 +772,12 @@ en_hash = "bbc6560ff872984a"
 zh_name = "快捷键提示浮层"
 zh = "显示或隐藏输入框的快捷键提示浮层。默认 `?`，优先于 `global.toggle_shortcuts`。"
 zh_basis = "bbc6560ff872984a"
+
+["config:tui.keymap.composer.undo"]
+en = "Undo the last edit to the composer draft."
+en_source = "openai/codex rust-v0.171.0: codex-rs/core/config.schema.json"
+en_hash = "c539ab84221f1c4a"
+zh = ""
 
 ["config:tui.keymap.editor"]
 en = ""
@@ -912,6 +936,12 @@ en_hash = "939152b8e04e338b"
 zh_name = "切换运行主机键"
 zh = "依据源码推断，自定义切换新会话运行主机的快捷键；只有界面显示新会话主机选择控件时才响应。它在可用主机间切换新会话的后端。"
 zh_basis = "939152b8e04e338b"
+
+["config:tui.keymap.global.choose_cloud_environment"]
+en = "Choose a saved environment for a new Cloud conversation."
+en_source = "openai/codex rust-v0.171.0: codex-rs/core/config.schema.json"
+en_hash = "e9049c071c978ef3"
+zh = ""
 
 ["config:tui.keymap.global.clear_terminal"]
 en = "Clear the terminal UI."
@@ -1318,6 +1348,12 @@ en_hash = "2c25697eaa13da17"
 zh_name = "跳到开头"
 zh = "跳到内容开头。默认 `home`。"
 zh_basis = "2c25697eaa13da17"
+
+["config:tui.keymap.pager.mark_markdown"]
+en = "Mark Markdown structure under the caret in transcript selection mode."
+en_source = "openai/codex rust-v0.171.0: codex-rs/core/config.schema.json"
+en_hash = "f274db9be6c28bba"
+zh = ""
 
 ["config:tui.keymap.pager.page_down"]
 en = "Scroll down by one page."
@@ -2228,7 +2264,7 @@ zh_basis = "cf5e278fa690a4be"
 
 ["config:tui.status_line_provider"]
 en = 'Local status line selection. Set to "default" for built-in items or specify an MCP server and tool.'
-en_source = "openai/codex rust-v0.171.0-alpha.5: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.171.0: codex-rs/core/config.schema.json"
 en_hash = "ee936ee8c791848c"
 zh_name = "状态栏内容来源"
 zh = "依据源码推断，选择终端界面（TUI）状态栏的内容来源：字符串 `default` 表示使用内置状态栏项目，或写成含 `server` 和 `tool` 的表，指定由某个 MCP 服务器的工具提供。项目内 `.codex/config.toml` 和内置默认值中的该项会被忽略（仍校验格式），各配置层之间整体覆盖而不合并字段。0.171.0-alpha.5 只读取并保存该选择，尚未见按它渲染状态栏的代码。"
