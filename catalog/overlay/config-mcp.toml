@@ -159,9 +159,9 @@ zh = "对位于受信任的 ChatGPT 官方来源上的服务器，直接使用�
 zh_basis = "ae114f18218e51e8"
 
 ["config:mcp_servers.<name>.auth=ema_auth"]
-en = "Exchange an enterprise IdP refresh token for resource-specific authorization. Alternate credentials and ordinary OAuth fallback are not permitted."
-en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
-en_hash = "4572145bb844b6bc"
+en = "Exchange an enterprise IdP refresh token or, if none was issued, a current ID token for resource-specific authorization. Alternate credentials and ordinary OAuth fallback are not permitted."
+en_source = "openai/codex rust-v0.171.0: codex-rs/core/config.schema.json"
+en_hash = "a3981a5509d15a65"
 zh_name = "企业托管授权"
 zh = "用企业 IdP（见 `mcp_enterprise_managed_auth`）的刷新令牌换取该服务器专用的授权。此模式下不允许使用其他凭据，也不会退回普通 OAuth。"
 zh_basis = "4572145bb844b6bc"

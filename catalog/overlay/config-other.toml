@@ -37,6 +37,18 @@ zh_name = "启用云端技能"
 zh = "设为 `false` 可禁止发现和使用云端技能；未设置时默认允许（`true`）。"
 zh_basis = ""
 
+["config:code_mode"]
+en = "Code Mode session settings."
+en_source = "openai/codex rust-v0.171.0: codex-rs/core/config.schema.json"
+en_hash = "82e0fbf78d55425a"
+zh = ""
+
+["config:code_mode.heartbeat_interval_s"]
+en = "Idle seconds between gRPC stream heartbeats. Zero (the default) disables them."
+en_source = "openai/codex rust-v0.171.0: codex-rs/core/config.schema.json"
+en_hash = "ad0ca2791d4f0a92"
+zh = ""
+
 ["config:daybreak"]
 en = "Default Daybreak preference for new threads and non-interactive turns."
 en_source = "openai/codex rust-v0.161.0: codex-rs/core/config.schema.json"
@@ -59,3 +71,45 @@ en_hash = "0f4c0c66d8d224e0"
 zh_name = "功能开关表"
 zh = "`[features]` 表：集中管理各项功能开关，键为功能名，值为 `true`/`false`，部分功能可写成带参数的子表。推荐用它代替各处单独的旧开关；未知的键会被忽略并记录警告。"
 zh_basis = "0f4c0c66d8d224e0"
+
+["config:responses"]
+en = "Controls how Codex processes model responses."
+en_source = "openai/codex rust-v0.171.0: codex-rs/core/config.schema.json"
+en_hash = "bb0785da68f492ae"
+zh = ""
+
+["config:responses.process_mode"]
+en = "When to process response items, including text and tool calls. Defaults to `streaming`."
+en_source = "openai/codex rust-v0.171.0: codex-rs/core/config.schema.json"
+en_hash = "a50f7d57ceeb4670"
+zh = ""
+
+["config:responses.process_mode=after_complete_response"]
+en = "Process buffered items in order after the response completes, synchronous post-hooks finish, and any budget charges are posted."
+en_source = "openai/codex rust-v0.171.0: codex-rs/core/config.schema.json"
+en_hash = "0ae03a0af3b034eb"
+zh = ""
+
+["config:responses.process_mode=streaming"]
+en = "Process items as they arrive. A tool can start before its response is complete."
+en_source = "openai/codex rust-v0.171.0: codex-rs/core/config.schema.json"
+en_hash = "0e17ebcfe8fc2d3e"
+zh = ""
+
+["config:rollout_trace"]
+en = "Capture limits for local rollout traces when recording is enabled."
+en_source = "openai/codex rust-v0.171.0: codex-rs/core/config.schema.json"
+en_hash = "5db84766f06ed477"
+zh = ""
+
+["config:rollout_trace.max_bytes"]
+en = "Maximum bytes for the manifest, event log, and compressed payload shards. Defaults to 256 MiB."
+en_source = "openai/codex rust-v0.171.0: codex-rs/core/config.schema.json"
+en_hash = "9ace33d16b015816"
+zh = ""
+
+["config:rollout_trace.max_payload_bytes"]
+en = "Maximum uncompressed bytes retained per new body or separated value. Defaults to 64 MiB."
+en_source = "openai/codex rust-v0.171.0: codex-rs/core/config.schema.json"
+en_hash = "de1044846b4c985c"
+zh = ""

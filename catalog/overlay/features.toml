@@ -324,6 +324,11 @@ zh_name = "推理摘要顺序截断"
 zh = "请求推理摘要时，要求 OpenAI 以顺序截断（`SequentialCutoff`）方式交付推理摘要。只在内置 OpenAI 模型供应商且请求了推理摘要时生效。开发中，默认关闭。"
 zh_basis = ""
 
+["feature:connector_tool_result_passthrough"]
+en = ""
+en_hash = ""
+zh = ""
+
 ["feature:content_item_kinds"]
 en = ""
 en_hash = ""
@@ -372,6 +377,11 @@ en_hash = ""
 zh_name = "自动启动后台服务"
 zh = "交互式启动 `codex` 时自动启动或连接本机共享的后台服务（app-server 守护进程），多个终端会话共用它，可用 `/daemon` 管理。单次启动加 `--no-daemon` 可不使用；远程工作区不会自动启动。0.157 起为稳定功能并默认开启；桌面 app 绑定的 0.167.0-alpha.4.1 中此开关已移除并被忽略，只能用 `--no-daemon` 关闭。"
 zh_basis = ""
+
+["feature:daemon_updates"]
+en = ""
+en_hash = ""
+zh = ""
 
 ["feature:daybreak_program_propagation"]
 en = ""
@@ -492,6 +502,11 @@ zh_name = "Fast 模式"
 zh = '允许使用 Fast 服务档位：配置中的 `service_tier = "fast"`（请求中发送 `priority`）只有开启时才生效，终端界面也会提供切换 Fast 模式的选项和快捷键。关闭后 Fast 档位设置会被忽略；Ultra Fast 档位由 `ultrafast_mode` 单独控制。默认开启。'
 zh_basis = ""
 
+["feature:file_backed_tool_audio"]
+en = ""
+en_hash = ""
+zh = ""
+
 ["feature:gateway_setup_wizard"]
 en = ""
 en_hash = ""
@@ -561,6 +576,11 @@ en_hash = ""
 zh_name = "原生多代理审查记录"
 zh = "依据源码推断，将多代理第二版的创建、发消息等工具调用作为原生调用记录提供给 Guardian，并为这些工具启用原生调用审查；异步评分也使用相应设置。开发中，默认关闭，工具命名空间取自多代理配置。"
 zh_basis = ""
+
+["feature:guardian_nested_approval_context"]
+en = ""
+en_hash = ""
+zh = ""
 
 ["feature:guardian_node_repl_transcript_images"]
 en = ""
@@ -823,6 +843,11 @@ zh_name = "MCP OAuth 协调刷新"
 zh = "MCP 服务器的 OAuth 令牌改由 MCP 客户端（RMCP）通过 Codex 配置的凭据存储来协调刷新，而不是沿用原有的刷新与保存流程。0.164 起为稳定功能并默认开启。"
 zh_basis = ""
 
+["feature:mcp_shared_repl_cwd"]
+en = ""
+en_hash = ""
+zh = ""
+
 ["feature:mcp_tool_list_changed"]
 en = ""
 en_hash = ""
@@ -937,6 +962,11 @@ zh_name = "输出 token 重放"
 zh = "请求 OpenAI 同时返回加密的采样输出（`output.encrypted_content`），以便之后保留原 token 重放这些输出。只对内置 OpenAI 模型供应商生效。开发中，默认关闭。"
 zh_basis = ""
 
+["feature:per_environment_context"]
+en = ""
+en_hash = ""
+zh = ""
+
 ["feature:personality"]
 en = ""
 en_hash = ""
@@ -1015,6 +1045,11 @@ en_hash = ""
 zh_name = "实时语音对话"
 zh = "已移除（0.164 起）。曾用于在终端界面（TUI）中开关实时语音对话（`/voice`）；现在实时语音对话是否可用不再取决于此开关，设置后被忽略。"
 zh_basis = ""
+
+["feature:realtime_frames_local"]
+en = ""
+en_hash = ""
+zh = ""
 
 ["feature:reasoning_effort_override"]
 en = ""
@@ -1101,6 +1136,11 @@ en_hash = ""
 zh_name = "Responses WebSocket v2（旧）"
 zh = "已移除。旧的 Responses API WebSocket 传输 v2 试验开关，设置后被忽略；现在是否使用 WebSocket 由模型供应商的 `supports_websockets` 决定。"
 zh_basis = ""
+
+["feature:restored_history_prewarm"]
+en = ""
+en_hash = ""
+zh = ""
 
 ["feature:retain_client_developer_messages"]
 en = ""
@@ -1376,8 +1416,10 @@ zh = "已移除。终端界面（TUI）现在总是基于 app-server 实现，�
 zh_basis = ""
 
 ["feature:tui_extensions_statusline"]
-en = ""
-en_hash = ""
+en_name = "Custom status line"
+en = "Restart the TUI, then use /statusline."
+en_source = "openai/codex rust-v0.171.0: codex-rs/features/src/lib.rs (experimental menu text)"
+en_hash = "6353ee961eafd6e2"
 zh_name = "扩展状态栏渲染"
 zh = "依据源码推断，将终端状态栏切换为 TUI 扩展渲染器，继续使用已配置的状态项目和颜色设置；关闭时使用原生渲染器。开发中，默认关闭。"
 zh_basis = ""
@@ -1486,6 +1528,11 @@ en_hash = ""
 zh_name = "MCP 企业令牌授权"
 zh = "对配置了企业托管认证（`mcp_enterprise_managed_auth`）的 MCP 资源启用企业刷新令牌授权（XAA）。必须在用户级配置或托管配置中开启，项目级 `.codex/config.toml` 中的设置无效。开发中，默认关闭。"
 zh_basis = ""
+
+["feature:utc_environment_date"]
+en = ""
+en_hash = ""
+zh = ""
 
 ["feature:view_image"]
 en = ""
