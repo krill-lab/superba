@@ -3,10 +3,11 @@
 //! gates ([`PatchSet::SpeedMenu`]) and the Statsig gate of composer
 //! predictions ([`PatchSet::Predictions`]).
 //!
-//! The renderer (app 26.1103+) is an Rspack build: every chunk under
-//! `webview/assets/` is an ES module exporting `__webpack_modules__ = {id(e,t,n)
-//! {...}, ...}`, and the runtime copies those factories into its module table
-//! when the chunk loads. The same module may ship in several chunks.
+//! The renderer (app 26.1103+) is an Rspack build. Chunks under
+//! `webview/assets/` export `__webpack_modules__`, with factories written as
+//! methods (`id(e,t,n){...}`) or parenthesized functions
+//! (`id:(function(e,t,n){...})`). The runtime copies them into its module
+//! table when the chunk loads. The same module may ship in several chunks.
 //!
 //! The gates (verified on app 26.1106) all compare the sign-in method with a
 //! fixed list (`chatgpt`, `personalAccessToken`, `amazonBedrock`), so an
@@ -56,7 +57,7 @@ use super::jslex;
 
 /// Version of the plan format and rules; a cached plan of another version is
 /// computed again.
-pub const PLAN_VERSION: u32 = 2;
+pub const PLAN_VERSION: u32 = 3;
 
 /// Chunks larger than this are not considered (the largest app chunk is ~9 MB).
 const CHUNK_LIMIT: u64 = 48 * 1024 * 1024;
@@ -208,7 +209,7 @@ impl GateKind {
     }
 }
 
-/// A patched module factory, as method source (`id(e,t,n){...}`).
+/// A patched module factory, written as an object property.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PatchedModule {
     /// The module id as written in the chunk (an identifier, a number or a
@@ -221,7 +222,7 @@ pub struct PatchedModule {
     pub original_len: usize,
     /// FNV-1a (32-bit) of the original source's UTF-16 code units.
     pub original_fnv: u32,
-    /// The patched factory, method syntax.
+    /// The patched property source, including the module key.
     pub source: String,
     /// Gates patched in it.
     pub gates: Vec<GateKind>,
@@ -327,8 +328,9 @@ pub fn fnv1a_utf16(text: &str) -> u32 {
 pub struct Factory<'a> {
     /// The key as written (`ipV4`, `123`, `"x"`).
     pub key: &'a str,
-    /// The method source, key included (what `toString` returns).
+    /// The factory source as returned by `Function.prototype.toString`.
     pub source: &'a str,
+    parenthesized: bool,
 }
 
 impl Factory<'_> {
@@ -339,6 +341,15 @@ impl Factory<'_> {
             k[1..k.len() - 1].to_owned()
         } else {
             k.to_owned()
+        }
+    }
+
+    /// Put the patched function back in its module-table property.
+    fn patched_property(&self, source: String) -> String {
+        if self.parenthesized {
+            format!("{}:({source})", self.key)
+        } else {
+            source
         }
     }
 }
@@ -381,20 +392,31 @@ pub fn chunk_factories(text: &str) -> Option<Vec<Factory<'_>>> {
                 }
             }
         }
-        if i == key_start || bytes.get(i) != Some(&b'(') {
+        if i == key_start {
             return None;
         }
         let key = &text[key_start..i];
-        let close_paren = jslex::matching_paren(bytes, i)?;
-        if bytes.get(close_paren + 1) != Some(&b'{') {
-            return None;
-        }
+        const FUNCTION_PREFIX: &[u8] = b":(function";
+        let parenthesized = bytes[i..].starts_with(FUNCTION_PREFIX);
+        let (source_start, params_start) = if parenthesized {
+            (i + 2, i + FUNCTION_PREFIX.len())
+        } else {
+            (key_start, i)
+        };
+        let close_paren = jslex::matching_paren(bytes, params_start)?;
         let close = jslex::matching_brace(bytes, close_paren + 1)?;
+        i = close + 1;
+        if parenthesized {
+            if bytes.get(i) != Some(&b')') {
+                return None;
+            }
+            i += 1;
+        }
         out.push(Factory {
             key,
-            source: &text[key_start..=close],
+            source: &text[source_start..=close],
+            parenthesized,
         });
-        i = close + 1;
         match bytes.get(i)? {
             b',' => i += 1,
             b'}' => return Some(out),
@@ -444,7 +466,8 @@ static QUEUE_DEFAULT: LazyLock<Regex> = LazyLock::new(|| {
     re(concat!(
         r#"if\("local"===(?P<mgr>ID)\.getHostId\(\)&&await (?P<rt>ID)\.isUsingCopilotInference\(\)\)return!1;"#,
         r#"let (?P<r>ID)=await (?P<mgr2>ID)\.getAccount\(\{priority:"critical"\}\);"#,
-        r#"return (?P<gate>ID\.account\?\.type==="chatgpt"(?:\|\|ID\.account\?\.type==="[A-Za-z]\w*")*)\}\)\},async writeServiceTier\("#,
+        r#"return (?P<gate>ID\.account\?\.type==="chatgpt"(?:\|\|ID\.account\?\.type==="[A-Za-z]\w*")*)\}"#,
+        r#"(?:,(?P<provider_mgr>ID)\.getThreadModelProvider\(ID\))?\)\},async writeServiceTier\("#,
     ))
 });
 
@@ -571,6 +594,8 @@ static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             accept: |c, window, at| {
                 all_same(&c["gate"], ".account?.type", &c["r"])
                     && c["mgr"] == c["mgr2"]
+                    && c.name("provider_mgr")
+                        .is_none_or(|m| m.as_str() == &c["mgr"])
                     && distinct(&[&c["mgr"], &c["rt"], &c["r"]])
                     && window[..at].contains("async readServiceTier(")
             },
@@ -800,8 +825,8 @@ pub fn plan_from_chunks<'a>(
         version: PLAN_VERSION,
         reason,
     };
-    // id -> variants (key, original source, hits), distinct sources only.
-    let mut found: BTreeMap<String, Vec<(String, String, Vec<Hit>)>> = BTreeMap::new();
+    // id -> variants (factory, hits), distinct sources only.
+    let mut found: BTreeMap<String, Vec<(Factory<'a>, Vec<Hit>)>> = BTreeMap::new();
     for (path, text) in chunks {
         if !CHUNK_ANCHORS.iter().any(|a| text.contains(a)) {
             continue;
@@ -820,15 +845,18 @@ pub fn plan_from_chunks<'a>(
                 continue;
             }
             let variants = found.entry(f.id()).or_default();
-            if variants.iter().any(|(_, original, _)| original == f.source) {
+            if variants
+                .iter()
+                .any(|(original, _)| original.source == f.source)
+            {
                 continue;
             }
             let hits = factory_hits(f.source);
-            variants.push((f.key.to_owned(), f.source.to_owned(), hits));
+            variants.push((f, hits));
         }
     }
     // Modules without any gate in any copy are not ours.
-    found.retain(|_, variants| variants.iter().any(|(_, _, hits)| !hits.is_empty()));
+    found.retain(|_, variants| variants.iter().any(|(_, hits)| !hits.is_empty()));
     // The first problem of each gate, and the modules holding it.
     let mut problems: BTreeMap<GateKind, String> = BTreeMap::new();
     let mut modules_of: BTreeMap<GateKind, Vec<String>> = BTreeMap::new();
@@ -838,7 +866,7 @@ pub fn plan_from_chunks<'a>(
             k.sort();
             k
         };
-        let mut all: Vec<GateKind> = variants.iter().flat_map(|(_, _, h)| kinds(h)).collect();
+        let mut all: Vec<GateKind> = variants.iter().flat_map(|(_, hits)| kinds(hits)).collect();
         all.sort();
         all.dedup();
         let mut fail = |kinds: &[GateKind], why: String| {
@@ -846,13 +874,13 @@ pub fn plan_from_chunks<'a>(
                 problems.entry(*k).or_insert_with(|| why.clone());
             }
         };
-        let first = kinds(&variants[0].2);
-        if variants.iter().any(|(_, _, hits)| kinds(hits) != first) {
+        let first = kinds(&variants[0].1);
+        if variants.iter().any(|(_, hits)| kinds(hits) != first) {
             fail(&all, format!("module {id}: copies differ in gates"));
             continue;
         }
-        let uses_import = variants.iter().any(|(_, original, _)| {
-            original.contains("import.meta") || IMPORT_CALL.is_match(original)
+        let uses_import = variants.iter().any(|(original, _)| {
+            original.source.contains("import.meta") || IMPORT_CALL.is_match(original.source)
         });
         if uses_import {
             // The copies are compiled in a classic script at the document's
@@ -927,7 +955,7 @@ pub fn plan_from_chunks<'a>(
     }
     let mut modules = Vec::new();
     for (id, variants) in found {
-        for (key, original, hits) in variants {
+        for (factory, hits) in variants {
             let hits: Vec<Hit> = hits
                 .into_iter()
                 .filter(|h| patched.contains(&h.kind))
@@ -935,17 +963,17 @@ pub fn plan_from_chunks<'a>(
             if hits.is_empty() {
                 continue;
             }
-            let source =
-                apply(&original, &hits).ok_or_else(|| no(format!("overlapping gates in {id}")))?;
+            let patched = apply(factory.source, &hits)
+                .ok_or_else(|| no(format!("overlapping gates in {id}")))?;
             let mut gates: Vec<GateKind> = hits.iter().map(|h| h.kind).collect();
             gates.sort();
             gates.dedup();
             modules.push(PatchedModule {
-                key,
+                key: factory.key.to_owned(),
                 id: id.clone(),
-                original_len: original.encode_utf16().count(),
-                original_fnv: fnv1a_utf16(&original),
-                source,
+                original_len: factory.source.encode_utf16().count(),
+                original_fnv: fnv1a_utf16(factory.source),
+                source: factory.patched_property(patched),
                 gates,
             });
         }
@@ -1021,6 +1049,7 @@ mod tests {
         let text = chunk(&[
             "aa(e,t){t.x=\"}\"}",
             "\"b-1\"(e){/}/.test(e)}",
+            "cd:(function(e){return /[(){}]/.test(e)})",
             "12(e,t,n){}",
         ]);
         let f = chunk_factories(&text).unwrap();
@@ -1029,6 +1058,7 @@ mod tests {
             [
                 ("aa", "aa(e,t){t.x=\"}\"}"),
                 ("\"b-1\"", "\"b-1\"(e){/}/.test(e)}"),
+                ("cd", "function(e){return /[(){}]/.test(e)}"),
                 ("12", "12(e,t,n){}")
             ]
         );
@@ -1068,6 +1098,24 @@ mod tests {
     }
 
     #[test]
+    fn patches_queue_with_model_provider_argument() {
+        let queue = QUEUE[4..].replace(
+            "})},async writeServiceTier",
+            "},e.getThreadModelProvider(r))},async writeServiceTier",
+        );
+        let text = chunk(&[UI, REQ, &format!("eF56:(function{queue})")]);
+        let plan = plan_from_chunks([("a.js", text.as_str())]).unwrap();
+        let module = plan.modules.iter().find(|m| m.id == "eF56").unwrap();
+        assert_eq!(
+            module.gates,
+            [GateKind::QueueDefault, GateKind::QueueExplicit]
+        );
+        assert!(module.source.contains(
+            "allow?.(e.getHostId(),k.account?.type)===!0},e.getThreadModelProvider(r))},async writeServiceTier"
+        ));
+    }
+
+    #[test]
     fn missing_or_duplicate_gates_give_no_plan() {
         let partial = chunk(&[UI, REQ]);
         let err = plan_from_chunks([("a.js", partial.as_str())]).unwrap_err();
@@ -1088,8 +1136,8 @@ mod tests {
     #[test]
     fn copies_minified_differently_are_variants() {
         let a = chunk(&[UI, REQ, QUEUE]);
-        let renamed = UI.replace("hh", "kk");
-        let b = chunk(&[&renamed]);
+        let renamed = format!("function{}", UI[4..].replace("hh", "kk"));
+        let b = chunk(&[&format!("aB12:({renamed})")]);
         let plan = plan_from_chunks([("a.js", a.as_str()), ("b.js", b.as_str())]).unwrap();
         let ui: Vec<_> = plan.modules.iter().filter(|m| m.id == "aB12").collect();
         assert_eq!(ui.len(), 2);
@@ -1098,6 +1146,10 @@ mod tests {
             "{}",
             ui[1].source
         );
+        assert!(ui[1].source.starts_with("aB12:(function("));
+        assert!(ui[1].source.ends_with("})"));
+        assert_eq!(ui[1].original_len, renamed.encode_utf16().count());
+        assert_eq!(ui[1].original_fnv, fnv1a_utf16(&renamed));
         assert_ne!(ui[0].original_fnv, ui[1].original_fnv);
         // A copy without the gate makes the module unusable.
         let broken = chunk(&[&UI.replace("\"personalAccessToken\"", "\"other\"")]);
