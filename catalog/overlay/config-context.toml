@@ -61,6 +61,12 @@ zh_name = "压缩前兜底提示词"
 zh = "上下文窗口即将自动轮换（压缩）前插入的一条开发者消息，让模型先整理要保留的信息。最长 2000 字节，需同时设置 `auto_compact_fallback_buffer_tokens`。"
 zh_basis = "91ed8d9c0e7512bf"
 
+["config:features.token_budget.context_window_as_tool_output"]
+en = "Render the context window and its hints as an agent.thread_hint tool output."
+en_source = "openai/codex rust-v0.171.0: codex-rs/core/config.schema.json"
+en_hash = "31b3856d8f86cfea"
+zh = ""
+
 ["config:features.token_budget.enabled"]
 en = ""
 en_hash = ""
