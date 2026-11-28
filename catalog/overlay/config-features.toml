@@ -210,7 +210,7 @@ zh_basis = "4eaf418bf74ed2e9"
 
 ["config:features.guardianv2.async_elastic_budgeting"]
 en = "Enable elastic allocation for asynchronous Guardian requests. Defaults to false."
-en_source = "openai/codex rust-v0.171.0-alpha.5: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.171.0: codex-rs/core/config.schema.json"
 en_hash = "7e41e55ca714ed45"
 zh_name = "后台分类弹性预算"
 zh = "依据源码推断，让 Guardian v2 后台风险分类器按 `async_elastic_sections` 中各分区的限额准备审查材料，代替固定的单条截断上限：可信工具、可信技能和以往审查结果中超过所在分区单条上限的条目会被整条省略。默认关闭，与同步审查的 `sync_elastic_budgeting` 相互独立；启用时必须提供非空且有效的 `async_elastic_sections`，否则配置加载失败。"
@@ -218,7 +218,7 @@ zh_basis = "7e41e55ca714ed45"
 
 ["config:features.guardianv2.async_elastic_sections"]
 en = "Section limits validated when asynchronous elastic budgeting is enabled."
-en_source = "openai/codex rust-v0.171.0-alpha.5: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.171.0: codex-rs/core/config.schema.json"
 en_hash = "fd63e958e19d601f"
 zh_name = "后台分类分区预算"
 zh = "依据源码推断，为后台分类弹性预算指定各类审查材料的限额，仅在 `async_elastic_budgeting = true` 时解析和校验，规则与 `sync_elastic_sections` 相同：分区名必须受支持，不能用别名重复指定同一分区；计入未列出分区的默认配额后，最低配额总和必须恰好为 128000 个 token。不支持 `transcript_selected_exec_results` 分区。"
@@ -240,7 +240,7 @@ zh_basis = ""
 
 ["config:features.guardianv2.async_elastic_sections.<name>.max_total_section_tokens"]
 en = "Upper bound for the section's allocation. Omit to use the global request budget as the upper bound."
-en_source = "openai/codex rust-v0.171.0-alpha.5: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.171.0: codex-rs/core/config.schema.json"
 en_hash = "c8b6cb34a2998370"
 zh_name = "后台分类分区总量上限"
 zh = "依据源码推断，该分区可分得的 token 上限，不得小于其 `min_total_section_tokens`；省略时以整次请求预算为上限。0.171.0-alpha.5 的后台分类只校验此值，实际只用到各分区的单条上限。"
@@ -255,7 +255,7 @@ zh_basis = ""
 
 ["config:features.guardianv2.async_elastic_sections.<name>.nested_tool_names"]
 en = "Exact Code Mode tool names for the transcript_selected_exec_results section."
-en_source = "openai/codex rust-v0.171.0-alpha.5: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.171.0: codex-rs/core/config.schema.json"
 en_hash = "84f91949ebcba5b8"
 zh_name = "执行结果工具名（不适用）"
 zh = "依据源码推断，只用于同步审查的 `transcript_selected_exec_results` 分区；后台分类不支持该分区，在 `async_elastic_sections` 的任何分区下设置本项都会导致配置加载失败。"
@@ -410,7 +410,7 @@ zh_basis = ""
 
 ["config:features.guardianv2.sync_elastic_sections.<name>.nested_tool_names"]
 en = "Exact Code Mode tool names for the transcript_selected_exec_results section."
-en_source = "openai/codex rust-v0.171.0-alpha.5: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.170.0: codex-rs/core/config.schema.json"
 en_hash = "84f91949ebcba5b8"
 zh_name = "执行结果分区工具名"
 zh = "依据源码推断，列出 Code Mode 中哪些工具（按精确名称）的执行结果归入 `transcript_selected_exec_results` 审查分区，让同步 Guardian 审查优先保留这些结果。只能写在该分区下且必须非空、不能有空名称；写在其他分区下会导致配置加载失败。"
@@ -504,6 +504,52 @@ zh_name = "启用 Guardian V3"
 zh = "开发中：开启 `guardianv3` 功能，与在 `[features]` 中写 `guardianv3 = true` 等效。依据源码推断：0.166.0-alpha.1 中尚无代码读取此开关。"
 zh_basis = ""
 
+["config:features.guardianv3.housekeeper"]
+en = ""
+en_hash = ""
+zh = ""
+
+["config:features.guardianv3.housekeeper.batch_timeout_ms"]
+en = "Time budget for routing one batch, in milliseconds. Defaults to 90,000."
+en_source = "openai/codex rust-v0.172.0: codex-rs/core/config.schema.json"
+en_hash = "a5ff57da2c6e33eb"
+zh = ""
+
+["config:features.guardianv3.housekeeper.routing_instructions"]
+en = "Guidance for grouping originals into channels and describing their topics. Ignored in project config."
+en_source = "openai/codex rust-v0.172.0: codex-rs/core/config.schema.json"
+en_hash = "26c0254dcba56a45"
+zh = ""
+
+["config:features.guardianv3.max_instruction_tokens"]
+en = "Maximum estimated tokens per custom routing or retrieval prompt. Unset means uncapped. Ignored in project config."
+en_source = "openai/codex rust-v0.172.0: codex-rs/core/config.schema.json"
+en_hash = "c487b30a92356770"
+zh = ""
+
+["config:features.guardianv3.message_board_in_memory"]
+en = "Defaults to true for shadow boards and false for live boards. False disables shadow reviews."
+en_source = "openai/codex rust-v0.174.0-alpha.9: codex-rs/core/config.schema.json"
+en_hash = "05325d139a907514"
+zh = ""
+
+["config:features.guardianv3.reviewer"]
+en = ""
+en_hash = ""
+zh = ""
+
+["config:features.guardianv3.reviewer.retrieval_instructions"]
+en = "Guidance for searching the Guardian board and managing channel subscriptions. Ignored in project config."
+en_source = "openai/codex rust-v0.172.0: codex-rs/core/config.schema.json"
+en_hash = "a9cd7d03dbd6204c"
+zh = ""
+
+["config:features.guardianv3.shadow_board_limit_mib"]
+en = "Maximum evidence per root shadow board in MiB. Defaults to 32. Ignored in project config."
+en_source = "openai/codex rust-v0.174.0-alpha.9: codex-rs/core/config.schema.json"
+en_hash = "90d75ee549d57f0a"
+zh = ""
+
 ["config:features.imagegenext"]
 en = ""
 en_hash = ""
@@ -556,12 +602,24 @@ zh_name = "允许指定子代理模型"
 zh = "在多代理 v2 的 `spawn_agent` 工具上提供 `model` 和 `reasoning_effort` 参数，并在主代理和子代理的使用提示中加入相应说明。默认 `true`。"
 zh_basis = "a6d01873f835d8d3"
 
+["config:features.multi_agent_v2.expose_spawn_agent_service_tier"]
+en = "Allow V1 and V2 `spawn_agent` to select a `service_tier` for one child. Defaults to false."
+en_source = "openai/codex rust-v0.174.0-alpha.9: codex-rs/core/config.schema.json"
+en_hash = "078aa983b5d662a5"
+zh = ""
+
 ["config:features.multi_agent_v2.hide_spawn_agent_metadata"]
 en = ""
 en_hash = ""
 zh_name = "隐藏子代理元数据"
 zh = "派生子代理时隐藏代理元数据：`spawn_agent` 的结果只返回任务名而不含昵称，工具说明中也不带继承模型的提示。默认 `true`。"
 zh_basis = ""
+
+["config:features.multi_agent_v2.interrupt_at_item_boundary"]
+en = "Let a subagent finish its current output item while cancelling tools immediately."
+en_source = "openai/codex rust-v0.171.0: codex-rs/core/config.schema.json"
+en_hash = "fedbf1086e3ae8a8"
+zh = ""
 
 ["config:features.multi_agent_v2.max_concurrent_threads_per_session"]
 en = ""
@@ -854,6 +912,12 @@ zh_name = "SOCKS5 代理地址"
 zh = "托管 SOCKS5 代理的监听地址，默认监听 `127.0.0.1:8081`。"
 zh_basis = ""
 
+["config:features.network_proxy.transparent_tcp"]
+en = "Route outbound TCP from managed Linux sandbox commands through the managed SOCKS5 proxy."
+en_source = "openai/codex rust-v0.171.0: codex-rs/core/config.schema.json"
+en_hash = "a7bb6d6af5963a04"
+zh = ""
+
 ["config:features.network_proxy.unix_sockets"]
 en = ""
 en_hash = ""
@@ -905,9 +969,16 @@ zh_name = "预算用完即停止"
 zh = "共享预算耗尽时是否结束会话，默认 `true`。设为 `false` 时只统计用量并按设定提醒模型，不会因超出预算而停止。"
 zh_basis = "061e2d1f98797b43"
 
+["config:features.rollout_budget.limit_budget"]
+en = "Positive, finite allowance in budget units. Set either limit_tokens or limit_budget. Spending exactly this amount is allowed."
+en_source = "openai/codex rust-v0.171.0: codex-rs/core/config.schema.json"
+en_hash = "08aedd2a151fe3bf"
+zh = ""
+
 ["config:features.rollout_budget.limit_tokens"]
-en = ""
-en_hash = ""
+en = "Positive whole-token allowance. Set either limit_tokens or limit_budget."
+en_source = "openai/codex rust-v0.171.0: codex-rs/core/config.schema.json"
+en_hash = "a1da17df0656c7ee"
 zh_name = "预算总量"
 zh = "共享预算的加权 token 总量（正整数），开启该功能时必填。"
 zh_basis = ""
@@ -918,6 +989,12 @@ en_hash = ""
 zh_name = "输入 token 权重"
 zh = "计算预算时输入（预填充）token 的权重，非负数，默认 1.0。"
 zh_basis = ""
+
+["config:features.rollout_budget.reminder_at_context_start"]
+en = "Restate the balance when a thread starts or its context is compacted. Defaults to true. Set false with an empty threshold list for no budget reminders."
+en_source = "openai/codex rust-v0.171.0: codex-rs/core/config.schema.json"
+en_hash = "c41b36b25e641a16"
+zh = ""
 
 ["config:features.rollout_budget.reminder_at_remaining_tokens"]
 en = "Remaining weighted-token values that trigger reminders when crossed."
@@ -963,6 +1040,24 @@ en_hash = "3217326d75fc5278"
 zh_name = "凭据与断言同发"
 zh = "迁移期间同时发送原有的账号凭据（`Authorization: Bearer …`）和运行时断言请求头。这是默认方式。"
 zh_basis = "3217326d75fc5278"
+
+["config:features.send_message_to_user_async.direct_only"]
+en = "Keep async user messages top-level only (default). Set to false to follow the session's tool mode."
+en_source = "openai/codex rust-v0.174.0-alpha.9: codex-rs/core/config.schema.json"
+en_hash = "2c08c1ebdef35d57"
+zh = ""
+
+["config:features.send_message_to_user_async.root_agent"]
+en = "Sets the root agent's feature flag, just like the plain boolean shorthand. The model catalog can still enable the tool for the root when this is false."
+en_source = "openai/codex rust-v0.174.0-alpha.9: codex-rs/core/config.schema.json"
+en_hash = "deb1dd5e4debc654"
+zh = ""
+
+["config:features.send_message_to_user_async.subagents"]
+en = "Allow spawned subagents to use the tool independently of `root_agent` and the model catalog. Defaults to false."
+en_source = "openai/codex rust-v0.174.0-alpha.9: codex-rs/core/config.schema.json"
+en_hash = "2260e1af5d8d967d"
+zh = ""
 
 ["config:features.sleep_tool.enabled"]
 en = ""

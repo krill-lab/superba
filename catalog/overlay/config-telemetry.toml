@@ -207,7 +207,7 @@ zh_basis = ""
 
 ["config:otel.headers_helper"]
 en = "Command that prints a JSON object of HTTP headers for explicit OTLP HTTP exporters. Runs from CODEX_HOME. Repository-local configuration cannot set OTel options."
-en_source = "openai/codex rust-v0.171.0-alpha.5: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.170.0: codex-rs/core/config.schema.json"
 en_hash = "c2791b695237bec5"
 zh_name = "OTLP 请求头辅助命令"
 zh = "依据源码推断，一条在 `CODEX_HOME` 目录下运行的命令（Unix 上若该路径是可执行文件则直接执行，否则交给 `sh -c`；Windows 用 `cmd`），其标准输出须是只含字符串值的 JSON 对象，作为 HTTP 请求头加到 `otlp-http` 导出器的每次导出请求中，同名时覆盖静态 `headers`；托管 requirements 指定的导出器不使用它。单次运行限时 10 秒、输出上限 64 KiB，失败时暂停导出遥测并在终端警告，不会退回旧的或静态凭据。项目内 `.codex/config.toml` 不能设置 `otel` 下的任何选项。"
@@ -215,7 +215,7 @@ zh_basis = "c2791b695237bec5"
 
 ["config:otel.headers_helper_refresh_interval_ms"]
 en = "Interval between helper executions in milliseconds. Defaults to 29 minutes."
-en_source = "openai/codex rust-v0.171.0-alpha.5: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.170.0: codex-rs/core/config.schema.json"
 en_hash = "3c88db20eb9ce9cb"
 zh_name = "请求头命令刷新间隔"
 zh = "依据源码推断，`otel.headers_helper` 两次运行之间的间隔（毫秒），默认 1740000（29 分钟），必须为正数，设为 0 会导致配置加载失败。每次运行的结果替换缓存的请求头；某次运行失败时，导出会暂停到下一次成功为止。"
